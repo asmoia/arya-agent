@@ -561,14 +561,35 @@ class HermesAgentService : AgentService {
     override fun cancel() {
         cancelled.set(true)
         XLog.i(TAG, "cancel requested")
-        if (config.provider != LlmProvider.LOCAL) {
+        if (::config.isInitialized && config.provider != LlmProvider.LOCAL) {
             taskFuture?.cancel(true)
+        }
+        // Best-effort: if worker is already dead, mark session recovered.
+        // If worker is still running, the loop will endSession(cancelled) itself.
+        activeSessionId?.let { sid ->
+            try {
+                // Only close if still open — endSession is idempotent enough (rewrites ended_at).
+                sessions.getSession(sid)?.let { s ->
+                    if (s.endedAt == null) {
+                        // Don't steal from a still-running loop; leave a marker note only when
+                        // the future is done/cancelled and loop cannot finish cleanly.
+                        if (taskFuture == null || taskFuture?.isDone == true) {
+                            sessions.endSession(sid, "cancelled_externally")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                XLog.w(TAG, "cancel session cleanup: ${e.message}")
+            }
         }
     }
 
     override fun shutdown() {
         cancel()
-        executor.shutdownNow()
+        try {
+            executor.shutdownNow()
+        } catch (_: Exception) {
+        }
         if (::llmClient.isInitialized) {
             try {
                 llmClient.close()
@@ -580,6 +601,7 @@ class HermesAgentService : AgentService {
                 sessions.endSession(it, "shutdown")
             } catch (_: Exception) {
             }
+            activeSessionId = null
         }
     }
 

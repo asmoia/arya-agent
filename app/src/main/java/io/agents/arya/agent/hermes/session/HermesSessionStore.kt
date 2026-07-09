@@ -50,7 +50,8 @@ class HermesSessionStore private constructor(context: Context) :
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 ended_at INTEGER,
-                metadata_json TEXT NOT NULL DEFAULT '{}'
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                end_reason TEXT
             )
             """.trimIndent()
         )
@@ -69,10 +70,29 @@ class HermesSessionStore private constructor(context: Context) :
         )
         db.execSQL("CREATE INDEX idx_messages_session ON messages(session_id, id)")
         db.execSQL("CREATE INDEX idx_sessions_updated ON sessions(updated_at DESC)")
+        db.execSQL("CREATE INDEX idx_sessions_open ON sessions(source, ended_at)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // v1 only for now
+        XLog.i(TAG, "onUpgrade $oldVersion → $newVersion")
+        if (oldVersion < 2) {
+            // v2: optional end_reason column for faster recovery queries (metadata still kept)
+            try {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN end_reason TEXT")
+            } catch (e: Exception) {
+                // Column may already exist on partial upgrades
+                XLog.w(TAG, "v2 end_reason column: ${e.message}")
+            }
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_open ON sessions(source, ended_at)"
+            )
+        }
+        // Future: if (oldVersion < 3) { ... }
+    }
+
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        // Never wipe user sessions on accidental downgrade — keep schema best-effort.
+        XLog.w(TAG, "onDowngrade $oldVersion → $newVersion (no-op, keep data)")
     }
 
     fun createSession(
@@ -121,10 +141,47 @@ class HermesSessionStore private constructor(context: Context) :
         } catch (_: Exception) {
             """{"end_reason":"$reason"}"""
         }
-        writableDatabase.execSQL(
-            "UPDATE sessions SET ended_at=?, updated_at=?, metadata_json=? WHERE id=?",
-            arrayOf(now, now, meta, sessionId)
-        )
+        // Try v2 column first; fall back to metadata-only for safety.
+        try {
+            writableDatabase.execSQL(
+                "UPDATE sessions SET ended_at=?, updated_at=?, metadata_json=?, end_reason=? WHERE id=?",
+                arrayOf(now, now, meta, reason, sessionId)
+            )
+        } catch (_: Exception) {
+            writableDatabase.execSQL(
+                "UPDATE sessions SET ended_at=?, updated_at=?, metadata_json=? WHERE id=?",
+                arrayOf(now, now, meta, sessionId)
+            )
+        }
+    }
+
+    /**
+     * Close every session still marked open (ended_at IS NULL).
+     * Used after process death / force-stop / reboot so the next task starts clean.
+     * @return number of sessions closed
+     */
+    fun closeAllOpenSessions(reason: String = "recovered_after_process_death"): Int {
+        val open = mutableListOf<String>()
+        readableDatabase.rawQuery(
+            "SELECT id FROM sessions WHERE ended_at IS NULL",
+            null
+        ).use { c ->
+            while (c.moveToNext()) open += c.getString(0)
+        }
+        for (id in open) endSession(id, reason)
+        if (open.isNotEmpty()) {
+            XLog.i(TAG, "closeAllOpenSessions count=${open.size} reason=$reason")
+        }
+        return open.size
+    }
+
+    fun openSessionCount(): Int {
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM sessions WHERE ended_at IS NULL",
+            null
+        ).use { c ->
+            return if (c.moveToFirst()) c.getInt(0) else 0
+        }
     }
 
     fun getSession(sessionId: String): Session? {
@@ -262,7 +319,7 @@ class HermesSessionStore private constructor(context: Context) :
     companion object {
         private const val TAG = "HermesSessionStore"
         private const val DB_NAME = "hermes_sessions.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
 
         @Volatile
         private var instance: HermesSessionStore? = null

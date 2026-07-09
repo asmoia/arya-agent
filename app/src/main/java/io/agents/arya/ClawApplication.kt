@@ -40,6 +40,13 @@ class ClawApplication : BaseApp() {
         ToolRegistry.getInstance().registerAllTools(ToolRegistry.DeviceType.MOBILE)
         io.agents.arya.agent.skill.SkillRegistry.loadBuiltInSkills()
         io.agents.arya.agent.PlaybookManager.loadAll(this)
+        // Close orphan Hermes sessions left open by force-stop / OOM / reboot mid-task.
+        try {
+            val recovery = io.agents.arya.agent.hermes.core.HermesRecovery.runOnAppStart()
+            XLog.i(TAG, recovery)
+        } catch (e: Exception) {
+            XLog.w(TAG, "Hermes recovery skipped: ${e.message}")
+        }
         XLog.e(TAG, "ClawApplication initialized, tools registered: ${ToolRegistry.getInstance().getAllTools().size}")
 
         // Write network logs to file (set to true when debugging)

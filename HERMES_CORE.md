@@ -123,3 +123,21 @@ Default for Arya builds: prefer enabling Hermes when building the Persian produc
 - Full port of `run_agent.py` (6k lines) and gateway platforms
 - Browser/computer-use desktop tools
 - Kanban multi-agent swarm
+
+
+## Resilience (v0.2+)
+
+### Backup / restore
+- Settings → **پشتیبان Hermes (Export)** creates `arya_hermes_backup_*.zip` (memory + skills + session index)
+- Settings → **بازیابی Hermes (Import)** merges a ZIP via SAF
+- API keys are never included
+
+### Session DB migrations
+- `hermes_sessions.db` versioned (`DB_VERSION`)
+- `onUpgrade` is additive (no wipe)
+- `onDowngrade` is no-op (keep data)
+
+### Process death recovery
+- `HermesRecovery.runOnAppStart()` closes orphan open sessions
+- Force-stop / reboot / OOM mid-task → next launch recovers cleanly
+- Clear cache: safe. Clear data: full reset (by design)

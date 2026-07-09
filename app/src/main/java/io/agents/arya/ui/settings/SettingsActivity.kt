@@ -33,6 +33,7 @@ import io.agents.arya.appViewModel
 import io.agents.arya.server.ConfigServerManager
 import io.agents.arya.service.ForegroundService
 import io.agents.arya.support.DebugReportManager
+import io.agents.arya.agent.hermes.backup.HermesBackupManager
 import io.agents.arya.utils.KVUtils
 import io.agents.arya.utils.XLog
 import kotlinx.coroutines.Dispatchers
@@ -79,7 +80,22 @@ class SettingsActivity : BaseActivity() {
     }
 
     // Register channel config result callback
-    private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this) { result ->
+    
+    /** SAF picker for Hermes backup ZIP import */
+    private val hermesImportLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                HermesBackupManager.importFromUri(this@SettingsActivity, uri, replaceAll = false)
+            }
+            Toast.makeText(this@SettingsActivity, result.message, Toast.LENGTH_LONG).show()
+            XLog.i("SettingsActivity", "hermes import: ${result.message}")
+        }
+    }
+
+private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this) { result ->
         result?.let {
             // Refresh settings after successful config (refresh "Bound"/"Unbound" status)
             viewModel.refresh()
@@ -195,6 +211,37 @@ class SettingsActivity : BaseActivity() {
     }
 
     /** Refreshes the trailing label on the global-prompt row (#45). */
+    private fun exportHermesBackup() {
+        Toast.makeText(this, "در حال ساخت پشتیبان…", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                HermesBackupManager.exportToCache(this@SettingsActivity)
+            }
+            if (!result.ok || result.file == null) {
+                Toast.makeText(this@SettingsActivity, result.message, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            try {
+                val uri = FileProvider.getUriForFile(
+                    this@SettingsActivity,
+                    "${packageName}.fileprovider",
+                    result.file
+                )
+                val share = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/zip"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "Arya Hermes Backup")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(share, "اشتراک پشتیبان Hermes"))
+            } catch (e: Exception) {
+                XLog.e("SettingsActivity", "share backup failed", e)
+                Toast.makeText(this@SettingsActivity, "Share failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+
     private fun refreshGlobalPromptStatus() {
         val current = KVUtils.getGlobalPrompt()
         val label = if (current.isBlank()) {
@@ -532,9 +579,38 @@ class SettingsActivity : BaseActivity() {
                     Toast.LENGTH_LONG
                 ).show()
             },
-            showDivider = false
+            showDivider = true
         ).apply {
             setTrailingText("gated")
+        }
+
+        toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_save,
+            title = "پشتیبان Hermes (Export)",
+            onClick = { exportHermesBackup() },
+            showDivider = true
+        ).apply {
+            setTrailingText("ZIP")
+        }
+
+        toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_upload,
+            title = "بازیابی Hermes (Import)",
+            onClick = {
+                ConfirmDialog.show(
+                    context = this,
+                    title = "بازیابی پشتیبان؟",
+                    message = "حافظه و مهارت‌ها از فایل ZIP ادغام می‌شوند. کلید API وارد نمی‌شود.",
+                    actionTitle = "انتخاب فایل",
+                    cancelTitle = getString(R.string.common_cancel),
+                    onAction = {
+                        hermesImportLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                    }
+                )
+            },
+            showDivider = false
+        ).apply {
+            setTrailingText("ZIP")
         }
 
         // Remote Control
