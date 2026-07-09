@@ -1053,9 +1053,13 @@ private fun ChatInputBar(
 
             FloatingActionButton(
                 onClick = {
-                    if (isTaskRunning) {
+                    // Cancel whenever a task OR a long generation is in flight.
+                    // Previously only isTaskRunning showed Stop — but sendTask starts with
+                    // isAwaitingReply=true / isTaskRunning=false, so ✕ disappeared during the
+                    // multi-minute first local LLM call.
+                    if (isTaskRunning || isAwaitingReply) {
                         onStopAll()
-                    } else if (!isAwaitingReply && inputEnabled && text.isNotBlank()) {
+                    } else if (inputEnabled && text.isNotBlank()) {
                         if (!isLocalModel || isTaskMode) {
                             onSendTask(text.trim())
                             text = ""
@@ -1071,10 +1075,15 @@ private fun ChatInputBar(
                 },
                 modifier = Modifier
                     .size(34.dp)
-                    .alpha(if ((text.isBlank() || !inputEnabled || isAwaitingReply) && !isTaskRunning) 0.35f else 1f),
+                    .alpha(
+                        when {
+                            isTaskRunning || isAwaitingReply -> 1f
+                            text.isBlank() || !inputEnabled -> 0.35f
+                            else -> 1f
+                        }
+                    ),
                 containerColor = when {
-                    isTaskRunning -> Color(0xFFF44336)
-                    isAwaitingReply -> colors.background
+                    isTaskRunning || isAwaitingReply -> Color(0xFFF44336)
                     text.isBlank() -> colors.background
                     isTaskMode && isLocalModel -> colors.accent
                     else -> colors.userBubble
@@ -1084,13 +1093,11 @@ private fun ChatInputBar(
             ) {
                 Icon(
                     when {
-                        isTaskRunning -> Icons.Default.Close
-                        isAwaitingReply -> Icons.Default.MoreHoriz
+                        isTaskRunning || isAwaitingReply -> Icons.Default.Close
                         else -> Icons.Default.ArrowUpward
                     },
                     contentDescription = when {
-                        isTaskRunning -> "Stop"
-                        isAwaitingReply -> "Waiting for reply"
+                        isTaskRunning || isAwaitingReply -> "Stop / Cancel"
                         else -> "Send"
                     },
                     tint = Color.White,

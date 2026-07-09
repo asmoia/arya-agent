@@ -180,9 +180,10 @@ class TaskFlowController(
 
         val agentPromptOverride = buildAgentPromptOverride(text)
         addUser(text)
+        // Both flags true from the first second so Stop (✕) is always available.
         uiState.isAwaitingReply.value = true
-        uiState.isTaskRunning.value = false
-        XLog.i(TAG, "sendTask: isProcessing=TRUE")
+        uiState.isTaskRunning.value = true
+        XLog.i(TAG, "sendTask: isProcessing=TRUE isTaskRunning=TRUE")
         uiState.messages.add(ChatMessage(ChatMessage.Role.ASSISTANT, "..."))
 
         val taskId = "task_${System.currentTimeMillis()}"
@@ -341,7 +342,15 @@ class TaskFlowController(
                     uiState.isAwaitingReply.value = false
                     uiState.isTaskRunning.value = true
                 }
-                is TaskEvent.TokenUpdate, is TaskEvent.Thinking -> Unit
+                is TaskEvent.Thinking -> {
+                    uiState.isTaskRunning.value = true
+                    // stream partial text into typing bubble if present
+                    val idx = uiState.messages.indexOfLast { it.role == ChatMessage.Role.ASSISTANT && (it.content == "..." || it.content.startsWith("…")) }
+                    // keep indicator; optional partial not required
+                }
+                is TaskEvent.TokenUpdate -> {
+                    uiState.isTaskRunning.value = true
+                }
             }
         } catch (e: Exception) {
             XLog.w(TAG, "handleTaskEvent error", e)

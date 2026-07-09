@@ -112,6 +112,9 @@ class DefaultAgentService : AgentService {
 - If the user asks you to copy/search/send/summarize information FROM another source, first go to that source.
 - Use input_text to type. Do NOT tap on autocomplete suggestions.
 - Never say you cannot access the user's clipboard, notifications, or phone state when a matching tool exists.
+- Never say you cannot open Telegram/WhatsApp/files/music. You control the screen with tools. Try open_app + get_screen_info first.
+- Telegram Saved Messages / پیام‌های ذخیره‌شده / play a random saved song or voice:
+  open_app Telegram → get_screen_info → open Saved Messages (search "Saved Messages" / "پیام‌های ذخیره‌شده" or profile) → find audio/voice → tap play → finish.
 - Do NOT auto-fill passwords, confirm payments, or delete data.
 - Keep responses concise. Use emoji sparingly but appropriately (📱🔋🔔💬)."""
 

@@ -85,6 +85,30 @@ class HermesSkillStore private constructor() {
                 2. If an OEM screen blocks automation, explain in Persian what the user must tap.
             """.trimIndent()
         )
+        writeSkillUnlocked(
+            id = "telegram-saved-media",
+            name = "تلگرام — پیام‌های ذخیره‌شده / پخش مدیا",
+            triggers = listOf(
+                "سیو مسیج", "saved messages", "پیام‌های ذخیره", "سیو مسیج تلگرام",
+                "تلگرام", "telegram", "ویس", "آهنگ", "پخش", "پلی"
+            ),
+            body = """
+                # Telegram Saved Messages → play media
+
+                NEVER say you cannot access Telegram.
+
+                1. open_app(app_name="Telegram") or package org.telegram.messenger — wait_after=3000
+                2. get_screen_info
+                3. Open Saved Messages: search icon → input_text "Saved Messages" or "پیام‌های ذخیره‌شده" → tap result
+                   (or profile / menu shortcut if visible)
+                4. get_screen_info — find an audio/voice/music bubble (waveform, duration, play triangle)
+                5. If user asked random: pick any media item on screen (not the same failed node thrice)
+                6. tap play on that bubble
+                7. finish(summary=what played / where you are)
+
+                If Telegram package differs, get_installed_apps and search "telegram".
+            """.trimIndent()
+        )
         XLog.i(TAG, "Seeded default Hermes skills")
     }
 

@@ -2,6 +2,14 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.2.4
+
+- ✕ Cancel always visible while task/generation runs (not only after first tool)
+- Task marks isTaskRunning=true immediately on send
+- Anti-refusal prompts: never claim no Telegram/media access; use tools
+- Local task uses compact prompt (faster + less waffle)
+- Seed skill: Telegram Saved Messages → play media
+
 ## v0.2.3
 
 - Task pure-chat fast path, cancel fix, Persian titles, less heat

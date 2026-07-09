@@ -168,10 +168,16 @@ class HermesAgentService : AgentService {
         val mcpSection = try {
             io.agents.arya.agent.hermes.mcp.HermesMcpClient.buildPromptSection()
         } catch (_: Exception) { "" }
+        // Local models: shorter base prompt = faster TTFT and fewer refusals.
+        val baseIdentity = if (config.provider == LlmProvider.LOCAL) {
+            HermesPromptBuilder.ARYA_LOCAL_TASK_IDENTITY
+        } else {
+            HermesPromptBuilder.ARYA_HERMES_IDENTITY
+        }
         val systemPrompt = HermesPromptBuilder.build(
-            basePrompt = HermesPromptBuilder.ARYA_HERMES_IDENTITY,
+            basePrompt = baseIdentity,
             userTask = rawUserRequest,
-            includeMemory = true,
+            includeMemory = config.provider != LlmProvider.LOCAL, // skip heavy memory on local task for speed
             includeSkills = true,
             extraSections = extraGuards + mcpSection
         )
