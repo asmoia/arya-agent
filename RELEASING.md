@@ -53,3 +53,9 @@ Only **Clear Data** / uninstall removes them. Prefer Hermes Export before destru
 ## Update checker
 
 App polls `https://api.github.com/repos/asmoia/arya-agent/releases/latest` once per day.
+
+
+## Keystore format check
+
+`ANDROID_KEYSTORE_B64` must decode to a real **JKS** or **PKCS12** keystore (from `keytool -genkeypair`).
+Random base64 blobs will upload as secrets but **signing will fail** at `assembleRelease`.

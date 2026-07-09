@@ -94,16 +94,14 @@ object LocalModelManager {
     )
 
     /**
-     * Pick the best model for this device based on available RAM.
-     * Devices with 12GB+ RAM get E4B, everyone else gets E2B.
+     * Prefer Gemma 4 E4B (3.6GB) whenever the device meets its min RAM (10GB+).
+     * Fall back to E2B on smaller phones. User can still pick either in LLM Config.
      */
     fun recommendedModel(context: Context): ModelInfo {
         val totalRamGb = getDeviceRamGb(context)
-        return if (totalRamGb >= 12) {
-            AVAILABLE_MODELS.first { it.id == "gemma4-e4b" }
-        } else {
-            AVAILABLE_MODELS.first { it.id == "gemma4-e2b" }
-        }
+        val e4b = AVAILABLE_MODELS.first { it.id == "gemma4-e4b" }
+        val e2b = AVAILABLE_MODELS.first { it.id == "gemma4-e2b" }
+        return if (totalRamGb >= e4b.minRamGb) e4b else e2b
     }
 
     fun getDeviceRamGb(context: Context): Int {

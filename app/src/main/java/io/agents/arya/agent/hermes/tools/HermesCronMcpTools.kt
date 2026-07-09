@@ -23,8 +23,9 @@ object HermesExtendedTools {
             val reg = ToolRegistry.getInstance()
             reg.register(HermesCronTool())
             reg.register(HermesMcpTool())
+            reg.register(HermesVoiceTool())
             registered = true
-            XLog.i(TAG, "Registered hermes_cron + hermes_mcp")
+            XLog.i(TAG, "Registered hermes_cron + hermes_mcp + hermes_voice")
         }
     }
 }

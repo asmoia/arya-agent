@@ -2,6 +2,12 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.2.1
+
+- `hermes_voice`: metadata + analyze transcript (local Gemma / cloud)
+- Prefer offline **Gemma 4 E4B (3.6GB)** when device RAM ≥ 10GB
+- GitHub signing secrets wired (valid keystore required for signed release)
+
 ## v0.2.0
 
 - هسته Hermes توکار + memory/skills/session/cron/MCP
