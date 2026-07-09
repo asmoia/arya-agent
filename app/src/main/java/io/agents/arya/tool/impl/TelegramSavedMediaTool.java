@@ -80,15 +80,15 @@ public class TelegramSavedMediaTool extends BaseTool {
             return ToolResult.error("Accessibility service is not running. Enable it to open Telegram Saved Messages.");
         }
 
-        ToolResult opened = HermesDirectOpen.INSTANCE.open("telegram");
-        if (!opened.isSuccess()) {
-            return ToolResult.error(opened.getError() != null ? opened.getError() : "Telegram could not be opened");
-        }
-        if (!waitForTelegram(service, APP_WAIT_MS)) {
-            return ToolResult.error("Telegram did not become active within 4 seconds");
-        }
-
         try {
+            ToolResult opened = HermesDirectOpen.INSTANCE.open("telegram");
+            if (!opened.isSuccess()) {
+                return ToolResult.error(opened.getError() != null ? opened.getError() : "Telegram could not be opened");
+            }
+            if (!waitForTelegram(service, APP_WAIT_MS)) {
+                return ToolResult.error("Telegram did not become active within 4 seconds");
+            }
+
             if (!isSavedMessagesOpen(service.getRootInActiveWindow()) && !openSavedMessages(service)) {
                 return ToolResult.error(
                         "Telegram opened, but Saved Messages could not be reached quickly. "
