@@ -725,8 +725,8 @@ class HermesAgentService : AgentService {
         return buildString {
             when {
                 fa.contains("سیو") || g.contains("saved") || fa.contains("ذخیره") -> {
-                    appendLine("- find_and_tap text="Saved Messages" max_scrolls=1")
-                    appendLine("- or find_and_tap text="پیام‌های ذخیره‌شده" max_scrolls=1")
+                    appendLine("- find_and_tap text='Saved Messages' max_scrolls=1")
+                    appendLine("- or find_and_tap text='پیام‌های ذخیره‌شده' max_scrolls=1")
                     appendLine("- or find_and_tap search icon / Search then input_text")
                     if (sl.contains("saved") || s.contains("ذخیره")) {
                         appendLine("- Label may already be on screen — tap it first without scrolling")
