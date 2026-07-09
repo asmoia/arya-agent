@@ -185,6 +185,7 @@ class TaskFlowController(
         uiState.isTaskRunning.value = true
         XLog.i(TAG, "sendTask: isProcessing=TRUE isTaskRunning=TRUE")
         uiState.messages.add(ChatMessage(ChatMessage.Role.ASSISTANT, "..."))
+        addSystem("⏳ شروع فوری task — اگر اپ شناخته شود بدون انتظار مدل باز می‌شود…")
 
         val taskId = "task_${System.currentTimeMillis()}"
 
@@ -486,23 +487,22 @@ class TaskFlowController(
     private fun isPureChatMessage(text: String): Boolean {
         val t = text.trim()
         if (t.isEmpty()) return true
-        if (t.length > 120) return false
         val lower = t.lowercase()
-        // If it looks like a phone task keyword, not pure chat
         val taskHints = listOf(
             "open ", "send ", "tap ", "install ", "call ", "message ", "whatsapp", "telegram",
+            "chrome", "browser", "youtube", "play ", "saved",
             "باز کن", "بفرست", "تماس", "پیام", "واتساپ", "تلگرام", "نصب", "تنظیمات",
-            "monitor", "مانیتور", "اسکرین", "screenshot", "پخش", "برو به"
+            "monitor", "مانیتور", "اسکرین", "screenshot", "پخش", "پلی", "سیو", "آهنگ",
+            "برو به", "برو تو", "میتونی بری", "می‌تونی بری", "کروم", "مرورگر", "یوتیوب"
         )
         if (taskHints.any { lower.contains(it) || t.contains(it) }) return false
+        if (t.length > 40) return false
         val chatHints = listOf(
             "سلام", "درود", "خداحافظ", "ممنون", "مرسی", "خوبی", "چطوری",
-            "hello", "hi", "hey", "thanks", "thank you", "ok", "okay",
-            "؟", "?", "چی", "چه", "why", "what", "how", "who"
+            "hello", "hi", "hey", "thanks", "thank you", "ok", "okay", "باشه"
         )
-        if (chatHints.any { lower == it || lower.startsWith("$it ") || lower.startsWith(it) || t == it }) return true
-        // Short messages without imperative task verbs → chat
-        return t.length <= 24 && !t.contains("http")
+        if (chatHints.any { lower == it || t == it || lower.startsWith("$it ") }) return true
+        return t.length <= 16 && !t.contains("http")
     }
 
 

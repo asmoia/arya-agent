@@ -168,12 +168,23 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
     }
 
     override fun updateConfig(config: AgentConfig) {
+        val prev = if (::config.isInitialized) this.config else null
+        val sameModel = prev != null &&
+            prev.provider == config.provider &&
+            prev.baseUrl == config.baseUrl &&
+            prev.modelName == config.modelName &&
+            prev.apiKey == config.apiKey
+        if (sameModel && ::llmClient.isInitialized) {
+            this.config = config
+            this.toolSpecs = LangChain4jToolBridge.buildToolSpecifications()
+            XLog.i(TAG, "updateConfig soft — same model, skip engine reload")
+            return
+        }
         if (running.get()) {
             cancel()
-            XLog.w(TAG, "Task was running during config update, cancelled")
+            XLog.w(TAG, "Task was running during hard config update, cancelled")
         }
         executor?.shutdownNow()
-        // Close old LlmClient before reinitializing to free engine memory
         if (::llmClient.isInitialized) {
             try {
                 llmClient.close()
@@ -183,7 +194,7 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
             }
         }
         initialize(config)
-        XLog.i(TAG, "Agent config updated, new model: ${config.modelName}")
+        XLog.i(TAG, "Agent config hard-updated, new model: ${config.modelName}")
     }
 
     override fun executeTask(userPrompt: String, callback: AgentCallback) {

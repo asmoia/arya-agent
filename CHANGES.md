@@ -2,6 +2,13 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.3.2
+
+- **Root fix:** stop reloading LiteRT engine on every task (`updateConfig` soft path)
+- **Bootstrap runs first** in Hermes (before prompt/session/LLM) — Telegram/Chrome open immediately
+- Pure-chat router no longer steals phone tasks that end with «؟»
+- looksLikeTask expanded for سیو/پلی/آهنگ/میتونی بری
+
 ## v0.3.1
 
 - **Emergency:** Instant = 3 rounds (not 10); default mode INSTANT

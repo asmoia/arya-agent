@@ -91,16 +91,31 @@ class HermesAgentService : AgentService {
     }
 
     override fun updateConfig(config: AgentConfig) {
+        val prev = if (::config.isInitialized) this.config else null
         this.config = config
-        if (::llmClient.isInitialized) {
-            try {
-                llmClient.close()
-            } catch (_: Exception) {
+        // CRITICAL: do NOT close/recreate the local engine on every task start.
+        // startTask() calls updateAgentConfig() every time; killing LiteRT here made
+        // Telegram bootstrap wait minutes (or forever) behind engine reload.
+        val mustRecreateClient = prev == null ||
+            prev.provider != config.provider ||
+            prev.baseUrl != config.baseUrl ||
+            prev.modelName != config.modelName ||
+            prev.apiKey != config.apiKey ||
+            !::llmClient.isInitialized
+        if (mustRecreateClient) {
+            if (::llmClient.isInitialized) {
+                try {
+                    llmClient.close()
+                } catch (_: Exception) {
+                }
             }
+            this.llmClient = LlmClientFactory.create(config)
+            XLog.i(TAG, "Hermes LlmClient recreated provider=${config.provider} model=${config.modelName}")
+        } else {
+            XLog.d(TAG, "Hermes config updated without engine recreate (temp=${config.temperature})")
         }
-        this.llmClient = LlmClientFactory.create(config)
         this.toolSpecs = LangChain4jToolBridge.buildToolSpecifications()
-        XLog.i(TAG, "Hermes core config updated tools=${toolSpecs.size}")
+        XLog.i(TAG, "Hermes core config tools=${toolSpecs.size}")
     }
 
     override fun executeTask(userPrompt: String, callback: AgentCallback) {
@@ -145,6 +160,36 @@ class HermesAgentService : AgentService {
             }
             return
         }
+
+        // === IMMEDIATE BOOTSTRAP (before prompt build / session / LLM) ===
+        // User pain: minutes of silence, Telegram never opens. Do open_app NOW.
+        HermesAppKeeper.onTaskStart("شروع…")
+        callback.onStatus("شروع فوری · بدون انتظار مدل")
+        val earlyBoot = HermesBootstrapActions.plan(rawUserRequest)
+        val earlyBootResults = mutableListOf<Pair<HermesBootstrapActions.Step, ToolResult>>()
+        if (earlyBoot != null) {
+            XLog.i(TAG, "EARLY bootstrap plan=${earlyBoot.reason}")
+            for ((idx, step) in earlyBoot.steps.withIndex()) {
+                if (cancelled.get()) break
+                callback.onStatus(step.labelFa)
+                callback.onLoopStart(idx + 1)
+                callback.onToolCall(idx + 1, step.tool, step.tool, com.google.gson.Gson().toJson(step.params))
+                val result = try {
+                    HermesBootstrapActions.execute(step)
+                } catch (e: Exception) {
+                    ToolResult.error(e.message ?: "bootstrap failed")
+                }
+                earlyBootResults += step to result
+                callback.onToolResult(idx + 1, step.tool, step.tool, step.params.toString(), result)
+                XLog.i(TAG, "EARLY bootstrap ${step.tool} success=${result.isSuccess} err=${result.error}")
+                if (!result.isSuccess) break
+                if (step.tool == "open_app") {
+                    try { Thread.sleep(400) } catch (_: Exception) {}
+                }
+            }
+            callback.onStatus("اپ باز شد · ادامه…")
+        }
+
 
         // Fresh session per task (memory/skills still persist across sessions).
         // Avoid resuming a half-open session from a crash mid-task.
@@ -222,6 +267,18 @@ class HermesAgentService : AgentService {
             promptForModel
         }
         messages.add(UserMessage.from(enrichedPrompt))
+        for ((step, result) in earlyBootResults) {
+            val summary = if (result.isSuccess) (result.data ?: "ok").take(1200) else "ERROR: ${result.error}"
+            messages.add(UserMessage.from("[Bootstrap] tool=${step.tool} → $summary"))
+        }
+        if (earlyBootResults.isNotEmpty()) {
+            messages.add(
+                UserMessage.from(
+                    "[System] Bootstrap already ran open_app + screen read. Continue with tools toward the goal. " +
+                        "Do NOT reopen same app unless needed. Goal: ${rawUserRequest.take(140)}"
+                )
+            )
+        }
 
         var iterations = 0
         var totalTokens = 0
@@ -241,72 +298,16 @@ class HermesAgentService : AgentService {
         var softLimitWarned = false
         var finalAnswer: String? = null
         val usedToolsThisTask = mutableListOf<String>()
+        for ((step, _) in earlyBootResults) {
+            usedToolsThisTask += step.tool
+        }
+
         val recentActions = LinkedList<String>()
         var essayForceUsed = false
 
         HermesAppKeeper.onTaskStart("شروع task…")
         emitStatus(callback, policy, 0, "شروع · ${policy.resolvedMode.name} · ${HermesAppKeeper.memoryHintFa()}")
 
-        // BOOTSTRAP: do first open_app + get_screen_info WITHOUT waiting for slow E4B first token.
-        // This fixes "stuck on 1/N for minutes with zero UI action".
-        if (!isPureChatFastPath(rawUserRequest) && looksLikeTask(rawUserRequest)) {
-            val boot = HermesBootstrapActions.plan(rawUserRequest)
-            if (boot != null) {
-                XLog.i(TAG, "bootstrap plan=${boot.reason} steps=${boot.steps.size}")
-                emitStatus(callback, policy, 0, "شروع سریع · ${boot.reason}")
-                for ((idx, step) in boot.steps.withIndex()) {
-                    if (cancelled.get()) break
-                    emitStatus(callback, policy, idx + 1, step.labelFa)
-                    callback.onToolCall(idx + 1, step.tool, step.tool, com.google.gson.Gson().toJson(step.params))
-                    val result = try {
-                        HermesBootstrapActions.execute(step)
-                    } catch (e: Exception) {
-                        ToolResult.error(e.message ?: "bootstrap failed")
-                    }
-                    usedToolsThisTask += step.tool
-                    callback.onToolResult(idx + 1, step.tool, step.tool, step.params.toString(), result)
-                    // Feed transcript so the model continues from real state (no re-open guess).
-                    val summary = if (result.isSuccess) {
-                        (result.data ?: "ok").take(1200)
-                    } else {
-                        "ERROR: ${result.error}"
-                    }
-                    messages.add(
-                        UserMessage.from(
-                            "[Bootstrap ${idx + 1}/${boot.steps.size}] tool=${step.tool} → $summary"
-                        )
-                    )
-                    if (!result.isSuccess) {
-                        XLog.w(TAG, "bootstrap step failed: ${step.tool} ${result.error}")
-                        break
-                    }
-                    // Brief settle after open_app only
-                    if (step.tool == "open_app") {
-                        try { Thread.sleep(screenSettleMs + 200L) } catch (_: Exception) {}
-                    }
-                }
-                messages.add(
-                    UserMessage.from(
-                        "[System] Bootstrap finished. Continue toward goal with tools only " +
-                            "(find_and_tap / input_text / swipe / get_screen_info). " +
-                            "Do NOT re-open the same app unless needed. Goal: ${rawUserRequest.take(140)}"
-                    )
-                )
-                emitStatus(callback, policy, boot.steps.size, "bootstrap تمام · نوبت مدل")
-            }
-        }
-
-
-        // Align local sampling with adaptive policy (action-first = lower temp).
-        if (config.provider == LlmProvider.LOCAL && kotlin.math.abs(config.temperature - policy.temperature) > 0.01) {
-            try {
-                val tuned = config.copy(temperature = policy.temperature)
-                updateConfig(tuned)
-                XLog.i(TAG, "local temp tuned to ${policy.temperature} for ${policy.resolvedMode}")
-            } catch (e: Exception) {
-                XLog.w(TAG, "temp tune failed: ${e.message}")
-            }
-        }
 
 
         while (iterations < maxIterations && !cancelled.get()) {
@@ -698,33 +699,34 @@ class HermesAgentService : AgentService {
             "open ", "send ", "tap ", "search ", "play ", "take ", "install ",
             "click ", "go to ", "navigate ", "turn on ", "turn off ", "monitor ",
             "close ", "swipe ", "scroll ", "check ", "compose ", "find ", "screen",
-            "notification", "read my", "call ", "dial "
+            "notification", "read my", "call ", "dial ", "telegram", "whatsapp",
+            "chrome", "browser", "youtube", "spotify", "saved message"
         )
         val fa = listOf(
             "باز کن", "بفرست", "بزن", "جستجو", "پیدا کن", "نصب", "ببند",
             "پیام", "تماس", "تنظیمات", "واتساپ", "تلگرام", "اسکرین", "اعلان",
-            "روشن", "خاموش", "برو به", "چک کن", "بخون", "بخوان"
+            "روشن", "خاموش", "برو به", "چک کن", "بخون", "بخوان", "سیو", "پخش",
+            "پلی", "آهنگ", "موسیقی", "مرورگر", "کروم", "یوتیوب", "برو تو",
+            "میتونی بری", "می‌تونی بری", "بازش کن"
         )
+        if (HermesBootstrapActions.plan(text) != null) return true
         return en.any { lower.contains(it) } || fa.any { text.contains(it) }
     }
 
 
     private fun isPureChatFastPath(text: String): Boolean {
         val t = text.trim()
-        if (t.isEmpty() || t.length > 100) return false
+        if (t.isEmpty()) return true
+        // Any phone/bootstrap task is NEVER pure chat — even if it ends with ؟
+        if (looksLikeTask(t) || HermesBootstrapActions.plan(t) != null) return false
+        if (t.length > 40) return false
         val lower = t.lowercase()
-        val taskHints = listOf(
-            "open ", "send ", "tap ", "install ", "call ", "whatsapp", "telegram",
-            "باز کن", "بفرست", "تماس", "پیام بده", "واتساپ", "تلگرام", "نصب",
-            "monitor", "مانیتور", "get_screen", "تنظیمات را"
-        )
-        if (taskHints.any { lower.contains(it) || t.contains(it) }) return false
         val greetings = listOf(
             "سلام", "درود", "hello", "hi", "hey", "خوبی", "چطوری", "صبح بخیر",
             "شب بخیر", "ممنون", "مرسی", "thanks", "ok", "okay", "باشه"
         )
-        if (greetings.any { lower == it || t == it || lower.startsWith("$it ") || t.startsWith(it) }) return true
-        return t.length <= 20 && !t.contains("http")
+        if (greetings.any { lower == it || t == it || lower.startsWith("$it ") || t.startsWith("$it ") }) return true
+        return t.length <= 16 && !t.contains("http") && !t.contains("؟") && !t.contains("?")
     }
 
     private fun quickChatReply(userText: String): String {

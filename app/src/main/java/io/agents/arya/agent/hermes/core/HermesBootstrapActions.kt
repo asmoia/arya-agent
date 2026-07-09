@@ -25,11 +25,14 @@ object HermesBootstrapActions {
 
         // Telegram family
         if (t.contains("telegram") || fa.contains("تلگرام") || fa.contains("سیو") ||
-            t.contains("saved message") || fa.contains("پیام‌های ذخیره")
+            t.contains("saved message") || fa.contains("پیام‌های ذخیره") ||
+            fa.contains("اهنگ") || fa.contains("آهنگ") ||
+            (fa.contains("پلی") && fa.contains("تلگرام")) ||
+            (t.contains("play") && t.contains("telegram"))
         ) {
             return Plan(
                 steps = listOf(
-                    Step("open_app", mapOf("package_name" to "org.telegram.messenger"), "باز کردن تلگرام"),
+                    Step("open_app", mapOf("package_name" to "telegram"), "باز کردن تلگرام"),
                     Step("get_screen_info", emptyMap(), "خواندن صفحه تلگرام"),
                 ),
                 reason = "telegram"
@@ -40,7 +43,7 @@ object HermesBootstrapActions {
         if (t.contains("whatsapp") || fa.contains("واتس") || fa.contains("واتساپ")) {
             return Plan(
                 steps = listOf(
-                    Step("open_app", mapOf("package_name" to "com.whatsapp"), "باز کردن واتساپ"),
+                    Step("open_app", mapOf("package_name" to "whatsapp"), "باز کردن واتساپ"),
                     Step("get_screen_info", emptyMap(), "خواندن صفحه واتساپ"),
                 ),
                 reason = "whatsapp"
@@ -54,7 +57,7 @@ object HermesBootstrapActions {
         ) {
             return Plan(
                 steps = listOf(
-                    Step("open_app", mapOf("package_name" to "com.android.chrome"), "باز کردن کروم"),
+                    Step("open_app", mapOf("package_name" to "chrome"), "باز کردن کروم"),
                     Step("get_screen_info", emptyMap(), "خواندن صفحه مرورگر"),
                 ),
                 reason = "browser"
@@ -65,7 +68,7 @@ object HermesBootstrapActions {
         if (t.contains("youtube") || fa.contains("یوتیوب")) {
             return Plan(
                 steps = listOf(
-                    Step("open_app", mapOf("package_name" to "com.google.android.youtube"), "باز کردن یوتیوب"),
+                    Step("open_app", mapOf("package_name" to "youtube"), "باز کردن یوتیوب"),
                     Step("get_screen_info", emptyMap(), "خواندن صفحه یوتیوب"),
                 ),
                 reason = "youtube"
