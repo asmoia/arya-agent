@@ -13,7 +13,11 @@ data class AgentConfig(
     val maxIterations: Int = 60,
     val temperature: Double = 0.1,
     val provider: LlmProvider = LlmProvider.OPENAI,
-    val streaming: Boolean = false
+    val streaming: Boolean = false,
+    // Hermes Bridge settings
+    val hermesUrl: String? = null,
+    val hermesApiKey: String? = null,
+    val hermesEnabled: Boolean = false
 ) {
     companion object {
         const val DEFAULT_SYSTEM_PROMPT =
