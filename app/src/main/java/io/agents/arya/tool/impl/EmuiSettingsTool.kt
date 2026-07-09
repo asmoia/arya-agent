@@ -5,173 +5,86 @@ package io.agents.arya.tool.impl
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import io.agents.arya.ClawApplication
 import io.agents.arya.tool.BaseTool
+import io.agents.arya.tool.ToolParameter
 import io.agents.arya.tool.ToolResult
 
 /**
  * EMUI/Huawei-specific settings control tool.
- *
- * Provides quick access to common Huawei device settings that are not
- * accessible through the standard Android Settings API on EMUI 14.2.
  */
-class EmuiSettingsTool : BaseTool("emui_settings", "Control Huawei EMUI-specific settings") {
+class EmuiSettingsTool : BaseTool() {
+
+    override fun getName(): String = "emui_settings"
+    override fun getParameters(): List<ToolParameter> = listOf(
+        ToolParameter("action", "string", true, "Action: open_appgallery, open_phone_manager, open_settings, brightness, wifi, bluetooth, battery, storage, sound, display, apps, device_info"),
+        ToolParameter("level", "integer", false, "Brightness level 0-255 (only for brightness action)")
+    )
+    override fun getDescriptionEN(): String = "Control Huawei EMUI-specific settings (AppGallery, Phone Manager, brightness, WiFi, Bluetooth, battery, etc.)"
+    override fun getDescriptionCN(): String = "控制华为 EMUI 设置（应用市场、手机管家、亮度、WiFi、蓝牙、电池等）"
 
     override fun execute(params: Map<String, Any>): ToolResult {
         val action = params["action"]?.toString()?.lowercase() ?: return ToolResult.error("Missing 'action' parameter")
         val app = ClawApplication.instance
 
         return when (action) {
-            "open_appgallery" -> openAppGallery(app)
-            "open_phone_manager" -> openPhoneManager(app)
-            "open_huawei_settings" -> openHuaweiSettings(app)
+            "open_appgallery" -> openApp(app, "com.huawei.appmarket", "com.huawei.appmarket.MainActivity")
+            "open_phone_manager" -> openApp(app, "com.huawei.systemmanager", "com.huawei.systemmanager.optimize.OptimizeActivity")
+            "open_settings" -> openSettings(app, Settings.ACTION_SETTINGS, "تنظیمات")
             "brightness" -> setBrightness(app, params)
-            "wifi" -> openWifiSettings(app)
-            "bluetooth" -> openBluetoothSettings(app)
-            "data_usage" -> openDataUsageSettings(app)
-            "battery" -> openBatterySettings(app)
-            "storage" -> openStorageSettings(app)
-            "sound" -> openSoundSettings(app)
-            "display" -> openDisplaySettings(app)
-            "apps" -> openAppSettings(app)
-            "security" -> openSecuritySettings(app)
-            "about" -> openAboutSettings(app)
-            "developer" -> openDeveloperSettings(app)
-            "accessibility" -> openAccessibilitySettings(app)
-            "notification_settings" -> openNotificationSettings(app)
+            "wifi" -> openSettings(app, Settings.ACTION_WIFI_SETTINGS, "وای‌فای")
+            "bluetooth" -> openSettings(app, Settings.ACTION_BLUETOOTH_SETTINGS, "بلوتوث")
+            "battery" -> openSettings(app, Intent.ACTION_POWER_USAGE_SUMMARY, "باتری")
+            "storage" -> openSettings(app, Settings.ACTION_INTERNAL_STORAGE_SETTINGS, "فضای ذخیره")
+            "sound" -> openSettings(app, Settings.ACTION_SOUND_SETTINGS, "صدا")
+            "display" -> openSettings(app, Settings.ACTION_DISPLAY_SETTINGS, "نمایش")
+            "apps" -> openSettings(app, Settings.ACTION_APPLICATION_SETTINGS, "اپ‌ها")
             "device_info" -> getDeviceInfo()
-            else -> ToolResult.error("Unknown action: $action. Valid: open_appgallery, open_phone_manager, brightness, wifi, bluetooth, battery, storage, sound, display, apps, device_info")
+            else -> ToolResult.error("Unknown action: $action")
         }
     }
 
-    private fun openAppGallery(context: Context): ToolResult {
+    private fun openApp(context: Context, pkg: String, cls: String): ToolResult {
         return try {
             val intent = Intent(Intent.ACTION_MAIN).apply {
-                setClassName("com.huawei.appmarket", "com.huawei.appmarket.MainActivity")
+                setClassName(pkg, cls)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            ToolResult.success("AppGallery باز شد")
+            ToolResult.success("App opened: $pkg")
         } catch (e: Exception) {
-            ToolResult.error("نتونستم AppGallery باز کنم: ${e.message}")
+            ToolResult.error("Cannot open $pkg: ${e.message}")
         }
     }
 
-    private fun openPhoneManager(context: Context): ToolResult {
+    private fun openSettings(context: Context, action: String, label: String): ToolResult {
         return try {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
-                setClassName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.OptimizeActivity")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
+            val intent = Intent(action).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
             context.startActivity(intent)
-            ToolResult.success("Phone Manager باز شد")
+            ToolResult.success("Opened: $label")
         } catch (e: Exception) {
-            ToolResult.error("نتونستم Phone Manager باز کنم: ${e.message}")
-        }
-    }
-
-    private fun openHuaweiSettings(context: Context): ToolResult {
-        return try {
-            val intent = Intent(Settings.ACTION_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-            ToolResult.success("تنظیمات باز شد")
-        } catch (e: Exception) {
-            ToolResult.error("خطا: ${e.message}")
+            ToolResult.error("Cannot open $label: ${e.message}")
         }
     }
 
     private fun setBrightness(context: Context, params: Map<String, Any>): ToolResult {
-        val level = (params["level"]?.toString()?.toIntOrNull() ?: 128).coerceIn(0, 255)
+        val level = optionalInt(params, "level", 128).coerceIn(0, 255)
         return try {
             Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, level)
-            ToolResult.success("روشنایی تنظیم شد: $level/255")
+            ToolResult.success("Brightness set to $level/255")
         } catch (e: Exception) {
-            ToolResult.error("دسترسی Write Settings لازمه. با ADB: pm grant ${context.packageName} android.permission.WRITE_SETTINGS")
-        }
-    }
-
-    private fun openWifiSettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_WIFI_SETTINGS, "تنظیمات وای‌فای")
-    }
-
-    private fun openBluetoothSettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_BLUETOOTH_SETTINGS, "تنظیمات بلوتوث")
-    }
-
-    private fun openDataUsageSettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_DATA_USAGE_SETTINGS, "مصرف دیتا")
-    }
-
-    private fun openBatterySettings(context: Context): ToolResult {
-        return openSettingsAction(context, Intent.ACTION_POWER_USAGE_SUMMARY, "تنظیمات باتری")
-    }
-
-    private fun openStorageSettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_INTERNAL_STORAGE_SETTINGS, "تنظیمات فضای ذخیره")
-    }
-
-    private fun openSoundSettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_SOUND_SETTINGS, "تنظیمات صدا")
-    }
-
-    private fun openDisplaySettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_DISPLAY_SETTINGS, "تنظیمات نمایش")
-    }
-
-    private fun openAppSettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_APPLICATION_SETTINGS, "مدیریت اپ‌ها")
-    }
-
-    private fun openSecuritySettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_SECURITY_SETTINGS, "تنظیمات امنیتی")
-    }
-
-    private fun openAboutSettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_DEVICE_INFO_SETTINGS, "درباره گوشی")
-    }
-
-    private fun openDeveloperSettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, "گزینه‌های توسعه‌دهنده")
-    }
-
-    private fun openAccessibilitySettings(context: Context): ToolResult {
-        return openSettingsAction(context, Settings.ACTION_ACCESSIBILITY_SETTINGS, "دسترسی‌پذیری")
-    }
-
-    private fun openNotificationSettings(context: Context): ToolResult {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            openSettingsAction(context, Settings.ACTION_APP_NOTIFICATION_SETTINGS, "تنظیمات اعلان")
-        } else {
-            ToolResult.error("نیاز به اندروید ۸ به بالا")
-        }
-    }
-
-    private fun openSettingsAction(context: Context, action: String, label: String): ToolResult {
-        return try {
-            val intent = Intent(action).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-            context.startActivity(intent)
-            ToolResult.success("$label باز شد")
-        } catch (e: Exception) {
-            ToolResult.error("نتونستم $label باز کنم: ${e.message}")
+            ToolResult.error("Write Settings permission needed. ADB: pm grant ${context.packageName} android.permission.WRITE_SETTINGS")
         }
     }
 
     private fun getDeviceInfo(): ToolResult {
         val sb = StringBuilder()
-        sb.append("📱 مدل: ${Build.MODEL}\n")
-        sb.append("🖥️ اندروید: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
-        sb.append("🏭 سازنده: ${Build.MANUFACTURER}\n")
-        sb.append("🏷️ برند: ${Build.BRAND}\n")
-        try {
-            val emui = Build.VERSION.INCREMENTAL ?: "نامشخص"
-            sb.append("🔄 EMUI: $emui\n")
-        } catch (_: Exception) {}
-        sb.append("⚙️ Kernel: ${Build.DISPLAY}\n")
+        sb.append("Model: ${Build.MODEL}\n")
+        sb.append("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
+        sb.append("Brand: ${Build.BRAND}\n")
+        sb.append("Manufacturer: ${Build.MANUFACTURER}\n")
         return ToolResult.success(sb.toString().trim())
     }
 }
