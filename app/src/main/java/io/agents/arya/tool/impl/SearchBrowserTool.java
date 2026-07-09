@@ -116,7 +116,7 @@ public class SearchBrowserTool extends BaseTool {
             String screen = service.getScreenTree();
             String suffix = screen == null || screen.trim().isEmpty()
                     ? ""
-                    : " Current visible result screen is ready."
+                    : " Current visible result screen is ready.";
             return ToolResult.success("Searched the browser for: " + query + "." + suffix);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
