@@ -89,6 +89,14 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@style/Theme.Transparent" />
+        <!-- Sensitive tool confirmation (Hermes safety gate) -->
+        <activity
+            android:name=".agent.hermes.safety.SensitiveConfirmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Transparent" />
         <activity
             android:name=".automation.ExternalAutomationActivity"
             android:exported="true"

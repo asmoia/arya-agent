@@ -18,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import io.agents.arya.ClawApplication
 import io.agents.arya.R
 import io.agents.arya.base.BaseActivity
 import io.agents.arya.widget.AlertDialog
@@ -60,6 +61,8 @@ class SettingsActivity : BaseActivity() {
     private var permBattery: io.agents.arya.widget.MenuItem? = null
     private var permStorage: io.agents.arya.widget.MenuItem? = null
     private var externalAutomationItem: io.agents.arya.widget.MenuItem? = null
+    private var hermesCoreItem: io.agents.arya.widget.MenuItem? = null
+    private var sensitiveConfirmItem: io.agents.arya.widget.MenuItem? = null
     private var globalPromptItem: io.agents.arya.widget.MenuItem? = null
     private var customModelUrlItem: io.agents.arya.widget.MenuItem? = null
 
@@ -110,6 +113,7 @@ class SettingsActivity : BaseActivity() {
         refreshSettings()
         refreshPermissions()
         refreshExternalAutomation()
+        refreshHermesAndSafety()
         handler.removeCallbacks(permPoller)
         handler.postDelayed(permPoller, 1000)
     }
@@ -133,6 +137,61 @@ class SettingsActivity : BaseActivity() {
         externalAutomationItem?.setTrailingText(
             if (KVUtils.isExternalAutomationEnabled()) "Enabled" else "Disabled"
         )
+    }
+
+    private fun refreshHermesAndSafety() {
+        hermesCoreItem?.setTrailingText(
+            if (KVUtils.isHermesEmbeddedEnabled()) "فعال (Hermes)" else "خاموش"
+        )
+        sensitiveConfirmItem?.setTrailingText(
+            if (KVUtils.isSensitiveConfirmEnabled()) "فعال ✅" else "خاموش ⚠️"
+        )
+    }
+
+    private fun toggleHermesCore() {
+        val currently = KVUtils.isHermesEmbeddedEnabled()
+        if (currently) {
+            ConfirmDialog.showWarm(
+                context = this,
+                title = "خاموش کردن هسته Hermes؟",
+                message = "حلقهٔ کلاسیک PokeClaw جایگزین می‌شود (بدون حافظه/مهارت Hermes).",
+                actionTitle = "خاموش کن",
+                cancelTitle = getString(R.string.common_cancel),
+                onAction = {
+                    KVUtils.setHermesEmbeddedEnabled(false)
+                    ClawApplication.appViewModelInstance.updateAgentConfig()
+                    refreshHermesAndSafety()
+                    Toast.makeText(this, "Hermes خاموش شد", Toast.LENGTH_SHORT).show()
+                }
+            )
+        } else {
+            KVUtils.setHermesEmbeddedEnabled(true)
+            ClawApplication.appViewModelInstance.updateAgentConfig()
+            refreshHermesAndSafety()
+            Toast.makeText(this, "هسته Hermes فعال شد", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun toggleSensitiveConfirm() {
+        val currently = KVUtils.isSensitiveConfirmEnabled()
+        if (currently) {
+            ConfirmDialog.showWarm(
+                context = this,
+                title = "خاموش کردن تأیید کارهای حساس؟",
+                message = "آریا بدون پرسیدن می‌تواند پیام بفرستد، تماس بگیرد و … — خطرناک است.",
+                actionTitle = "خاموش کن (خطرناک)",
+                cancelTitle = getString(R.string.common_cancel),
+                onAction = {
+                    KVUtils.setSensitiveConfirmEnabled(false)
+                    refreshHermesAndSafety()
+                    Toast.makeText(this, "تأیید حساس خاموش شد", Toast.LENGTH_LONG).show()
+                }
+            )
+        } else {
+            KVUtils.setSensitiveConfirmEnabled(true)
+            refreshHermesAndSafety()
+            Toast.makeText(this, "تأیید کارهای حساس فعال شد", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** Refreshes the trailing label on the global-prompt row (#45). */
@@ -441,19 +500,41 @@ class SettingsActivity : BaseActivity() {
             setTrailingText(label)
         }
 
-        // Tools
+        // Tools + Hermes safety
         val toolsGroup = findViewById<MenuGroup>(R.id.toolsGroup)
-        toolsGroup.setTitle("Tools")
+        toolsGroup.setTitle("Tools & Hermes")
+
+        hermesCoreItem = toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_compass,
+            title = "هسته Hermes (توکار)",
+            onClick = { toggleHermesCore() },
+            showDivider = true
+        ).apply {
+            setTrailingText(if (KVUtils.isHermesEmbeddedEnabled()) "فعال (Hermes)" else "خاموش")
+        }
+
+        sensitiveConfirmItem = toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_info_details,
+            title = "تأیید کارهای حساس",
+            onClick = { toggleSensitiveConfirm() },
+            showDivider = true
+        ).apply {
+            setTrailingText(if (KVUtils.isSensitiveConfirmEnabled()) "فعال ✅" else "خاموش ⚠️")
+        }
 
         toolsGroup.addMenuItem(
             leadingIcon = android.R.drawable.ic_menu_manage,
             title = "Manage Tools",
             onClick = {
-                Toast.makeText(this, "12 tools enabled. Tool management coming soon.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "ابزارهای گوشی + hermes_memory/skill. کارهای حساس قبل از اجرا از شما می‌پرسند.",
+                    Toast.LENGTH_LONG
+                ).show()
             },
             showDivider = false
         ).apply {
-            setTrailingText("12 enabled")
+            setTrailingText("gated")
         }
 
         // Remote Control
@@ -505,11 +586,11 @@ class SettingsActivity : BaseActivity() {
 
         aboutGroup.addMenuItem(
             leadingIcon = android.R.drawable.ic_menu_info_details,
-            title = "PokeClaw",
+            title = "آریا (Arya)",
             onClick = { },
             showDivider = true
         ).apply {
-            setTrailingText("v${io.agents.arya.BuildConfig.VERSION_NAME}")
+            setTrailingText("v${io.agents.arya.BuildConfig.VERSION_NAME} · Hermes")
         }
 
         aboutGroup.addMenuItem(
@@ -534,11 +615,11 @@ class SettingsActivity : BaseActivity() {
             leadingIcon = android.R.drawable.ic_menu_share,
             title = "GitHub",
             onClick = {
-                startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/agents-io/PokeClaw".toUri()))
+                startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/asmoia/arya-agent".toUri()))
             },
             showDivider = true
         ).apply {
-            setTrailingText("agents-io/PokeClaw")
+            setTrailingText("asmoia/arya-agent")
         }
 
         aboutGroup.addMenuItem(

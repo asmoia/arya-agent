@@ -379,6 +379,20 @@ object KVUtils {
     fun isHermesEmbeddedEnabled(): Boolean = getBoolean(KEY_HERMES_EMBEDDED_ENABLED, true)
     fun setHermesEmbeddedEnabled(enabled: Boolean) = putBoolean(KEY_HERMES_EMBEDDED_ENABLED, enabled)
 
+    // ==================== Sensitive action confirmation ====================
+    // When enabled (default TRUE), high-risk tools (send_message, make_call, …)
+    // pause and show a ConfirmDialog before executing.
+
+    private const val KEY_SENSITIVE_CONFIRM_ENABLED = "KEY_SENSITIVE_CONFIRM_ENABLED"
+    private const val KEY_SENSITIVE_AUTO_ALLOW_LOW = "KEY_SENSITIVE_AUTO_ALLOW_LOW"
+
+    fun isSensitiveConfirmEnabled(): Boolean = getBoolean(KEY_SENSITIVE_CONFIRM_ENABLED, true)
+    fun setSensitiveConfirmEnabled(enabled: Boolean) = putBoolean(KEY_SENSITIVE_CONFIRM_ENABLED, enabled)
+
+    /** Auto-allow LOW risk tools without dialog (still asks for HIGH/CRITICAL). */
+    fun isSensitiveAutoAllowLowRisk(): Boolean = getBoolean(KEY_SENSITIVE_AUTO_ALLOW_LOW, true)
+    fun setSensitiveAutoAllowLowRisk(enabled: Boolean) = putBoolean(KEY_SENSITIVE_AUTO_ALLOW_LOW, enabled)
+
     // ==================== Global Prompt (#45) ====================
     // User-defined persistent instructions prepended to every system prompt.
     // Empty string = disabled. No separate enable toggle by design (less to misconfigure).

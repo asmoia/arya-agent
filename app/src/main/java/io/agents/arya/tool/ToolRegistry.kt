@@ -92,6 +92,13 @@ object ToolRegistry {
     fun executeTool(name: String, params: Map<String, Any>): ToolResult {
         val tool = tools[name] ?: return ToolResult.error("Unknown tool: $name")
         return try {
+            // Safety gate: ask the user before high-risk phone actions.
+            // Applies to both HermesAgentService and DefaultAgentService paths.
+            val deny = io.agents.arya.agent.hermes.safety.SensitiveActionGate.awaitApproval(name, params)
+            if (deny != null) {
+                io.agents.arya.utils.XLog.w("ToolRegistry", "Sensitive action blocked: $name — $deny")
+                return ToolResult.error(deny)
+            }
             tool.executeWithWaitAfter(params)
         } catch (e: Exception) {
             io.agents.arya.utils.XLog.e("ToolRegistry", "Tool '$name' execution failed with params=$params", e)

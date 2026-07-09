@@ -8,6 +8,7 @@
 |---|---|
 | 🇮🇷 شخصیت فارسی «آریا» | System prompt فارسی-انگلیسی دو‌زبانه (Hermes identity) |
 | 🧠 **هستهٔ هرمس توکار** | `HermesAgentService` — حافظه، مهارت، session، بدون Termux |
+| 🛡️ **تأیید کارهای حساس** | قبل از send_message / make_call / … از کاربر می‌پرسد |
 | 📅 تقویم شمسی | ابزار `shamsi_calendar` — تاریخ شمسی + تبدیل |
 | ⚙️ تنظیمات EMUI | ابزار `emui_settings` — کنترل مخصوص هواوی |
 | 🔤 رابط فارسی | فایل `values-fa/strings.xml` کامل |
