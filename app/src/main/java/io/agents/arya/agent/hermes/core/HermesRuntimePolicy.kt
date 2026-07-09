@@ -96,17 +96,17 @@ object HermesRuntimePolicy {
         // HARD CAPS for local E4B — never show 1/10 style bloat.
         // Instant = 3 rounds max. Thinking = 5. High = 7.
         val baseMax = when (resolved) {
-            HermesThinkingMode.INSTANT -> 3
-            HermesThinkingMode.THINKING -> 5
-            HermesThinkingMode.HIGH -> 7
+            HermesThinkingMode.INSTANT -> 4
+            HermesThinkingMode.THINKING -> 6
+            HermesThinkingMode.HIGH -> 8
             HermesThinkingMode.ADAPTIVE -> 5
         }
         val maxIter = if (providerIsLocal) {
             when (resolved) {
-                HermesThinkingMode.INSTANT -> if (low || avail < 800) 3 else 3
-                HermesThinkingMode.THINKING -> if (low || avail < 900) 4 else 5
-                HermesThinkingMode.HIGH -> if (low || avail < 900) 5 else 7
-                HermesThinkingMode.ADAPTIVE -> if (low || avail < 900) 3 else 5
+                HermesThinkingMode.INSTANT -> 4
+                HermesThinkingMode.THINKING -> if (low || avail < 900) 5 else 6
+                HermesThinkingMode.HIGH -> if (low || avail < 900) 6 else 8
+                HermesThinkingMode.ADAPTIVE -> if (low || avail < 1000) 4 else 5
             }
         } else {
             when (resolved) {

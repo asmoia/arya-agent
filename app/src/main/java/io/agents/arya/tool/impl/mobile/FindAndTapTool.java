@@ -49,7 +49,7 @@ public class FindAndTapTool extends BaseTool {
         return Arrays.asList(
                 new ToolParameter("text", "string", "The text to find and tap", true),
                 new ToolParameter("direction", "string", "Scroll direction: 'up' or 'down' (default 'down')", false),
-                new ToolParameter("max_scrolls", "integer", "Max scrolls to attempt (default 10)", false)
+                new ToolParameter("max_scrolls", "integer", "Max scrolls to attempt (default 2)", false)
         );
     }
 
@@ -62,7 +62,7 @@ public class FindAndTapTool extends BaseTool {
 
         String text = requireString(params, "text");
         String direction = optionalString(params, "direction", "down");
-        int maxScrolls = optionalInt(params, "max_scrolls", 10);
+        int maxScrolls = optionalInt(params, "max_scrolls", 2);
         maxScrolls = Math.min(Math.max(maxScrolls, 1), 20);
 
         // First try current screen
@@ -86,7 +86,7 @@ public class FindAndTapTool extends BaseTool {
 
         for (int i = 0; i < maxScrolls; i++) {
             service.performSwipe(centerX, scrollStartY, centerX, scrollEndY, 400);
-            try { Thread.sleep(500); } catch (InterruptedException e) {
+            try { Thread.sleep(250); } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return ToolResult.error("Interrupted");
             }

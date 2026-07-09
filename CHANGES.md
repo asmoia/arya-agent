@@ -2,6 +2,13 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.3.4
+
+- **Remove bootstrap scroll spam** (find_and_tap max_scrolls gone from bootstrap)
+- find_and_tap / scroll_to_find defaults: 2–3 scrolls not 10
+- After open: next-step hints without waiting on useless scrolls
+- Status: «ادامه اقدام» after tools already ran (not only «فکر مدل»)
+
 ## v0.3.3 (workspace — ship when ready)
 
 - **HermesDirectOpen**: open apps via PackageManager (no 20s Accessibility wait)

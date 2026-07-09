@@ -56,7 +56,7 @@ public class ScrollToFindTool extends BaseTool {
                 new ToolParameter("direction", "string",
                         "Scroll direction: 'up' or 'down' (default 'down'). 'down' means content moves up to reveal lower content.", false),
                 new ToolParameter("max_scrolls", "integer",
-                        "Maximum number of scrolls to attempt (default 10, max 20)", false)
+                        "Maximum number of scrolls to attempt (default 3, max 10)", false)
         );
     }
 
@@ -69,8 +69,8 @@ public class ScrollToFindTool extends BaseTool {
 
         String text = requireString(params, "text");
         String direction = optionalString(params, "direction", "down");
-        int maxScrolls = optionalInt(params, "max_scrolls", 10);
-        maxScrolls = Math.min(Math.max(maxScrolls, 1), 20);
+        int maxScrolls = optionalInt(params, "max_scrolls", 3);
+        maxScrolls = Math.min(Math.max(maxScrolls, 1), 10);
 
         // Get screen size
         int[] screenSize = getScreenSize();

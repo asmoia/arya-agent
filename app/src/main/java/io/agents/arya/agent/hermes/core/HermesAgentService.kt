@@ -283,10 +283,20 @@ class HermesAgentService : AgentService {
             messages.add(UserMessage.from("[Bootstrap] tool=${step.tool} → $summary"))
         }
         if (earlyBootResults.isNotEmpty()) {
+            val bootScreen = earlyBootResults.lastOrNull { it.first.tool == "get_screen_info" && it.second.isSuccess }?.second?.data
+            val nextHint = bootstrapNextHint(rawUserRequest, bootScreen)
             messages.add(
                 UserMessage.from(
-                    "[System] Bootstrap already ran open_app + screen read. Continue with tools toward the goal. " +
-                        "Do NOT reopen same app unless needed. Goal: ${rawUserRequest.take(140)}"
+                    buildString {
+                        appendLine("[System] App already opened + screen read. Do NOT open_app again.")
+                        appendLine("Call ONE tool now toward the goal (find_and_tap/input_text/swipe/get_screen_info).")
+                        appendLine("Prefer find_and_tap with max_scrolls=1 or 2 only when needed.")
+                        if (nextHint.isNotBlank()) {
+                            appendLine("Suggested next:")
+                            appendLine(nextHint)
+                        }
+                        append("Goal: ${rawUserRequest.take(140)}")
+                    }
                 )
             )
         }
@@ -324,8 +334,9 @@ class HermesAgentService : AgentService {
         while (iterations < maxIterations && !cancelled.get()) {
             iterations++
             callback.onLoopStart(iterations)
-            emitStatus(callback, policy, iterations, "نوبت $iterations/$maxIterations · فکر مدل… · ${HermesAppKeeper.memoryHintFa()}")
-            HermesAppKeeper.onTaskProgress("فکر $iterations/$maxIterations")
+            val phaseLabel = if (usedToolsThisTask.isEmpty()) "فکر مدل…" else "ادامه اقدام…"
+            emitStatus(callback, policy, iterations, "نوبت $iterations/$maxIterations · $phaseLabel · ${HermesAppKeeper.memoryHintFa()}")
+            HermesAppKeeper.onTaskProgress("$phaseLabel $iterations/$maxIterations")
             if (HermesAppKeeper.isUnderMemoryPressure()) {
                 XLog.w(TAG, "memory pressure mid-task — compress harder")
                 HermesContextCompressor.compress(messages)
@@ -702,6 +713,40 @@ class HermesAgentService : AgentService {
             }
         }
         throw lastError ?: RuntimeException("LLM failed")
+    }
+
+
+    /** Lightweight next-step hints from goal + last screen text (no LLM). */
+    private fun bootstrapNextHint(goal: String, screen: String?): String {
+        val g = goal.lowercase()
+        val fa = goal
+        val s = screen?.take(2500).orEmpty()
+        val sl = s.lowercase()
+        return buildString {
+            when {
+                fa.contains("سیو") || g.contains("saved") || fa.contains("ذخیره") -> {
+                    appendLine("- find_and_tap text="Saved Messages" max_scrolls=1")
+                    appendLine("- or find_and_tap text="پیام‌های ذخیره‌شده" max_scrolls=1")
+                    appendLine("- or find_and_tap search icon / Search then input_text")
+                    if (sl.contains("saved") || s.contains("ذخیره")) {
+                        appendLine("- Label may already be on screen — tap it first without scrolling")
+                    }
+                }
+                g.contains("chrome") || fa.contains("کروم") || fa.contains("مرورگر") || g.contains("search") || fa.contains("سرچ") -> {
+                    appendLine("- find_and_tap URL/search bar (Search or جستجو) max_scrolls=1")
+                    appendLine("- input_text the query, system_key enter")
+                }
+                g.contains("whatsapp") || fa.contains("واتس") -> {
+                    appendLine("- find_and_tap Search / جستجو max_scrolls=1 then type contact")
+                }
+                else -> {
+                    appendLine("- get_screen_info if unsure, then find_and_tap visible target max_scrolls=1")
+                }
+            }
+            if (fa.contains("پخش") || fa.contains("پلی") || g.contains("play") || fa.contains("آهنگ") || fa.contains("ویس")) {
+                appendLine("- After opening the right chat/list: tap a play/voice/audio control on screen")
+            }
+        }.trim()
     }
 
     private fun looksLikeTask(text: String): Boolean {

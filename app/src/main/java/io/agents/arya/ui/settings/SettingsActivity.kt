@@ -259,9 +259,9 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
     
     private fun thinkingModeLabel(mode: HermesThinkingMode): String = when (mode) {
         HermesThinkingMode.ADAPTIVE -> "Adaptive"
-        HermesThinkingMode.INSTANT -> "Instant · ۳ دور"
-        HermesThinkingMode.THINKING -> "Thinking · ۵ دور"
-        HermesThinkingMode.HIGH -> "High · ۷ دور"
+        HermesThinkingMode.INSTANT -> "Instant · ۴ دور"
+        HermesThinkingMode.THINKING -> "Thinking · ۶ دور"
+        HermesThinkingMode.HIGH -> "High · ۸ دور"
     }
 
     private fun cycleThinkingMode() {
@@ -278,9 +278,9 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         thinkingModeItem?.setTrailingText(thinkingModeLabel(next))
         val detail = when (next) {
             HermesThinkingMode.ADAPTIVE -> "خودکار بر اساس RAM و سختی تسک"
-            HermesThinkingMode.INSTANT -> "حداکثر سرعت · حداکثر ۳ دور"
-            HermesThinkingMode.THINKING -> "متعادل · حداکثر ۵ دور"
-            HermesThinkingMode.HIGH -> "دقیق‌تر · حداکثر ۷ دور"
+            HermesThinkingMode.INSTANT -> "حداکثر سرعت · حداکثر ۴ دور"
+            HermesThinkingMode.THINKING -> "متعادل · حداکثر ۶ دور"
+            HermesThinkingMode.HIGH -> "دقیق‌تر · حداکثر ۸ دور"
         }
         Toast.makeText(this, "حالت Task: " + thinkingModeLabel(next) + " — " + detail, Toast.LENGTH_LONG).show()
     }
