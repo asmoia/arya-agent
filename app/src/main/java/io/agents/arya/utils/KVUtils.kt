@@ -397,7 +397,7 @@ object KVUtils {
     private const val KEY_HERMES_THINKING_MODE = "KEY_HERMES_THINKING_MODE"
 
     /** INSTANT | THINKING | HIGH | ADAPTIVE (default). */
-    fun getHermesThinkingMode(): String = getString(KEY_HERMES_THINKING_MODE, "ADAPTIVE")
+    fun getHermesThinkingMode(): String = getString(KEY_HERMES_THINKING_MODE, "INSTANT")
     fun setHermesThinkingMode(mode: String) = putString(KEY_HERMES_THINKING_MODE, mode)
 
     // ==================== Global Prompt (#45) ====================

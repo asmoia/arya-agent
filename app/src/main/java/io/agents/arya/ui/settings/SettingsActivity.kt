@@ -66,6 +66,7 @@ class SettingsActivity : BaseActivity() {
     private var permStorage: io.agents.arya.widget.MenuItem? = null
     private var externalAutomationItem: io.agents.arya.widget.MenuItem? = null
     private var hermesCoreItem: io.agents.arya.widget.MenuItem? = null
+    private var thinkingModeItem: io.agents.arya.widget.MenuItem? = null
     private var sensitiveConfirmItem: io.agents.arya.widget.MenuItem? = null
     private var globalPromptItem: io.agents.arya.widget.MenuItem? = null
     private var customModelUrlItem: io.agents.arya.widget.MenuItem? = null
@@ -256,25 +257,33 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
 
 
     
+    private fun thinkingModeLabel(mode: HermesThinkingMode): String = when (mode) {
+        HermesThinkingMode.ADAPTIVE -> "Adaptive"
+        HermesThinkingMode.INSTANT -> "Instant · ۳ دور"
+        HermesThinkingMode.THINKING -> "Thinking · ۵ دور"
+        HermesThinkingMode.HIGH -> "High · ۷ دور"
+    }
+
     private fun cycleThinkingMode() {
         val order = listOf(
-            HermesThinkingMode.ADAPTIVE,
             HermesThinkingMode.INSTANT,
+            HermesThinkingMode.ADAPTIVE,
             HermesThinkingMode.THINKING,
             HermesThinkingMode.HIGH
         )
         val cur = HermesRuntimePolicy.currentMode()
-        val next = order[(order.indexOf(cur) + 1) % order.size]
+        val idx = order.indexOf(cur).let { if (it < 0) 0 else it }
+        val next = order[(idx + 1) % order.size]
         HermesRuntimePolicy.setMode(next)
-        val label = when (next) {
-            HermesThinkingMode.ADAPTIVE -> "Adaptive (خودکار · عمل‌گرا)"
-            HermesThinkingMode.INSTANT -> "Instant (۳–۴ دور · حداکثر سرعت)"
-            HermesThinkingMode.THINKING -> "Thinking (متعادل)"
-            HermesThinkingMode.HIGH -> "High (دقیق‌تر · کندتر)"
+        thinkingModeItem?.setTrailingText(thinkingModeLabel(next))
+        val detail = when (next) {
+            HermesThinkingMode.ADAPTIVE -> "خودکار بر اساس RAM و سختی تسک"
+            HermesThinkingMode.INSTANT -> "حداکثر سرعت · حداکثر ۳ دور"
+            HermesThinkingMode.THINKING -> "متعادل · حداکثر ۵ دور"
+            HermesThinkingMode.HIGH -> "دقیق‌تر · حداکثر ۷ دور"
         }
-        Toast.makeText(this, "حالت Task: $label", Toast.LENGTH_SHORT).show()
-        // refresh trailing text by recreating is heavy; toast is enough
-        recreate()
+        Toast.makeText(this, "حالت Task: ${thinkingModeLabel(next)}
+$detail", Toast.LENGTH_LONG).show()
     }
 
     private fun exportHermesBackup() {
@@ -635,13 +644,13 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
             setTrailingText(if (KVUtils.isSensitiveConfirmEnabled()) "فعال ✅" else "خاموش ⚠️")
         }
 
-        toolsGroup.addMenuItem(
+        thinkingModeItem = toolsGroup.addMenuItem(
             leadingIcon = android.R.drawable.ic_menu_sort_by_size,
-            title = "حالت فکر Task (Adaptive)",
+            title = "حالت فکر Task",
             onClick = { cycleThinkingMode() },
             showDivider = true
         ).apply {
-            setTrailingText(HermesRuntimePolicy.currentMode().name)
+            setTrailingText(thinkingModeLabel(HermesRuntimePolicy.currentMode()))
         }
 
         toolsGroup.addMenuItem(

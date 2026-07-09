@@ -247,6 +247,56 @@ class HermesAgentService : AgentService {
         HermesAppKeeper.onTaskStart("شروع task…")
         emitStatus(callback, policy, 0, "شروع · ${policy.resolvedMode.name} · ${HermesAppKeeper.memoryHintFa()}")
 
+        // BOOTSTRAP: do first open_app + get_screen_info WITHOUT waiting for slow E4B first token.
+        // This fixes "stuck on 1/N for minutes with zero UI action".
+        if (!isPureChatFastPath(rawUserRequest) && looksLikeTask(rawUserRequest)) {
+            val boot = HermesBootstrapActions.plan(rawUserRequest)
+            if (boot != null) {
+                XLog.i(TAG, "bootstrap plan=${boot.reason} steps=${boot.steps.size}")
+                emitStatus(callback, policy, 0, "شروع سریع · ${boot.reason}")
+                for ((idx, step) in boot.steps.withIndex()) {
+                    if (cancelled.get()) break
+                    emitStatus(callback, policy, idx + 1, step.labelFa)
+                    callback.onToolCall(idx + 1, step.tool, step.tool, com.google.gson.Gson().toJson(step.params))
+                    val result = try {
+                        HermesBootstrapActions.execute(step)
+                    } catch (e: Exception) {
+                        ToolResult.error(e.message ?: "bootstrap failed")
+                    }
+                    usedToolsThisTask += step.tool
+                    callback.onToolResult(idx + 1, step.tool, step.tool, step.params.toString(), result)
+                    // Feed transcript so the model continues from real state (no re-open guess).
+                    val summary = if (result.isSuccess) {
+                        (result.data ?: "ok").take(1200)
+                    } else {
+                        "ERROR: ${result.error}"
+                    }
+                    messages.add(
+                        UserMessage.from(
+                            "[Bootstrap ${idx + 1}/${boot.steps.size}] tool=${step.tool} → $summary"
+                        )
+                    )
+                    if (!result.isSuccess) {
+                        XLog.w(TAG, "bootstrap step failed: ${step.tool} ${result.error}")
+                        break
+                    }
+                    // Brief settle after open_app only
+                    if (step.tool == "open_app") {
+                        try { Thread.sleep(screenSettleMs + 200L) } catch (_: Exception) {}
+                    }
+                }
+                messages.add(
+                    UserMessage.from(
+                        "[System] Bootstrap finished. Continue toward goal with tools only " +
+                            "(find_and_tap / input_text / swipe / get_screen_info). " +
+                            "Do NOT re-open the same app unless needed. Goal: ${rawUserRequest.take(140)}"
+                    )
+                )
+                emitStatus(callback, policy, boot.steps.size, "bootstrap تمام · نوبت مدل")
+            }
+        }
+
+
         // Align local sampling with adaptive policy (action-first = lower temp).
         if (config.provider == LlmProvider.LOCAL && kotlin.math.abs(config.temperature - policy.temperature) > 0.01) {
             try {
@@ -262,8 +312,8 @@ class HermesAgentService : AgentService {
         while (iterations < maxIterations && !cancelled.get()) {
             iterations++
             callback.onLoopStart(iterations)
-            emitStatus(callback, policy, iterations, "نوبت $iterations/${maxIterations} · ${HermesAppKeeper.memoryHintFa()}")
-            HermesAppKeeper.onTaskProgress("نوبت $iterations/$maxIterations")
+            emitStatus(callback, policy, iterations, "نوبت $iterations/$maxIterations · فکر مدل… · ${HermesAppKeeper.memoryHintFa()}")
+            HermesAppKeeper.onTaskProgress("فکر $iterations/$maxIterations")
             if (HermesAppKeeper.isUnderMemoryPressure()) {
                 XLog.w(TAG, "memory pressure mid-task — compress harder")
                 HermesContextCompressor.compress(messages)

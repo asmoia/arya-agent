@@ -82,43 +82,41 @@ object HermesRuntimePolicy {
 
         val resolved = when (stored) {
             HermesThinkingMode.ADAPTIVE -> when {
-                low || avail < 900 -> HermesThinkingMode.INSTANT
-                complexity >= 3 -> if (avail > 1800) HermesThinkingMode.HIGH else HermesThinkingMode.THINKING
-                complexity <= 1 -> HermesThinkingMode.INSTANT
-                else -> HermesThinkingMode.THINKING
+                // Prefer Instant for speed; only HIGH when RAM is healthy AND task is hard.
+                low || avail < 1000 -> HermesThinkingMode.INSTANT
+                complexity >= 3 && avail > 2000 -> HermesThinkingMode.HIGH
+                complexity >= 2 -> HermesThinkingMode.THINKING
+                else -> HermesThinkingMode.INSTANT
             }
             else -> stored
         }
 
         // Local E4B: keep caps tight so the phone stays usable.
         // Instant = 3–4 rounds (action-first, minimal dithering).
+        // HARD CAPS for local E4B — never show 1/10 style bloat.
+        // Instant = 3 rounds max. Thinking = 5. High = 7.
         val baseMax = when (resolved) {
-            HermesThinkingMode.INSTANT -> 4
-            HermesThinkingMode.THINKING -> 7
-            HermesThinkingMode.HIGH -> 10
-            HermesThinkingMode.ADAPTIVE -> 7
+            HermesThinkingMode.INSTANT -> 3
+            HermesThinkingMode.THINKING -> 5
+            HermesThinkingMode.HIGH -> 7
+            HermesThinkingMode.ADAPTIVE -> 5
         }
         val maxIter = if (providerIsLocal) {
             when (resolved) {
-                HermesThinkingMode.INSTANT -> {
-                    // Always 3–4 for Instant; lean 3 under memory pressure.
-                    if (low || avail < 900) 3 else 4
-                }
-                else -> when {
-                    low || avail < 700 -> minOf(baseMax, 4)
-                    avail < 1100 -> minOf(baseMax, 6)
-                    else -> baseMax
-                }
+                HermesThinkingMode.INSTANT -> if (low || avail < 800) 3 else 3
+                HermesThinkingMode.THINKING -> if (low || avail < 900) 4 else 5
+                HermesThinkingMode.HIGH -> if (low || avail < 900) 5 else 7
+                HermesThinkingMode.ADAPTIVE -> if (low || avail < 900) 3 else 5
             }
         } else {
             when (resolved) {
-                HermesThinkingMode.INSTANT -> 5
-                else -> baseMax + 4
+                HermesThinkingMode.INSTANT -> 4
+                else -> baseMax + 2
             }
         }
 
         val settle = when (resolved) {
-            HermesThinkingMode.INSTANT -> 160L
+            HermesThinkingMode.INSTANT -> 120L
             HermesThinkingMode.THINKING -> 280L
             HermesThinkingMode.HIGH -> 350L
             HermesThinkingMode.ADAPTIVE -> 280L

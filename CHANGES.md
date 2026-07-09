@@ -2,6 +2,14 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.3.1
+
+- **Emergency:** Instant = 3 rounds (not 10); default mode INSTANT
+- Bootstrap without waiting for first E4B token: open_app + get_screen_info for Telegram/Chrome/WhatsApp/YouTube
+- Status shows «فکر مدل…» while blocked on LLM
+- Settings thinking mode cycles without recreate (visible Instant/Adaptive/Thinking/High)
+- AppViewModel agent ceiling 8 (never 60)
+
 ## v0.3.0
 
 - Adaptive runtime: Instant (3–4 rounds) / Thinking / High / Adaptive
