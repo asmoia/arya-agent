@@ -56,7 +56,7 @@ class HermesAgentService : AgentService {
         private const val TAG = "HermesCore"
         private val GSON = Gson()
         private const val LOOP_DETECT_WINDOW = 6
-        private const val SCREEN_SETTLE_MS = 450L
+        private const val SCREEN_SETTLE_MS = 280L
         private val ACTION_TOOLS = setOf(
             "tap", "tap_node", "long_press", "swipe", "scroll_to_find", "find_and_tap",
             "input_text", "system_key", "open_app", "send_message", "make_call",
@@ -165,7 +165,9 @@ class HermesAgentService : AgentService {
             append(directDeviceDataGuard.buildPromptSection())
         }
 
-        val mcpSection = try {
+        val mcpSection = if (config.provider == LlmProvider.LOCAL) {
+            ""
+        } else try {
             io.agents.arya.agent.hermes.mcp.HermesMcpClient.buildPromptSection()
         } catch (_: Exception) { "" }
         // Local models: shorter base prompt = faster TTFT and fewer refusals.
@@ -177,9 +179,10 @@ class HermesAgentService : AgentService {
         val systemPrompt = HermesPromptBuilder.build(
             basePrompt = baseIdentity,
             userTask = rawUserRequest,
-            includeMemory = config.provider != LlmProvider.LOCAL, // skip heavy memory on local task for speed
+            includeMemory = true,
             includeSkills = true,
-            extraSections = extraGuards + mcpSection
+            extraSections = extraGuards + mcpSection,
+            compactTools = config.provider == LlmProvider.LOCAL,
         )
 
         val messages = mutableListOf<ChatMessage>()
@@ -219,7 +222,7 @@ class HermesAgentService : AgentService {
         var iterations = 0
         var totalTokens = 0
         var actualModelName: String? = null
-        val maxIterations = if (config.provider == LlmProvider.LOCAL) minOf(config.maxIterations, 12) else config.maxIterations
+        val maxIterations = if (config.provider == LlmProvider.LOCAL) minOf(config.maxIterations, 8) else config.maxIterations
         val loopHistory = LinkedList<RoundFingerprint>()
         var lastScreenHash = 0
         var previousScreenTexts: Set<String> = emptySet()
@@ -343,6 +346,17 @@ class HermesAgentService : AgentService {
                     }
                     if (emailComposeGuard.shouldBlockTextOnlyCompletion()) {
                         messages.add(UserMessage.from(emailComposeGuard.buildCompletionCorrection()))
+                        continue
+                    }
+                    // Phone tasks must not end as a pure essay without tools.
+                    if (looksLikeTask(rawUserRequest) && usedToolsThisTask.isEmpty() && iterations <= 2) {
+                        XLog.w(TAG, "text-only on phone task — forcing tool use")
+                        messages.add(
+                            UserMessage.from(
+                                "[System] You MUST use phone tools now (open_app / get_screen_info / find_and_tap). " +
+                                    "Do not claim you lack access. Call a tool in this turn."
+                            )
+                        )
                         continue
                     }
                     finalAnswer = responseText
@@ -557,7 +571,7 @@ class HermesAgentService : AgentService {
             } catch (e: Exception) {
                 lastError = e
                 XLog.w(TAG, "LLM attempt ${attempt + 1} failed: ${e.message}")
-                Thread.sleep(400L * (attempt + 1))
+                Thread.sleep(250L * (attempt + 1))
             }
         }
         throw lastError ?: RuntimeException("LLM failed")

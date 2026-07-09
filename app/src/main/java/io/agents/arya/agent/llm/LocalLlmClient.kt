@@ -120,7 +120,7 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
             tools = nativeTools,
             samplerConfig = SamplerConfig(
                 // Slightly tighter sampling = faster local decode on-device
-                topK = 40,
+                topK = 32,
                 topP = 0.9,
                 temperature = config.temperature.coerceAtMost(0.3)
             ),

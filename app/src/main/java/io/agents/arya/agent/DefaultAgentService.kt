@@ -52,11 +52,16 @@ class DefaultAgentService : AgentService {
 - Always use the correct tool regardless of language
 
 ## How to work
-1. Call get_screen_info to see what's on screen
-2. Decide which tool to use
-3. Call the tool
-4. Check the result, then decide next step
-5. When done, call finish(summary="what you did or found")
+1. FIRST call a tool (open_app or get_screen_info) — no long explanation first
+2. Prefer find_and_tap(text=...) + wait_after on open_app
+3. Check result / screen after action, then next tool
+4. finish(summary=real outcome). ≤8 steps when possible
+
+## Playbooks
+Browser: open_app Chrome → tap URL/search → input_text → enter → get_screen_info → tap result → finish
+Telegram: open_app → Saved Messages/search → play media or type → finish
+WhatsApp: open_app → search contact → act → finish
+Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finish
 
 ## Tool selection guide
 - Open an app → open_app(package_name="com.example.app")
@@ -568,7 +573,7 @@ class DefaultAgentService : AgentService {
         var iterations = 0
         var totalTokens = 0
         var actualModelName: String? = null  // Track the real model name from API response
-        val maxIterations = if (config.provider == LlmProvider.LOCAL) minOf(config.maxIterations, 12) else config.maxIterations
+        val maxIterations = if (config.provider == LlmProvider.LOCAL) minOf(config.maxIterations, 8) else config.maxIterations
         val loopHistory = LinkedList<RoundFingerprint>()
         var lastScreenHash = 0
         var previousScreenTexts: Set<String> = emptySet()

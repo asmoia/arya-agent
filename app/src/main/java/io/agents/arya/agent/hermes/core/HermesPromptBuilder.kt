@@ -69,22 +69,19 @@ You can:
 - Tool names and JSON arguments stay in English as defined by schemas.
 """.trimIndent()
 
-    /** Compact identity for on-device models (speed + fewer false refusals). */
+    /** Compact identity for on-device models (speed + force tool use). */
     val ARYA_LOCAL_TASK_IDENTITY: String = """
 ## ROLE
-You are آریا on Android. The user gave a PHONE TASK. Complete it with tools.
+آریا — Android phone agent. User gave a TASK. You operate the UI with tools.
 
-## Rules
-1. ALWAYS use tools for phone work. Never say you lack access to Telegram, files, or music.
-2. Loop: get_screen_info → act (open_app/tap/swipe/input_text/find_and_tap) → verify → finish(summary=...).
-3. One clear action path. After 3 failures, finish with what blocked you.
-4. Persian user → short Persian summaries in finish().
+## ACT
+1. First response for phone work MUST be a tool call (open_app or get_screen_info).
+2. Loop: observe → act → verify → finish(summary=real outcome).
+3. Prefer find_and_tap(text) + wait_after on open_app. ≤10 rounds.
+4. User Persian → finish() summary in short Persian.
 
-## Telegram Saved Messages / play song or voice
-open_app Telegram → get_screen_info → open Saved Messages (search "Saved Messages"/"پیام‌های ذخیره‌شده") → find audio/voice → tap play → finish.
-
-## Forbidden
-"I cannot access…", "دسترسی ندارم", "نمی‌توانم مستقیماً" when tools exist.
+## FORBIDDEN
+Saying you cannot access Telegram, browser, files, music, or the phone. Tools exist — use them.
 """.trimIndent()
 
     fun build(
@@ -92,7 +89,9 @@ open_app Telegram → get_screen_info → open Saved Messages (search "Saved Mes
         userTask: String,
         includeMemory: Boolean = true,
         includeSkills: Boolean = true,
-        extraSections: String = ""
+        extraSections: String = "",
+        /** true = dense local playbook; false = full cloud card */
+        compactTools: Boolean = false,
     ): String {
         val memory = HermesMemoryStore.getInstance()
         val skills = HermesSkillStore.getInstance()
@@ -101,14 +100,27 @@ open_app Telegram → get_screen_info → open Saved Messages (search "Saved Mes
             appendLine(basePrompt?.takeIf { it.isNotBlank() } ?: ARYA_HERMES_IDENTITY)
             appendLine()
             appendLine(deviceContext())
+            // Tool playbook: teaches HOW without repeating full JSON schemas (those come from tool specs).
+            appendLine()
+            appendLine(if (compactTools) HermesToolPlaybook.LOCAL else HermesToolPlaybook.FULL)
+            val hint = HermesToolPlaybook.hintForTask(userTask)
+            if (hint.isNotBlank()) {
+                appendLine()
+                append(hint)
+            }
             if (includeMemory) {
                 appendLine()
-                appendLine(memory.buildPromptBlock())
+                appendLine(memory.buildPromptBlock(maxChars = if (compactTools) 900 else 2500))
             }
             if (includeSkills) {
-                appendLine()
-                appendLine(skills.buildPromptBlock())
-                append(skills.buildMatchedSkillSection(userTask))
+                // Local: only matched skill body (skip long catalog) for speed
+                if (compactTools) {
+                    append(skills.buildMatchedSkillSection(userTask))
+                } else {
+                    appendLine()
+                    appendLine(skills.buildPromptBlock())
+                    append(skills.buildMatchedSkillSection(userTask))
+                }
             }
             if (extraSections.isNotBlank()) {
                 appendLine()

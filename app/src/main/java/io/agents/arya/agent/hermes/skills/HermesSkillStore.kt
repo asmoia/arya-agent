@@ -109,6 +109,33 @@ class HermesSkillStore private constructor() {
                 If Telegram package differs, get_installed_apps and search "telegram".
             """.trimIndent()
         )
+        writeSkillUnlocked(
+            id = "browser-web",
+            name = "مرورگر / جستجوی وب",
+            triggers = listOf(
+                "کروم", "chrome", "مرورگر", "browser", "جستجو کن", "سرچ",
+                "google", "اینترنت", "سایت", "http"
+            ),
+            body = """
+                # Browser
+
+                1. open_app Chrome (or browser from get_installed_apps)
+                2. get_screen_info — find URL/search bar
+                3. find_and_tap bar → input_text(query or URL) → system_key enter / tap Go
+                4. wait_after load → get_screen_info → tap relevant result
+                5. finish with what you opened / answer from screen text
+                Captcha/login → finish explaining user must continue.
+            """.trimIndent()
+        )
+        writeSkillUnlocked(
+            id = "whatsapp-chat",
+            name = "واتساپ",
+            triggers = listOf("whatsapp", "واتساپ", "واتس"),
+            body = """
+                # WhatsApp
+                open_app WhatsApp → search contact → open chat → input_text / media → finish
+            """.trimIndent()
+        )
         XLog.i(TAG, "Seeded default Hermes skills")
     }
 

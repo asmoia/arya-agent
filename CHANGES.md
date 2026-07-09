@@ -2,6 +2,13 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.2.5
+
+- Arena-style compact tool playbook (browser / Telegram / WhatsApp / any UI)
+- Task-specific hints only when relevant (saves tokens)
+- Local: dense playbook + force first tool if model essays without tools
+- Speed: max 8 local rounds, faster sampler, shorter screen settle
+
 ## v0.2.4
 
 - ✕ Cancel always visible while task/generation runs (not only after first tool)
