@@ -36,6 +36,7 @@ class SkillExecutor {
         XLog.i(TAG, "Executing skill: ${skill.id} with params: $params")
         val totalSteps = skill.steps.size
         var stepsUsed = 0
+        var lastSuccessfulData: String? = null
 
         for ((index, step) in skill.steps.withIndex()) {
             stepsUsed = index + 1
@@ -55,6 +56,7 @@ class SkillExecutor {
 
                     if (result.isSuccess) {
                         XLog.d(TAG, "Step $stepNum OK: ${result.data?.take(100)}")
+                        lastSuccessfulData = result.data?.takeIf { it.isNotBlank() }
                         succeeded = true
                         break
                     } else {
@@ -92,7 +94,7 @@ class SkillExecutor {
         return SkillResult(
             success = true,
             stepsUsed = stepsUsed,
-            message = "Skill '${skill.name}' completed successfully in $stepsUsed steps."
+            message = lastSuccessfulData ?: "Skill '${skill.name}' completed successfully in $stepsUsed steps."
         )
     }
 

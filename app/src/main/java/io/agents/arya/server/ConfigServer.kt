@@ -21,7 +21,8 @@ import fi.iki.elonen.NanoHTTPD
  */
 class ConfigServer(
     private val context: Context,
-    port: Int = PORT
+    port: Int = PORT,
+    private val accessToken: String,
 ) : NanoHTTPD("127.0.0.1", port) {
 
     companion object {
@@ -34,9 +35,18 @@ class ConfigServer(
     private val gson = Gson()
 
     override fun serve(session: IHTTPSession): Response {
-        // CORS preflight request
+        // This server is a convenience UI, not a public local API. Loopback alone
+        // does not authenticate another app on the same phone, so every request
+        // needs the short-lived token displayed only in Arya's settings UI.
+        if (!isAuthorized(session)) {
+            return newFixedLengthResponse(
+                Response.Status.UNAUTHORIZED,
+                MIME_JSON,
+                """{"code":-1,"message":"unauthorized"}"""
+            )
+        }
         if (session.method == Method.OPTIONS) {
-            return corsResponse(newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, ""))
+            return newFixedLengthResponse(Response.Status.NO_CONTENT, MIME_PLAINTEXT, "")
         }
 
         val uri = session.uri
@@ -72,6 +82,16 @@ class ConfigServer(
         }
     }
 
+    private fun isAuthorized(session: IHTTPSession): Boolean {
+        val supplied = session.headers["x-arya-config-token"]
+            ?: session.parms["token"]
+            ?: return false
+        return java.security.MessageDigest.isEqual(
+            supplied.toByteArray(Charsets.UTF_8),
+            accessToken.toByteArray(Charsets.UTF_8)
+        )
+    }
+
     private fun serveHtml(): Response {
         val inputStream = context.assets.open("web/index.html")
         val html = inputStream.bufferedReader().use { it.readText() }
@@ -79,9 +99,12 @@ class ConfigServer(
     }
 
     private fun handleGetChannels(): Response {
+        // Never return usable credentials over an HTTP control surface. The web
+        // form treats masked values as "unchanged" on POST, so it can still edit
+        // configuration without turning a localhost/LAN helper into a key oracle.
         val data = JsonObject().apply {
-            addProperty("discordBotToken", KVUtils.getDiscordBotToken())
-            addProperty("telegramBotToken", KVUtils.getTelegramBotToken())
+            addProperty("discordBotToken", maskSecret(KVUtils.getDiscordBotToken()))
+            addProperty("telegramBotToken", maskSecret(KVUtils.getTelegramBotToken()))
         }
         val result = JsonObject().apply {
             addProperty("code", 0)
@@ -152,7 +175,7 @@ class ConfigServer(
     private fun handleGetLlm(): Response {
         val apiKey = KVUtils.getLlmApiKey()
         val data = JsonObject().apply {
-            addProperty("llmApiKey", apiKey)
+            addProperty("llmApiKey", maskSecret(apiKey))
             addProperty("llmBaseUrl", KVUtils.getLlmBaseUrl())
             addProperty("llmModelName", KVUtils.getLlmModelName())
         }
@@ -362,9 +385,9 @@ class ConfigServer(
     }
 
     private fun corsResponse(response: Response): Response {
-        response.addHeader("Access-Control-Allow-Origin", "*")
-        response.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        response.addHeader("Access-Control-Allow-Headers", "Content-Type")
+        // The configuration page is served by this exact origin, so CORS is not
+        // needed. In particular, never grant arbitrary web pages access to a
+        // local settings endpoint that can change model/channel credentials.
         return response
     }
 }

@@ -318,7 +318,11 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
 
     private fun chatWithRetry(messages: List<ChatMessage>, callback: AgentCallback, iteration: Int): LlmResponse {
         var lastException: Exception? = null
-        for (attempt in 0 until MAX_API_RETRIES) {
+        // A local LiteRT retry replays the same costly native generation. Keep
+        // network retries for cloud providers, but surface local failures rather
+        // than turning one failure into minutes of apparent thinking.
+        val attempts = if (config.provider == LlmProvider.LOCAL) 1 else MAX_API_RETRIES
+        for (attempt in 0 until attempts) {
             if (cancelled.get()) throw RuntimeException(ClawApplication.instance.getString(R.string.agent_task_cancelled))
             try {
                 return if (config.streaming) {
@@ -341,13 +345,17 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
                 if (msg.contains("401") || msg.contains("403") || msg.contains("insufficient")) {
                     throw e
                 }
-                val delay = (Math.pow(2.0, attempt.toDouble()) * 1000).toLong()
-                XLog.w(TAG, "LLM API call failed (attempt ${attempt + 1}/$MAX_API_RETRIES), retrying in ${delay}ms: $msg")
-                try {
-                    Thread.sleep(delay)
-                } catch (ie: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    throw e
+                if (attempt + 1 < attempts) {
+                    val delay = (Math.pow(2.0, attempt.toDouble()) * 1000).toLong()
+                    XLog.w(TAG, "LLM API call failed (attempt ${attempt + 1}/$attempts), retrying in ${delay}ms: $msg")
+                    try {
+                        Thread.sleep(delay)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw e
+                    }
+                } else {
+                    XLog.w(TAG, "LLM API call failed (attempt ${attempt + 1}/$attempts), not retrying: $msg")
                 }
             }
         }

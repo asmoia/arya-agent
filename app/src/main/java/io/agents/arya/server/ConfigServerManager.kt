@@ -28,6 +28,10 @@ object ConfigServerManager {
     @Volatile
     private var server: ConfigServer? = null
 
+    /** In-memory capability; regenerated every time the local server is stopped. */
+    @Volatile
+    private var accessToken: String? = null
+
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var appContext: Context? = null
 
@@ -53,9 +57,10 @@ object ConfigServerManager {
 
         if (isRunning()) return true
 
+        val token = accessToken ?: newAccessToken().also { accessToken = it }
         for (port in ConfigServer.PORT until ConfigServer.PORT + MAX_PORT_RETRY) {
             try {
-                val s = ConfigServer(ctx, port)
+                val s = ConfigServer(ctx, port, token)
                 s.start()
                 server = s
                 XLog.i(TAG, "ConfigServer started on port $port")
@@ -77,19 +82,21 @@ object ConfigServerManager {
             XLog.e(TAG, "Error stopping ConfigServer: ${e.message}")
         }
         server = null
+        accessToken = null
         XLog.i(TAG, "ConfigServer stopped")
     }
 
     fun isRunning(): Boolean = server?.isAlive == true
 
     /**
-     * Get the LAN access address, e.g. 192.168.1.100:9527
-     * Port is read from the running server instance
+     * Returns the actual bound loopback address plus the short-lived capability.
+     * Do not advertise a Wi-Fi address here: ConfigServer intentionally binds to
+     * localhost so credentials are never exposed to the LAN.
      */
     fun getAddress(): String? {
-        val ip = getWifiIpAddress(appContext ?: return null) ?: return null
         val port = server?.listeningPort ?: return null
-        return "$ip:$port"
+        val token = accessToken ?: return null
+        return "127.0.0.1:$port/?token=$token"
     }
 
     /**
@@ -168,9 +175,10 @@ object ConfigServerManager {
                 // IP may change after WiFi reconnect, restart the server
                 if (KVUtils.isConfigServerEnabled() && !isRunning()) {
                     val ctx = appContext ?: return
+                    val token = accessToken ?: newAccessToken().also { accessToken = it }
                     for (port in ConfigServer.PORT until ConfigServer.PORT + MAX_PORT_RETRY) {
                         try {
-                            val s = ConfigServer(ctx, port)
+                            val s = ConfigServer(ctx, port, token)
                             s.start()
                             server = s
                             XLog.i(TAG, "ConfigServer restarted on port $port")
@@ -186,6 +194,15 @@ object ConfigServerManager {
 
         cm.registerNetworkCallback(request, callback)
         networkCallback = callback
+    }
+
+    private fun newAccessToken(): String {
+        val bytes = ByteArray(32)
+        java.security.SecureRandom().nextBytes(bytes)
+        return android.util.Base64.encodeToString(
+            bytes,
+            android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+        )
     }
 
     private fun unregisterNetworkCallback() {

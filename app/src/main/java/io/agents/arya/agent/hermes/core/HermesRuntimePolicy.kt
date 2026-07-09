@@ -7,6 +7,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import io.agents.arya.ClawApplication
+import io.agents.arya.agent.TelegramSavedMediaMatcher
 import io.agents.arya.utils.KVUtils
 import io.agents.arya.utils.XLog
 import org.json.JSONObject
@@ -78,10 +79,16 @@ object HermesRuntimePolicy {
     fun resolve(userTask: String, providerIsLocal: Boolean): HermesRuntimeSnapshot {
         val stored = currentMode()
         val (avail, total, low) = memorySnapshot()
+        val knownFastFlow = TelegramSavedMediaMatcher.matches(userTask)
         val complexity = estimateComplexity(userTask)
 
-        val resolved = when (stored) {
-            HermesThinkingMode.ADAPTIVE -> when {
+        val resolved = when {
+            // If the deterministic shortcut already positioned Telegram but could
+            // not see a play control, the fallback must stay short. More model
+            // rounds will not reveal inaccessible media and used to cause several
+            // minutes of futile local inference.
+            knownFastFlow -> HermesThinkingMode.INSTANT
+            stored == HermesThinkingMode.ADAPTIVE -> when {
                 // Prefer Instant for speed; only HIGH when RAM is healthy AND task is hard.
                 low || avail < 1000 -> HermesThinkingMode.INSTANT
                 complexity >= 3 && avail > 2000 -> HermesThinkingMode.HIGH
@@ -101,15 +108,19 @@ object HermesRuntimePolicy {
             HermesThinkingMode.HIGH -> 8
             HermesThinkingMode.ADAPTIVE -> 5
         }
-        val maxIter = if (providerIsLocal) {
-            when (resolved) {
+        val maxIter = when {
+            // The deterministic Telegram tool already did the expensive navigation.
+            // Give a fallback model only two focused actions, never a 7-minute
+            // re-planning loop.
+            knownFastFlow && providerIsLocal -> 2
+            knownFastFlow -> 3
+            providerIsLocal -> when (resolved) {
                 HermesThinkingMode.INSTANT -> 4
                 HermesThinkingMode.THINKING -> if (low || avail < 900) 5 else 6
                 HermesThinkingMode.HIGH -> if (low || avail < 900) 6 else 8
                 HermesThinkingMode.ADAPTIVE -> if (low || avail < 1000) 4 else 5
             }
-        } else {
-            when (resolved) {
+            else -> when (resolved) {
                 HermesThinkingMode.INSTANT -> 4
                 else -> baseMax + 2
             }
@@ -139,6 +150,7 @@ object HermesRuntimePolicy {
         val notes = buildString {
             append("mode=${stored.name}→${resolved.name} complexity=$complexity ")
             append("mem=${avail}MB/${total}Mb low=$low")
+            if (knownFastFlow) append(" | known-fast-flow")
             if (low) append(" | low-RAM: tighter caps")
         }
 

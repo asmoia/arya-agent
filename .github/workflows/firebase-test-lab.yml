@@ -72,21 +72,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Refuse to run without GCP secrets
+      - name: Detect Firebase credentials
+        id: credentials
         run: |
           if [ -z "${{ secrets.GCP_PROJECT_ID }}" ] || [ -z "${{ secrets.GCP_SA_KEY_JSON }}" ]; then
-            echo "::error::Missing GCP_PROJECT_ID or GCP_SA_KEY_JSON repo secret. See docs/OEM_COVERAGE_TIERS.md T2 for setup."
-            exit 1
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Firebase Test Lab is not configured; skipping optional real-device smoke. See docs/OEM_COVERAGE_TIERS.md T2."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Firebase credentials present."
           fi
-          echo "Secrets present, proceeding."
 
       - name: Download APK artifact
+        if: steps.credentials.outputs.available == 'true'
         uses: actions/download-artifact@v4
         with:
           name: debug-apk-for-ftl
           path: apk
 
       - name: Locate APK
+        if: steps.credentials.outputs.available == 'true'
         id: apk
         run: |
           APK="$(find apk -type f -name '*.apk' | head -1)"
@@ -99,16 +104,19 @@ jobs:
           echo "Using APK: $APK ($(stat -c%s "$APK") bytes)"
 
       - name: Auth to Google Cloud
+        if: steps.credentials.outputs.available == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY_JSON }}
 
       - name: Set up gcloud CLI
+        if: steps.credentials.outputs.available == 'true'
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Run FTL smoke — 3-device matrix
+        if: steps.credentials.outputs.available == 'true'
         # Real device coverage:
         # - Pixel 7 / Tensor — Pixel-class regressions, GPU/LiteRT path
         # - Samsung Galaxy S22 / Snapdragon — Samsung One UI, Knox

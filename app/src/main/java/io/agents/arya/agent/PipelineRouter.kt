@@ -53,6 +53,17 @@ class PipelineRouter(private val context: Context) {
             return Route.AgentLoop(task)
         }
 
+        // Tier 1.5-special: a narrow, deterministic Telegram Saved Messages media flow.
+        // It avoids loading a multi-GB local model just to perform a repeatable UI sequence.
+        if (TelegramSavedMediaMatcher.matches(task)) {
+            XLog.i(TAG, "Telegram Saved Messages media shortcut matched: $task")
+            return Route.Skill(
+                skillId = "telegram_saved_media",
+                params = emptyMap(),
+                description = "Opening Telegram Saved Messages and playing a visible media item"
+            )
+        }
+
         // Tier 1: Deterministic regex matching
         val parseResult = TaskParser.parse(task)
         if (parseResult != null) {

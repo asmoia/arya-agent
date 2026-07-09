@@ -24,6 +24,7 @@ import io.agents.arya.agent.StuckDetector
 import io.agents.arya.agent.TaskBudget
 import io.agents.arya.agent.TaskPromptEnvelope
 import io.agents.arya.agent.TokenMonitor
+import io.agents.arya.agent.TelegramSavedMediaMatcher
 import io.agents.arya.agent.hermes.memory.HermesMemoryStore
 import io.agents.arya.agent.hermes.session.HermesSessionStore
 import io.agents.arya.agent.hermes.skills.HermesSkillStore
@@ -38,8 +39,12 @@ import io.agents.arya.tool.ToolResult
 import io.agents.arya.tool.impl.GetScreenInfoTool
 import io.agents.arya.utils.XLog
 import java.util.LinkedList
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -57,6 +62,10 @@ class HermesAgentService : AgentService {
         private val GSON = Gson()
         private const val LOOP_DETECT_WINDOW = 6
         private const val SCREEN_SETTLE_MS = 280L
+        // A local turn taking several minutes is worse than a bounded failure:
+        // the user can lower model size or switch mode instead of waiting forever.
+        private const val LOCAL_TURN_TIMEOUT_MS = 75_000L
+        private const val CLOUD_TURN_TIMEOUT_MS = 120_000L
         private val ACTION_TOOLS = setOf(
             "tap", "tap_node", "long_press", "swipe", "scroll_to_find", "find_and_tap",
             "input_text", "system_key", "open_app", "send_message", "make_call",
@@ -74,6 +83,10 @@ class HermesAgentService : AgentService {
         Thread(r, "hermes-agent").apply { isDaemon = true }
     }
     private var taskFuture: Future<*>? = null
+    // Keep native model generation off the agent coordinator thread so an
+    // overdue generation can be cancelled and reported instead of pinning a
+    // task in "thinking" indefinitely.
+    private var inferenceExecutor = newInferenceExecutor()
 
     private val sessions get() = HermesSessionStore.getInstance()
     private val memory get() = HermesMemoryStore.getInstance()
@@ -145,6 +158,11 @@ class HermesAgentService : AgentService {
     private fun runHermesLoop(userPrompt: String, callback: AgentCallback) {
         val parsed = TaskPromptEnvelope.parse(userPrompt)
         val rawUserRequest = parsed.currentRequest
+
+        // Function schemas are part of the local model's first-token budget. Keep
+        // cloud models fully capable, but give LiteRT a focused set for the current
+        // phone task instead of making it parse every registry schema on every run.
+        toolSpecs = selectToolSpecs(rawUserRequest)
 
         // Fast path: greetings / short chat must not load the full tool+phone agent loop.
         if (isPureChatFastPath(rawUserRequest)) {
@@ -686,30 +704,130 @@ class HermesAgentService : AgentService {
         }
     }
 
+    private fun newInferenceExecutor() = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "hermes-inference").apply { isDaemon = true }
+    }
+
+    /**
+     * Local function-calling models have to ingest every declared JSON schema
+     * before producing their first token. For normal phone navigation this small
+     * allow-list is sufficient and removes a large amount of prompt work. Cloud
+     * providers retain the complete registry. The registry remains the execution
+     * authority; this only limits what the model is invited to choose this turn.
+     */
+    private fun selectToolSpecs(task: String): List<dev.langchain4j.agent.tool.ToolSpecification> {
+        if (config.provider != LlmProvider.LOCAL) {
+            return LangChain4jToolBridge.buildToolSpecifications()
+        }
+
+        val lower = task.lowercase()
+        val names = linkedSetOf(
+            "get_screen_info", "find_node_info", "open_app", "get_installed_apps",
+            "find_and_tap", "tap_node", "tap", "long_press", "swipe",
+            "scroll_to_find", "input_text", "system_key", "wait", "finish"
+        )
+        when {
+            TelegramSavedMediaMatcher.matches(task) -> {
+                names += "play_telegram_saved_media"
+            }
+            lower.contains("notification") || task.contains("اعلان") || task.contains("نوتیف") -> {
+                names += "get_notifications"
+            }
+            lower.contains("clipboard") || task.contains("کلیپ") -> {
+                names += "clipboard"
+            }
+            lower.contains("battery") || lower.contains("wifi") || lower.contains("bluetooth") ||
+                lower.contains("storage") || task.contains("باتری") || task.contains("وای") ||
+                task.contains("بلوتوث") || task.contains("حافظه") -> {
+                names += "get_device_info"
+            }
+            lower.contains("call ") || task.contains("تماس") -> {
+                names += "make_call"
+            }
+            lower.contains("send ") || lower.contains("message") || task.contains("پیام") -> {
+                names += "send_message"
+            }
+        }
+        if (task.contains("هواوی") || lower.contains("emui")) names += "emui_settings"
+        if (task.contains("شمسی") || lower.contains("shamsi")) names += "shamsi_calendar"
+
+        val selected = LangChain4jToolBridge.buildToolSpecifications(names)
+        XLog.i(TAG, "Local tool profile: ${selected.size}/${names.size} schemas for '${task.take(60)}'")
+        return selected
+    }
+
+    private fun invokeLlmWithDeadline(
+        messages: List<ChatMessage>,
+        callback: AgentCallback,
+        iteration: Int
+    ): LlmResponse {
+        val timeoutMs = if (config.provider == LlmProvider.LOCAL) {
+            LOCAL_TURN_TIMEOUT_MS
+        } else {
+            CLOUD_TURN_TIMEOUT_MS
+        }
+        val call = inferenceExecutor.submit(Callable {
+            if (config.streaming) {
+                llmClient.chatStreaming(messages, toolSpecs, object : StreamingListener {
+                    override fun onPartialText(token: String) {
+                        callback.onContent(iteration, token)
+                    }
+                    override fun onComplete(response: LlmResponse) = Unit
+                    override fun onError(error: Throwable) = Unit
+                })
+            } else {
+                llmClient.chat(messages, toolSpecs)
+            }
+        })
+        return try {
+            call.get(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (timeout: TimeoutException) {
+            call.cancel(true)
+            try {
+                // Closing the conversation is the LiteRT cancellation mechanism.
+                // It is also safe for cloud clients, where it tears down the socket.
+                llmClient.close()
+            } catch (_: Exception) {
+            }
+            inferenceExecutor.shutdownNow()
+            inferenceExecutor = newInferenceExecutor()
+            throw RuntimeException(
+                "${if (config.provider == LlmProvider.LOCAL) "مدل محلی" else "مدل ابری"} " +
+                    "در ${timeoutMs / 1000} ثانیه پاسخ نداد؛ task متوقف شد. " +
+                    "برای سرعت بیشتر مدل سبک‌تر یا حالت Instant را انتخاب کن.",
+                timeout
+            )
+        } catch (execution: ExecutionException) {
+            val cause = execution.cause
+            throw if (cause is Exception) cause else RuntimeException("LLM execution failed", cause)
+        }
+    }
+
     private fun chatWithRetry(
         messages: List<ChatMessage>,
         callback: AgentCallback,
         iteration: Int
     ): LlmResponse {
         var lastError: Exception? = null
-        repeat(3) { attempt ->
+        // Retrying a remote transient failure can help. Retrying a local engine
+        // failure usually repeats the same expensive native generation and was a
+        // major source of multi-minute "thinking" states, so fail it fast.
+        val attempts = if (config.provider == LlmProvider.LOCAL) 1 else 3
+        repeat(attempts) { attempt ->
             if (cancelled.get()) throw RuntimeException("cancelled")
             try {
-                return if (config.streaming) {
-                    llmClient.chatStreaming(messages, toolSpecs, object : StreamingListener {
-                        override fun onPartialText(token: String) {
-                            callback.onContent(iteration, token)
-                        }
-                        override fun onComplete(response: LlmResponse) {}
-                        override fun onError(error: Throwable) {}
-                    })
-                } else {
-                    llmClient.chat(messages, toolSpecs)
-                }
+                return invokeLlmWithDeadline(messages, callback, iteration)
             } catch (e: Exception) {
                 lastError = e
-                XLog.w(TAG, "LLM attempt ${attempt + 1} failed: ${e.message}")
-                Thread.sleep(250L * (attempt + 1))
+                XLog.w(TAG, "LLM attempt ${attempt + 1}/$attempts failed: ${e.message}")
+                if (attempt + 1 < attempts) {
+                    try {
+                        Thread.sleep(250L * (attempt + 1))
+                    } catch (interrupted: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw RuntimeException("cancelled", interrupted)
+                    }
+                }
             }
         }
         throw lastError ?: RuntimeException("LLM failed")
@@ -854,6 +972,7 @@ class HermesAgentService : AgentService {
         cancel()
         try {
             executor.shutdownNow()
+            inferenceExecutor.shutdownNow()
         } catch (_: Exception) {
         }
         if (::llmClient.isInitialized) {

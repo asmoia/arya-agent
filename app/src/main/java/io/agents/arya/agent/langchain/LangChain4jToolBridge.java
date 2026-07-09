@@ -38,8 +38,22 @@ public class LangChain4jToolBridge {
      * Builds LangChain4j ToolSpecification list from all registered tools.
      */
     public static List<ToolSpecification> buildToolSpecifications() {
+        return buildToolSpecifications(null);
+    }
+
+    /**
+     * Build only a task-relevant subset when [allowedToolNames] is non-null.
+     * On-device function-calling models pay an appreciable first-token cost for
+     * every JSON schema. Keeping the full list for cloud models but using a
+     * conservative subset for local UI work reduces latency without changing
+     * what the registry is allowed to execute.
+     */
+    public static List<ToolSpecification> buildToolSpecifications(java.util.Set<String> allowedToolNames) {
         List<ToolSpecification> specs = new ArrayList<>();
         for (BaseTool tool : ToolRegistry.getInstance().getAllTools()) {
+            if (allowedToolNames != null && !allowedToolNames.contains(tool.getName())) {
+                continue;
+            }
             specs.add(toSpecification(tool));
         }
         return specs;

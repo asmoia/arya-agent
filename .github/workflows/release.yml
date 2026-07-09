@@ -76,6 +76,9 @@ jobs:
           KEY_PASSWORD=$ANDROID_KEY_PASSWORD
           EOF
 
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest
+
       - name: Build signed release APK
         if: steps.signing.outputs.mode == 'release'
         run: ./gradlew assembleRelease

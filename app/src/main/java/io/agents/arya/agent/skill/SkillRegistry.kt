@@ -74,6 +74,7 @@ object SkillRegistry {
         register(BuiltInSkills.swipeGesture())
         register(BuiltInSkills.goBack())
         register(BuiltInSkills.waitForContent())
+        register(BuiltInSkills.telegramSavedMedia())
         XLog.i(TAG, "Loaded ${skills.size} built-in skills")
     }
 

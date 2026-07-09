@@ -165,6 +165,28 @@ object BuiltInSkills {
         fallbackGoal = "Press the back button."
     )
 
+    /**
+     * A bounded no-LLM shortcut for a frequent Persian/English task. The tool
+     * only succeeds after it sees an actual accessible play control; otherwise
+     * the normal agent gets a tightly scoped fallback instead of re-planning
+     * the full request for minutes.
+     */
+    fun telegramSavedMedia() = Skill(
+        id = "telegram_saved_media",
+        name = "Telegram Saved Messages — play visible media",
+        description = "Open Telegram Saved Messages and play one visible audio/voice item without model inference.",
+        category = SkillCategory.MEDIA,
+        estimatedStepsSaved = 4,
+        steps = listOf(
+            SkillStep(
+                toolName = "play_telegram_saved_media",
+                description = "Open Saved Messages and tap a visible media play control",
+                retries = 1
+            )
+        ),
+        fallbackGoal = "Telegram is already open. Go only to Saved Messages, inspect the current screen, and tap one visible audio/voice Play control. Do not reopen Telegram, do not search the web, and stop after two UI actions if no media is visible."
+    )
+
     fun waitForContent() = Skill(
         id = "wait_for_content",
         name = "Wait for Content",
