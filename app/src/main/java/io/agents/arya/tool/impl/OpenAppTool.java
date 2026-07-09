@@ -71,15 +71,30 @@ public class OpenAppTool extends BaseTool {
 
     @Override
     public ToolResult execute(Map<String, Object> params) {
-        ClawAccessibilityService service = requireAccessibilityService();
-        if (service == null) {
-            return ToolResult.error("Accessibility service is not running");
-        }
         String packageName = params.containsKey("package_name")
                 ? requireString(params, "package_name")
                 : requireString(params, "app_name");
 
-        // If LLM sends app name instead of package name, resolve it
+        // Prefer fast PackageManager launch — NEVER block 20s on Accessibility for open_app.
+        // Accessibility is only used optionally to dismiss OEM "Allow open?" dialogs.
+        io.agents.arya.tool.ToolResult direct =
+                io.agents.arya.agent.hermes.core.HermesDirectOpen.INSTANCE.open(packageName);
+        if (direct.isSuccess()) {
+            ClawAccessibilityService service = ClawAccessibilityService.getInstance();
+            if (service != null) {
+                dismissChainLaunchDialog(service);
+            }
+            return direct;
+        }
+
+        // Fallback: legacy a11y open (short wait only)
+        ClawAccessibilityService service = requireAccessibilityService(1_500L);
+        if (service == null) {
+            return ToolResult.error(
+                    direct.getError() != null ? direct.getError()
+                            : "Failed to open app and Accessibility is not connected: " + packageName
+            );
+        }
         if (!packageName.contains(".")) {
             String resolved = resolveAppName(packageName);
             if (resolved != null) {
@@ -87,15 +102,11 @@ public class OpenAppTool extends BaseTool {
                 packageName = resolved;
             }
         }
-
         boolean success = service.openApp(packageName);
         if (!success) {
             return ToolResult.error("Failed to open app: " + packageName + ". Make sure the app is installed.");
         }
-
-        // Wait for possible chain-launch intercept dialog and auto-click "Allow"
         dismissChainLaunchDialog(service);
-
         return ToolResult.success("Opened app: " + packageName);
     }
 
@@ -106,9 +117,10 @@ public class OpenAppTool extends BaseTool {
      * Checks up to 3 times, 500ms apart; silently returns if no dialog appears.
      */
     private void dismissChainLaunchDialog(ClawAccessibilityService service) {
-        for (int attempt = 0; attempt < 3; attempt++) {
+        // Short OEM allow-dialog poll (was 3x500ms = 1.5s always)
+        for (int attempt = 0; attempt < 2; attempt++) {
             try {
-                Thread.sleep(500);
+                Thread.sleep(200);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;

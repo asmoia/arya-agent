@@ -156,6 +156,8 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
     }
 
     private fun chatInternal(messages: List<ChatMessage>, toolSpecs: List<ToolSpecification>): LlmResponse {
+        val t0 = System.currentTimeMillis()
+        XLog.i(TAG, "chatInternal: ENTER msgs=${messages.size} tools=${toolSpecs.size}")
         ensureEngine()
 
         // Detect new task or recreate needed
@@ -225,6 +227,7 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
         }
 
         processedMessageCount = messages.size
+        XLog.i(TAG, "chatInternal: EXIT in ${System.currentTimeMillis() - t0}ms")
         return parseResponse(lastResponse)
     }
 

@@ -84,7 +84,7 @@ class HermesAgentService : AgentService {
     override fun initialize(config: AgentConfig) {
         this.config = config
         HermesMetaTools.registerAll()
-        skills.ensureSeedSkills()
+        // Seed skills lazily via SkillStore.getInstance(); don't rewrite files every task.
         this.llmClient = LlmClientFactory.create(config)
         this.toolSpecs = LangChain4jToolBridge.buildToolSpecifications()
         XLog.i(TAG, "Hermes embedded core initialized provider=${config.provider} tools=${toolSpecs.size}")
@@ -182,12 +182,21 @@ class HermesAgentService : AgentService {
                 earlyBootResults += step to result
                 callback.onToolResult(idx + 1, step.tool, step.tool, step.params.toString(), result)
                 XLog.i(TAG, "EARLY bootstrap ${step.tool} success=${result.isSuccess} err=${result.error}")
-                if (!result.isSuccess) break
-                if (step.tool == "open_app") {
-                    try { Thread.sleep(400) } catch (_: Exception) {}
+                // Only hard-fail open_app; find_and_tap probes are optional.
+                if (!result.isSuccess && HermesBootstrapActions.isHardStep(step)) break
+                if (step.tool == "open_app" && result.isSuccess) {
+                    try { Thread.sleep(350) } catch (_: Exception) {}
                 }
             }
-            callback.onStatus("اپ باز شد · ادامه…")
+            val opened = earlyBootResults.any { it.first.tool == "open_app" && it.second.isSuccess }
+            if (opened) callback.onStatus("اپ باز شد · ادامه…")
+            else if (earlyBootResults.isNotEmpty()) {
+                callback.onStatus("باز کردن اپ ناموفق — ادامه با مدل")
+                val err = earlyBootResults.firstOrNull { !it.second.isSuccess }?.second?.error
+                callback.onContent(1, "Bootstrap: $err")
+            }
+        } else {
+            callback.onStatus("بدون bootstrap · شروع مدل…")
         }
 
 
@@ -228,7 +237,8 @@ class HermesAgentService : AgentService {
         val systemPrompt = HermesPromptBuilder.build(
             basePrompt = baseIdentity,
             userTask = rawUserRequest,
-            includeMemory = true,
+            // Local E4B: skip memory vault dump (slow + huge). Skills only if matched.
+            includeMemory = config.provider != LlmProvider.LOCAL,
             includeSkills = true,
             extraSections = extraGuards + mcpSection,
             compactTools = config.provider == LlmProvider.LOCAL,
@@ -252,7 +262,8 @@ class HermesAgentService : AgentService {
         }
 
         val looksLikeTask = looksLikeTask(rawUserRequest)
-        val enrichedPrompt = if (looksLikeTask) {
+        val alreadyHaveScreen = earlyBootResults.any { it.first.tool == "get_screen_info" && it.second.isSuccess }
+        val enrichedPrompt = if (looksLikeTask && !alreadyHaveScreen) {
             try {
                 val screenTool = ToolRegistry.getInstance().getTool("get_screen_info")
                 val screenResult = screenTool?.execute(emptyMap())

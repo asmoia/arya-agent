@@ -2,6 +2,16 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.3.3 (workspace — ship when ready)
+
+- **HermesDirectOpen**: open apps via PackageManager (no 20s Accessibility wait)
+- **OpenAppTool** uses DirectOpen first; a11y only for OEM allow dialog (shorter poll)
+- **TaskFlow prelaunch**: opens known apps before agent/LLM queue
+- Accessibility default wait 5s (was 20s)
+- Bootstrap soft find_and_tap for Saved Messages labels (fail OK)
+- Local prompt skips memory dump; skip double screen prewarm after bootstrap
+- updateConfig soft already in 0.3.2; reinforced
+
 ## v0.3.2
 
 - **Root fix:** stop reloading LiteRT engine on every task (`updateConfig` soft path)

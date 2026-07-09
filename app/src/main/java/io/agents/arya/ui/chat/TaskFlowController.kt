@@ -190,6 +190,29 @@ class TaskFlowController(
         val taskId = "task_${System.currentTimeMillis()}"
 
         executor.submit {
+            // Pre-launch known apps HERE (UI executor thread pool) so open is not stuck
+            // behind updateAgentConfig / agent queue. Hermes will still bootstrap too.
+            try {
+                val boot = io.agents.arya.agent.hermes.core.HermesBootstrapActions.plan(text)
+                if (boot != null) {
+                    for (step in boot.steps) {
+                        if (step.tool != "open_app") continue
+                        activity.runOnUiThread {
+                            addSystem("⏳ ${step.labelFa}")
+                        }
+                        val hint = step.params["package_name"]?.toString() ?: continue
+                        val r = io.agents.arya.agent.hermes.core.HermesDirectOpen.open(activity, hint)
+                        XLog.i(TAG, "prelaunch $hint success=${r.isSuccess} ${r.error}")
+                        activity.runOnUiThread {
+                            if (r.isSuccess) addSystem("✓ ${r.data}")
+                            else addSystem("✗ باز نشد: ${r.error}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                XLog.w(TAG, "prelaunch failed: ${e.message}")
+            }
+
             chatSessionController.prepareForTaskStart()
 
             activity.runOnUiThread {

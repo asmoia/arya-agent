@@ -57,9 +57,19 @@ class AppViewModel : ViewModel() {
     ) {
         onBeforeTask?.invoke()
         taskOrchestrator.taskEventCallback = onEvent
+        // Soft-update config (must not reload LiteRT every task — that alone can take minutes).
         if (!updateAgentConfig()) {
-            onEvent(TaskEvent.Failed("AI service not ready"))
-            return
+            // Try init once if never ready
+            try {
+                initAgent()
+            } catch (e: Exception) {
+                onEvent(TaskEvent.Failed("AI service not ready: ${e.message}"))
+                return
+            }
+            if (!updateAgentConfig()) {
+                onEvent(TaskEvent.Failed("AI service not ready"))
+                return
+            }
         }
         taskOrchestrator.startNewTask(Channel.LOCAL, task, taskId, agentPromptOverride = agentPromptOverride)
     }

@@ -136,7 +136,8 @@ abstract class BaseTool {
      * Tools should tolerate that short gap instead of failing immediately.
      */
     @JvmOverloads
-    protected fun requireAccessibilityService(timeoutMs: Long = 20_000L): ClawAccessibilityService? {
+    protected fun requireAccessibilityService(timeoutMs: Long = 5_000L): ClawAccessibilityService? {
+        // Was 20s — felt like a hung task when a11y briefly disconnected.
         return ClawAccessibilityService.getConnectedInstance(timeoutMs)
     }
 
