@@ -25,16 +25,16 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
- * Creates and restores portable Hermes backups (ZIP).
+ * Creates and restores portable Hermes backups as ZIP files.
  *
  * Contents:
  * - manifest.json
  * - MEMORY.md
- * - episodes/*.md
- * - skills/*.md
- * - sessions_index.json  (metadata only — not full message dump by default)
+ * - episodes (markdown day files)
+ * - skills (markdown skill files)
+ * - sessions_index.json (metadata only)
  *
- * Secrets (API keys) are **never** included.
+ * Secrets (API keys) are never included.
  */
 object HermesBackupManager {
 
@@ -47,19 +47,15 @@ object HermesBackupManager {
     private fun hermesRoot(): File =
         File(ClawApplication.instance.filesDir, "hermes").apply { mkdirs() }
 
-    /**
-     * Write a ZIP into cacheDir and return it for sharing via FileProvider.
-     */
+    /** Write a ZIP into cacheDir for sharing via FileProvider. */
     fun exportToCache(context: Context = ClawApplication.instance): Result {
         return try {
-            // Ensure stores exist / seed skills if empty
             HermesSkillStore.getInstance().ensureSeedSkills()
             HermesMemoryStore.getInstance().readProfile()
 
             val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val outFile = File(context.cacheDir, "arya_hermes_backup_$stamp.zip")
             ZipOutputStream(BufferedOutputStream(FileOutputStream(outFile))).use { zip ->
-                // Manifest
                 val sessions = HermesSessionStore.getInstance().listRecent(50)
                 val manifest = JSONObject()
                     .put("format_version", FORMAT_VERSION)
@@ -71,24 +67,23 @@ object HermesBackupManager {
                     .put("note", "No API keys or secrets included")
                 putText(zip, MANIFEST, manifest.toString(2))
 
-                // Memory profile
                 val memFile = File(hermesRoot(), "MEMORY.md")
-                if (memFile.exists()) putFile(zip, "MEMORY.md", memFile)
-                else putText(zip, "MEMORY.md", HermesMemoryStore.getInstance().readProfile())
+                if (memFile.exists()) {
+                    putFile(zip, "MEMORY.md", memFile)
+                } else {
+                    putText(zip, "MEMORY.md", HermesMemoryStore.getInstance().readProfile())
+                }
 
-                // Episodes
                 val episodes = File(hermesRoot(), "episodes")
-                episodes.listFiles()?.filter { it.isFile && it.extension == "md" }?.forEach { f ->
-                    putFile(zip, "episodes/${f.name}", f)
-                }
+                episodes.listFiles()
+                    ?.filter { it.isFile && it.extension == "md" }
+                    ?.forEach { f -> putFile(zip, "episodes/${f.name}", f) }
 
-                // Skills
                 val skillsDir = File(hermesRoot(), "skills")
-                skillsDir.listFiles()?.filter { it.isFile && it.extension.equals("md", true) }?.forEach { f ->
-                    putFile(zip, "skills/${f.name}", f)
-                }
+                skillsDir.listFiles()
+                    ?.filter { it.isFile && it.extension.equals("md", true) }
+                    ?.forEach { f -> putFile(zip, "skills/${f.name}", f) }
 
-                // Session index (safe metadata)
                 val arr = JSONArray()
                 for (s in sessions) {
                     arr.put(
@@ -114,8 +109,8 @@ object HermesBackupManager {
     }
 
     /**
-     * Restore from a ZIP [Uri] (e.g. SAF picker). Merges files; does not wipe
-     * unrelated hermes data unless [replaceAll] is true.
+     * Restore from a ZIP Uri (SAF picker). Merges files.
+     * If replaceAll is true, clears memory/skills/episodes first (not sessions DB).
      */
     fun importFromUri(
         context: Context,
@@ -125,7 +120,6 @@ object HermesBackupManager {
         return try {
             val root = hermesRoot()
             if (replaceAll) {
-                // Keep sessions DB; only replace memory/skills/episodes trees
                 File(root, "episodes").deleteRecursively()
                 File(root, "skills").deleteRecursively()
                 File(root, "MEMORY.md").delete()
@@ -135,7 +129,10 @@ object HermesBackupManager {
 
             var formatOk = false
             var restoredFiles = 0
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            val stream = context.contentResolver.openInputStream(uri)
+                ?: return Result(false, "Cannot open backup file")
+
+            stream.use { input ->
                 ZipInputStream(BufferedInputStream(input)).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
@@ -174,13 +171,11 @@ object HermesBackupManager {
                                 restoredFiles++
                             }
                             name == "sessions_index.json" -> {
-                                // Index is informational; store a copy for forensics
                                 File(root, "sessions_index.restored.json")
                                     .writeBytes(zis.readBytes())
                                 restoredFiles++
                             }
                             else -> {
-                                // skip unknown
                                 zis.readBytes()
                             }
                         }
@@ -188,10 +183,8 @@ object HermesBackupManager {
                         entry = zis.nextEntry
                     }
                 }
-            } ?: return Result(false, "Cannot open backup file")
+            }
 
-            // Refresh in-memory skill cache by re-reading from disk next call
-            // (SkillStore has no global clear of singleton — listSkills re-reads files)
             HermesSkillStore.getInstance().listSkills()
 
             val msg = if (formatOk) {
