@@ -84,6 +84,13 @@ public class ClawNotificationListener extends NotificationListenerService {
 
         // Route to AutoReplyManager
         AutoReplyManager.getInstance().onNotificationReceived(pkg, title, text);
+
+        // Hermes background listen (voice/message awareness)
+        try {
+            io.agents.arya.agent.hermes.voice.VoiceListenStore.INSTANCE.onMessagingNotification(pkg, title, text);
+        } catch (Throwable t) {
+            XLog.w(TAG, "VoiceListenStore capture failed: " + t.getMessage());
+        }
     }
 
     /**

@@ -77,6 +77,8 @@ object ToolRegistry {
         // Arya-specific tools: EMUI settings + Shamsi calendar
         register(EmuiSettingsTool())
         register(ShamsiCalendarTool())
+        // Background listen for messaging/voice notifications (Hermes)
+        register(HermesListenVoiceTool())
     }
 
     fun register(tool: BaseTool) {

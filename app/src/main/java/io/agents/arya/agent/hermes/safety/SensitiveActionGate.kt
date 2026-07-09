@@ -45,6 +45,7 @@ object SensitiveActionGate {
         Policy("input_text", "تایپ متن در صفحه", Risk.LOW, alwaysAsk = false),
         Policy("hermes_memory", "نوشتن حافظه Hermes", Risk.LOW, alwaysAsk = false),
         Policy("hermes_skill", "تغییر مهارت Hermes", Risk.LOW, alwaysAsk = false),
+        Policy("listen_voice", "شنود پس‌زمینه پیام/ویس اپ‌ها", Risk.MEDIUM, alwaysAsk = true),
     ).associateBy { it.toolName }
 
     fun isSensitive(toolName: String): Boolean = policies.containsKey(toolName)
@@ -140,6 +141,7 @@ object SensitiveActionGate {
             "input_text" -> "text=${p("text").take(120)}"
             "hermes_memory" -> "action=${p("action")} text=${p("text").take(120)}"
             "hermes_skill" -> "action=${p("action")} id=${p("id")}"
+            "listen_voice" -> "action=${p("action")} app=${p("app")} contact=${p("contact")}"
             else -> try {
                 val obj = JSONObject()
                 for ((k, v) in params) obj.put(k, v?.toString() ?: "")

@@ -23,7 +23,7 @@ import java.io.File
  * - launch system speech recognizer for live dictation (returns guidance + optional transcript if already provided)
  * - summarize / analyze a provided transcript with the active LLM (local Gemma or cloud)
  *
- * Full offline waveform→text (Whisper-class) is not bundled yet; when a transcript
+ * To listen for Telegram/WhatsApp voice in background use tool listen_voice. Full offline waveform→text (Whisper-class) is not bundled yet; when a transcript
  * is available (system STT, messaging app caption, or user paste), analysis runs
  * through the offline/local LLM path the user configured.
  */
