@@ -119,9 +119,10 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
             systemInstruction = Contents.of(systemPrompt),
             tools = nativeTools,
             samplerConfig = SamplerConfig(
-                topK = 64,
-                topP = 0.95,
-                temperature = config.temperature
+                // Slightly tighter sampling = faster local decode on-device
+                topK = 40,
+                topP = 0.9,
+                temperature = config.temperature.coerceAtMost(0.3)
             ),
             automaticToolCalling = false  // We handle execution in DefaultAgentService
         )

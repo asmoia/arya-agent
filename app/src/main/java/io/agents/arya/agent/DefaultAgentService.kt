@@ -565,7 +565,7 @@ class DefaultAgentService : AgentService {
         var iterations = 0
         var totalTokens = 0
         var actualModelName: String? = null  // Track the real model name from API response
-        val maxIterations = config.maxIterations
+        val maxIterations = if (config.provider == LlmProvider.LOCAL) minOf(config.maxIterations, 12) else config.maxIterations
         val loopHistory = LinkedList<RoundFingerprint>()
         var lastScreenHash = 0
         var previousScreenTexts: Set<String> = emptySet()
@@ -874,15 +874,20 @@ class DefaultAgentService : AgentService {
 
     override fun cancel() {
         cancelled.set(true)
-        if (config.provider == LlmProvider.LOCAL) {
-            // LiteRT native sendMessage is not interrupt-safe; let the current round yield
-            // naturally, then surface Task cancelled after the client closes cleanly.
-            XLog.i(TAG, "cancel: LOCAL task marked cancelled; waiting for current LiteRT round to finish safely")
-            return
+        XLog.i(TAG, "cancel: flag set provider=${config.provider}")
+        // Interrupt worker for all providers. Also close local conversation to reduce heat.
+        try {
+            taskFuture?.cancel(true)
+        } catch (_: Exception) {
         }
-        // Cloud/network-backed tasks can be aborted safely via thread interruption.
-        taskFuture?.cancel(true)
-        XLog.i(TAG, "cancel: flag set + thread interrupted")
+        if (config.provider == LlmProvider.LOCAL && ::llmClient.isInitialized) {
+            try {
+                llmClient.close()
+                XLog.i(TAG, "cancel: closed local LlmClient to stop generation")
+            } catch (e: Exception) {
+                XLog.w(TAG, "cancel close local client: ${e.message}")
+            }
+        }
     }
 
     override fun shutdown() {

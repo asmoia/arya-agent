@@ -127,6 +127,21 @@ class HermesAgentService : AgentService {
         val parsed = TaskPromptEnvelope.parse(userPrompt)
         val rawUserRequest = parsed.currentRequest
 
+        // Fast path: greetings / short chat must not load the full tool+phone agent loop.
+        if (isPureChatFastPath(rawUserRequest)) {
+            XLog.i(TAG, "pure chat fast-path (skip tool loop): '${rawUserRequest.take(40)}'")
+            callback.onLoopStart(1)
+            try {
+                val reply = quickChatReply(rawUserRequest)
+                callback.onContent(1, reply)
+                callback.onComplete(1, reply, 0, config.modelName)
+            } catch (e: Exception) {
+                XLog.e(TAG, "pure chat failed", e)
+                callback.onError(1, e, 0)
+            }
+            return
+        }
+
         // Fresh session per task (memory/skills still persist across sessions).
         // Avoid resuming a half-open session from a crash mid-task.
         sessions.latestOpenSession()?.let { stale ->
@@ -198,7 +213,7 @@ class HermesAgentService : AgentService {
         var iterations = 0
         var totalTokens = 0
         var actualModelName: String? = null
-        val maxIterations = config.maxIterations
+        val maxIterations = if (config.provider == LlmProvider.LOCAL) minOf(config.maxIterations, 12) else config.maxIterations
         val loopHistory = LinkedList<RoundFingerprint>()
         var lastScreenHash = 0
         var previousScreenTexts: Set<String> = emptySet()
@@ -218,6 +233,13 @@ class HermesAgentService : AgentService {
             val llmResponse: LlmResponse = try {
                 chatWithRetry(messages, callback, iterations)
             } catch (e: Exception) {
+                if (cancelled.get()) {
+                    XLog.i(TAG, "LLM aborted by cancel: ${e.message}")
+                    val msg = ClawApplication.instance.getString(R.string.agent_task_cancel)
+                    callback.onComplete(iterations, msg, totalTokens, actualModelName)
+                    sessions.endSession(session.id, "cancelled")
+                    return
+                }
                 XLog.e(TAG, "LLM call failed", e)
                 callback.onError(
                     iterations,
@@ -513,6 +535,7 @@ class HermesAgentService : AgentService {
     ): LlmResponse {
         var lastError: Exception? = null
         repeat(3) { attempt ->
+            if (cancelled.get()) throw RuntimeException("cancelled")
             try {
                 return if (config.streaming) {
                     llmClient.chatStreaming(messages, toolSpecs, object : StreamingListener {
@@ -550,26 +573,63 @@ class HermesAgentService : AgentService {
         return en.any { lower.contains(it) } || fa.any { text.contains(it) }
     }
 
+
+    private fun isPureChatFastPath(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty() || t.length > 100) return false
+        val lower = t.lowercase()
+        val taskHints = listOf(
+            "open ", "send ", "tap ", "install ", "call ", "whatsapp", "telegram",
+            "باز کن", "بفرست", "تماس", "پیام بده", "واتساپ", "تلگرام", "نصب",
+            "monitor", "مانیتور", "get_screen", "تنظیمات را"
+        )
+        if (taskHints.any { lower.contains(it) || t.contains(it) }) return false
+        val greetings = listOf(
+            "سلام", "درود", "hello", "hi", "hey", "خوبی", "چطوری", "صبح بخیر",
+            "شب بخیر", "ممنون", "مرسی", "thanks", "ok", "okay", "باشه"
+        )
+        if (greetings.any { lower == it || t == it || lower.startsWith("$it ") || t.startsWith(it) }) return true
+        return t.length <= 20 && !t.contains("http")
+    }
+
+    private fun quickChatReply(userText: String): String {
+        // Minimal prompt — no tool specs, no screen, no 60-step agent.
+        val system = "تو آریا هستی، دستیار فارسی کوتاه و مودب. فقط جواب بده. ابزار صدا نزن."
+        val messages = listOf(
+            dev.langchain4j.data.message.SystemMessage.from(system),
+            dev.langchain4j.data.message.UserMessage.from(userText)
+        )
+        // Empty tool list → model cannot tool-call, finishes as text.
+        val response = llmClient.chat(messages, emptyList())
+        val text = response.text?.trim().orEmpty()
+        return text.ifBlank { "سلام! چطور می‌تونم کمکت کنم؟" }
+    }
+
     private data class RoundFingerprint(val screenHash: Int, val toolCall: String)
 
     override fun cancel() {
         cancelled.set(true)
-        XLog.i(TAG, "cancel requested")
-        if (::config.isInitialized && config.provider != LlmProvider.LOCAL) {
+        XLog.i(TAG, "cancel requested provider=${if (::config.isInitialized) config.provider else null}")
+        // Always interrupt the worker. For LOCAL, also close the LLM conversation so
+        // LiteRT is less likely to keep the phone hot after the user hits ✕.
+        try {
             taskFuture?.cancel(true)
+        } catch (e: Exception) {
+            XLog.w(TAG, "taskFuture.cancel: ${e.message}")
         }
-        // Best-effort: if worker is already dead, mark session recovered.
-        // If worker is still running, the loop will endSession(cancelled) itself.
+        if (::llmClient.isInitialized) {
+            try {
+                llmClient.close()
+                XLog.i(TAG, "cancel: llmClient.close() to stop local generation pressure")
+            } catch (e: Exception) {
+                XLog.w(TAG, "cancel close llm: ${e.message}")
+            }
+        }
         activeSessionId?.let { sid ->
             try {
-                // Only close if still open — endSession is idempotent enough (rewrites ended_at).
                 sessions.getSession(sid)?.let { s ->
-                    if (s.endedAt == null) {
-                        // Don't steal from a still-running loop; leave a marker note only when
-                        // the future is done/cancelled and loop cannot finish cleanly.
-                        if (taskFuture == null || taskFuture?.isDone == true) {
-                            sessions.endSession(sid, "cancelled_externally")
-                        }
+                    if (s.endedAt == null && (taskFuture == null || taskFuture?.isDone == true)) {
+                        sessions.endSession(sid, "cancelled_externally")
                     }
                 }
             } catch (e: Exception) {

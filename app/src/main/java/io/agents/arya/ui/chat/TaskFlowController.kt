@@ -68,6 +68,16 @@ class TaskFlowController(
             return
         }
 
+        // Pure chat / greetings must NEVER enter the heavy phone-agent loop on local models.
+        // That path loads tools + long system prompts and can hang/heat the phone for minutes.
+        if (isPureChatMessage(text)) {
+            XLog.i(TAG, "sendTask: pure chat fast-path → sendChat (skip agent loop)")
+            addSystem("حالت Task برای کار روی گوشی است. «$text» مثل چت عادی جواب داده می‌شود.")
+            chatSessionController.sendChat(text)
+            onTaskTerminal?.invoke(TaskEvent.Completed("Routed pure chat to chat mode."))
+            return
+        }
+
         if (ModelConfigRepository.snapshot().isLocalActive() && isLikelyMonitorRequest(text)) {
             addUser(text)
             addSystem("Local mode starts monitoring from the Background card. Open Background, choose the app/contact, then tap Start Monitoring.")
@@ -451,4 +461,28 @@ class TaskFlowController(
             (lower.contains("message") || lower.contains("messages") || lower.contains("reply"))
         return mentionsMonitor || looksLikeWatchMessages
     }
+    /** Greetings / Q&A that should not spin the phone-control agent. */
+    private fun isPureChatMessage(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty()) return true
+        if (t.length > 120) return false
+        val lower = t.lowercase()
+        // If it looks like a phone task keyword, not pure chat
+        val taskHints = listOf(
+            "open ", "send ", "tap ", "install ", "call ", "message ", "whatsapp", "telegram",
+            "باز کن", "بفرست", "تماس", "پیام", "واتساپ", "تلگرام", "نصب", "تنظیمات",
+            "monitor", "مانیتور", "اسکرین", "screenshot", "پخش", "برو به"
+        )
+        if (taskHints.any { lower.contains(it) || t.contains(it) }) return false
+        val chatHints = listOf(
+            "سلام", "درود", "خداحافظ", "ممنون", "مرسی", "خوبی", "چطوری",
+            "hello", "hi", "hey", "thanks", "thank you", "ok", "okay",
+            "؟", "?", "چی", "چه", "why", "what", "how", "who"
+        )
+        if (chatHints.any { lower == it || lower.startsWith("$it ") || lower.startsWith(it) || t == it }) return true
+        // Short messages without imperative task verbs → chat
+        return t.length <= 24 && !t.contains("http")
+    }
+
+
 }

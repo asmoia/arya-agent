@@ -56,11 +56,9 @@ class ActiveTaskShellController(
     }
 
     fun stopAllTasks(): String {
-        var requestedTaskStop = false
-        if (appViewModel.isTaskRunning()) {
-            appViewModel.stopTask()
-            requestedTaskStop = true
-        }
+        // Always request agent cancel — isTaskRunning can lag while local LiteRT is blocked.
+        appViewModel.stopTask()
+        val wasRunning = appViewModel.isTaskRunning()
 
         var stoppedMonitoring = false
         if (autoReplyManager.isEnabled) {
@@ -70,10 +68,10 @@ class ActiveTaskShellController(
 
         refreshActiveTasks()
         ForegroundService.resetToIdle(ClawApplication.instance)
-        return when {
-            requestedTaskStop -> "Stopping current task..."
-            stoppedMonitoring -> "All tasks stopped"
-            else -> "No active tasks"
+        return if (stoppedMonitoring) {
+            "Stop requested (task + monitoring)."
+        } else {
+            "Stop requested — local model should release shortly."
         }
     }
 

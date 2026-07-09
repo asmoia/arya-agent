@@ -56,11 +56,18 @@ object ChatHistoryManager {
     fun save(context: Context, conversationId: String, messages: List<ChatMessage>, model: String) {
         if (messages.isEmpty()) return
 
-        // Generate title from first user message
+        // Generate title from first user message (supports Persian / any unicode letters)
         val firstUserMsg = messages.firstOrNull { it.role == ChatMessage.Role.USER }
-        val title = firstUserMsg?.content?.take(50)?.replace(Regex("[^a-zA-Z0-9\\s]"), "")?.trim()?.replace("\\s+".toRegex(), "-")?.lowercase() ?: "untitled"
+        val displayTitle = firstUserMsg?.content
+            ?.lineSequence()?.firstOrNull { it.isNotBlank() }
+            ?.trim()
+            ?.take(80)
+            ?.ifBlank { null }
+            ?: "گفتگو"
+        // Filename must stay filesystem-safe; keep conversationId so Persian titles don't become "untitled"
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(messages.first().timestamp))
-        val fileName = "$dateStr-$title.md"
+        val safeId = conversationId.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(48)
+        val fileName = "$dateStr-$safeId.md"
 
         val file = File(getChatDir(context), fileName)
 
@@ -68,7 +75,7 @@ object ChatHistoryManager {
         // Frontmatter
         sb.appendLine("---")
         sb.appendLine("id: $conversationId")
-        sb.appendLine("title: ${firstUserMsg?.content?.take(80) ?: "Untitled"}")
+        sb.appendLine("title: ${displayTitle.replace(":", " - ")}")
         sb.appendLine("created: ${SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(messages.first().timestamp))}")
         sb.appendLine("model: $model")
         sb.appendLine("---")
@@ -117,7 +124,7 @@ object ChatHistoryManager {
         try {
             ChatDatabase(context).indexConversation(
                 id = conversationId,
-                title = firstUserMsg?.content?.take(80) ?: "Untitled",
+                title = displayTitle,
                 created = messages.first().timestamp,
                 model = model,
                 filePath = file.absolutePath,

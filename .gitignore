@@ -22,3 +22,7 @@ CLAUDE.local.md
 thoughts/
 .claudeignore
 /.kotlin/
+
+SECRETS_SAVE_OFFLINE.txt
+arya-release.keystore
+*.keystore

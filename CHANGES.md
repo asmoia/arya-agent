@@ -2,6 +2,10 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.2.3
+
+- Task pure-chat fast path, cancel fix, Persian titles, less heat
+
 ## v0.2.1
 
 - `hermes_voice`: metadata + analyze transcript (local Gemma / cloud)
