@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">آریا</string>
+    <string name="app_slogan">دستیار هوشمند فارسی — روی گوشی شما</string>
+
+    <!-- Common -->
+    <string name="common_confirm">باشه</string>
+    <string name="common_cancel">لغو</string>
+    <string name="common_close">بستن</string>
+    <string name="common_save">ذخیره</string>
+    <string name="common_agree">موافقم</string>
+    <string name="common_bound">متصل</string>
+    <string name="common_unbound">قطع</string>
+    <string name="common_unconfigured">تنظیم نشده</string>
+
+    <!-- Guide -->
+    <string name="guide_page_title">تنظیم دسترسی‌ها</string>
+    <string name="guide_page_subtitle">لطفاً دسترسی‌های زیر رو فعال کنید</string>
+    <string name="guide_skip">رد شو</string>
+    <string name="guide_start">شروع</string>
+    <string name="guide_title_accessibility">سرویس دسترسی‌پذیری</string>
+    <string name="guide_desc_accessibility">به آریا اجازه میده صفحه رو بخونه و دکمه‌ها رو بزنه. بزنید فعال بشه.</string>
+    <string name="guide_title_notification">اعلان‌های وظیفه</string>
+    <string name="guide_desc_notification">به آریا اجازه میده وضعیت وظیفه رو نشون بده. بزنید فعال بشه.</string>
+    <string name="guide_title_overlay">پنل شناور</string>
+    <string name="guide_desc_overlay">یه پنل شناور نشون میده وقتی وظیفه اجرا میشه. بزنید فعال بشه.</string>
+    <string name="guide_title_battery">استثنا باتری</string>
+    <string name="guide_desc_battery">جلوگیری از بسته شدن آریا توسط سیستم. بزنید اجازه بدید.</string>
+    <string name="guide_title_storage">دسترسی فایل</string>
+    <string name="guide_desc_storage">به آریا اجازه میده فایل‌ها رو بخونه و بنویسه. بزنید فعال بشه.</string>
+
+    <!-- Home -->
+    <string name="home_need_notification_permission">دسترسی اعلان لازمه</string>
+    <string name="home_enable_accessibility">لطفاً سرویس دسترسی‌پذیری آریا رو فعال کنید</string>
+    <string name="home_accessibility_enabled">سرویس دسترسی‌پذیری فعال ✅</string>
+    <string name="home_notification_enabled">اعلان‌ها فعال ✅</string>
+    <string name="home_overlay_enabled">پنل شناور فعال ✅</string>
+    <string name="home_battery_ignored">استثنا باتری فعال ✅</string>
+    <string name="home_card_accessibility_title">سرویس دسترسی‌پذیری</string>
+    <string name="home_card_accessibility_subtitle">برای کنترل خودکار گوشی</string>
+    <string name="home_card_notification_title">اعلان‌ها</string>
+    <string name="home_card_notification_subtitle">فقط وقتی وظیفه‌ای اجراست</string>
+    <string name="home_card_battery_title">استثنا باتری</string>
+    <string name="home_card_battery_subtitle">جلوگیری از بسته شدن در پس‌زمینه</string>
+    <string name="home_card_storage_title">دسترسی فایل</string>
+    <string name="home_card_storage_subtitle">خواندن و نوشتن فایل‌ها</string>
+    <string name="home_cancel_task">توقف وظیفه</string>
+
+    <!-- Settings -->
+    <string name="settings_title">تنظیمات</string>
+    <string name="settings_group_model">مدل</string>
+
+    <!-- LLM Config -->
+    <string name="llm_config_title">تنظیم مدل</string>
+    <string name="llm_config_tip">کلید API و مدل رو وارد کنید. داده‌ها فقط لوکال ذخیره میشن.</string>
+    <string name="llm_config_api_key">کلید API</string>
+    <string name="llm_config_api_key_hint">مثلاً sk-xxx</string>
+    <string name="llm_config_base_url">آدرس پایه</string>
+    <string name="llm_config_model_name">نام مدل</string>
+    <string name="llm_config_saved">تنظیمات ذخیره شد ✅</string>
+
+    <!-- Notification -->
+    <string name="notification_channel_name">وضعیت آریا</string>
+    <string name="notification_content_title">آریا · در حال اجرا</string>
+
+    <!-- Agent -->
+    <string name="agent_accessibility_not_enabled">سرویس دسترسی‌پذیری فعال نیست</string>
+    <string name="agent_task_cancelled">وظیفه لغو شد</string>
+    <string name="agent_task_completed">وظیفه تموم شد ✅</string>
+
+    <!-- Voice -->
+    <string name="voice_input_button_cd">ورودی صوتی</string>
+    <string name="voice_input_prompt">حرف بزنید…</string>
+
+    <!-- Global Prompt -->
+    <string name="global_prompt_title">دستورالعمل‌های عمومی</string>
+    <string name="global_prompt_hint">دستورالعمل‌هایی که در هر مکالمه اعمال بشه. خالی = غیرفعال.</string>
+    <string name="global_prompt_not_set">تنظیم نشده</string>
+
+    <!-- Floating -->
+    <string name="floating_ai_label">آریا</string>
+
+    <!-- Tool Names (Persian) -->
+    <string name="tool_name_screenshot">اسکرین‌شات</string>
+    <string name="tool_name_open_app">باز کردن اپ</string>
+    <string name="tool_name_tap">کلیک</string>
+    <string name="tool_name_swipe">سوایپ</string>
+    <string name="tool_name_input_text">تایپ متن</string>
+    <string name="tool_name_system_key">کلید سیستم</string>
+    <string name="tool_name_send_file">ارسال فایل</string>
+    <string name="tool_name_wait">صبر کردن</string>
+    <string name="tool_name_clipboard">کلیپ‌بورد</string>
+    <string name="tool_name_scroll_to_find">جستجو با اسکرول</string>
+</resources>
