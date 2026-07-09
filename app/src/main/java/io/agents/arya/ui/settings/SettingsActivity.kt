@@ -282,8 +282,7 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
             HermesThinkingMode.THINKING -> "متعادل · حداکثر ۵ دور"
             HermesThinkingMode.HIGH -> "دقیق‌تر · حداکثر ۷ دور"
         }
-        Toast.makeText(this, "حالت Task: ${thinkingModeLabel(next)}
-$detail", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "حالت Task: " + thinkingModeLabel(next) + " — " + detail, Toast.LENGTH_LONG).show()
     }
 
     private fun exportHermesBackup() {
