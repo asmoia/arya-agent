@@ -188,6 +188,9 @@ Steps:
         private var temperature: Double = 0.1
         private var provider: LlmProvider = LlmProvider.OPENAI
         private var streaming: Boolean = false
+        private var hermesUrl: String? = null
+        private var hermesApiKey: String? = null
+        private var hermesEnabled: Boolean = true
 
         fun apiKey(apiKey: String) = apply { this.apiKey = apiKey }
         fun baseUrl(baseUrl: String) = apply { this.baseUrl = baseUrl }
@@ -197,6 +200,9 @@ Steps:
         fun temperature(temperature: Double) = apply { this.temperature = temperature }
         fun provider(provider: LlmProvider) = apply { this.provider = provider }
         fun streaming(streaming: Boolean) = apply { this.streaming = streaming }
+        fun hermesUrl(hermesUrl: String?) = apply { this.hermesUrl = hermesUrl }
+        fun hermesApiKey(hermesApiKey: String?) = apply { this.hermesApiKey = hermesApiKey }
+        fun hermesEnabled(hermesEnabled: Boolean) = apply { this.hermesEnabled = hermesEnabled }
 
         fun build(): AgentConfig {
             require(apiKey.isNotEmpty() || baseUrl.isNotEmpty()) {
@@ -205,7 +211,19 @@ Steps:
             // Inject persistent global instructions (#45) ahead of whatever
             // caller-specific systemPrompt was set. No-op if user hasn't set one.
             val finalSystemPrompt = PromptUtils.applyGlobalPrompt(systemPrompt)
-            return AgentConfig(apiKey, baseUrl, modelName, finalSystemPrompt, maxIterations, temperature, provider, streaming)
+            return AgentConfig(
+                apiKey = apiKey,
+                baseUrl = baseUrl,
+                modelName = modelName,
+                systemPrompt = finalSystemPrompt,
+                maxIterations = maxIterations,
+                temperature = temperature,
+                provider = provider,
+                streaming = streaming,
+                hermesUrl = hermesUrl,
+                hermesApiKey = hermesApiKey,
+                hermesEnabled = hermesEnabled
+            )
         }
     }
 }

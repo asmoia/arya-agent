@@ -19,7 +19,9 @@ This is the repo map for coding agents. Keep canonical information in existing f
 
 | Path | Purpose |
 |------|---------|
-| `app/src/main/java/io/agents/pokeclaw/` | Android app source |
+| `app/src/main/java/io/agents/arya/` | Android app source (Arya package) |
+| `app/src/main/java/io/agents/arya/agent/hermes/` | Embedded Hermes core (memory, skills, sessions, loop) |
+| `HERMES_CORE.md` | Hermes embedding architecture & roadmap |
 | `app/src/main/assets/playbooks/` | Built-in playbooks used by the agent harness |
 | `app/src/test/` | JVM/unit regression tests |
 | `scripts/` | QA and automation scripts |

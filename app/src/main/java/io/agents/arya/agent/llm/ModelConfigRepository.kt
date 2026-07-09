@@ -57,6 +57,7 @@ data class ResolvedModelConfig(
         // bypassing AgentConfig.Builder.build(), so we must apply the helper here too.
         val finalSystemPrompt = io.agents.arya.agent.PromptUtils
             .applyGlobalPrompt(AgentConfig.DEFAULT_SYSTEM_PROMPT)
+        val hermesEnabled = KVUtils.isHermesEmbeddedEnabled()
         return if (activeMode == ActiveModelMode.LOCAL) {
             AgentConfig(
                 apiKey = "",
@@ -66,7 +67,8 @@ data class ResolvedModelConfig(
                 maxIterations = maxIterations,
                 temperature = temperature,
                 provider = LlmProvider.LOCAL,
-                streaming = streaming
+                streaming = streaming,
+                hermesEnabled = hermesEnabled
             )
         } else {
             AgentConfig(
@@ -77,7 +79,8 @@ data class ResolvedModelConfig(
                 maxIterations = maxIterations,
                 temperature = temperature,
                 provider = activeCloud.agentProvider,
-                streaming = streaming
+                streaming = streaming,
+                hermesEnabled = hermesEnabled
             )
         }
     }

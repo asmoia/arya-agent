@@ -1,0 +1,587 @@
+// Copyright 2026 Arya Agent. Licensed under the Apache License, Version 2.0.
+// Embedded Hermes core — full in-process agent brain (no Termux / no external gateway).
+
+package io.agents.arya.agent.hermes.core
+
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import dev.langchain4j.agent.tool.ToolExecutionRequest
+import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.data.message.ChatMessage
+import dev.langchain4j.data.message.SystemMessage
+import dev.langchain4j.data.message.ToolExecutionResultMessage
+import dev.langchain4j.data.message.UserMessage
+import io.agents.arya.ClawApplication
+import io.agents.arya.R
+import io.agents.arya.agent.AgentCallback
+import io.agents.arya.agent.AgentConfig
+import io.agents.arya.agent.AgentService
+import io.agents.arya.agent.DirectDeviceDataGuard
+import io.agents.arya.agent.EmailComposeGuard
+import io.agents.arya.agent.InAppSearchGuard
+import io.agents.arya.agent.LlmProvider
+import io.agents.arya.agent.StuckDetector
+import io.agents.arya.agent.TaskBudget
+import io.agents.arya.agent.TaskPromptEnvelope
+import io.agents.arya.agent.TokenMonitor
+import io.agents.arya.agent.hermes.memory.HermesMemoryStore
+import io.agents.arya.agent.hermes.session.HermesSessionStore
+import io.agents.arya.agent.hermes.skills.HermesSkillStore
+import io.agents.arya.agent.hermes.tools.HermesMetaTools
+import io.agents.arya.agent.langchain.LangChain4jToolBridge
+import io.agents.arya.agent.llm.LlmClient
+import io.agents.arya.agent.llm.LlmClientFactory
+import io.agents.arya.agent.llm.LlmResponse
+import io.agents.arya.agent.llm.StreamingListener
+import io.agents.arya.tool.ToolRegistry
+import io.agents.arya.tool.ToolResult
+import io.agents.arya.tool.impl.GetScreenInfoTool
+import io.agents.arya.utils.XLog
+import java.util.LinkedList
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Self-contained Hermes agent loop running inside the Arya APK.
+ *
+ * - Uses the same phone [ToolRegistry] as DefaultAgentService
+ * - Adds Hermes memory + skill meta-tools
+ * - Persists sessions and learns across turns
+ * - Does **not** require Termux or an external Hermes gateway
+ */
+class HermesAgentService : AgentService {
+
+    companion object {
+        private const val TAG = "HermesCore"
+        private val GSON = Gson()
+        private const val LOOP_DETECT_WINDOW = 6
+        private const val SCREEN_SETTLE_MS = 450L
+        private val ACTION_TOOLS = setOf(
+            "tap", "tap_node", "long_press", "swipe", "scroll_to_find", "find_and_tap",
+            "input_text", "system_key", "open_app", "send_message", "make_call",
+            "emui_settings", "repeat_actions"
+        )
+    }
+
+    private lateinit var config: AgentConfig
+    private lateinit var llmClient: LlmClient
+    private lateinit var toolSpecs: List<dev.langchain4j.agent.tool.ToolSpecification>
+
+    private val running = AtomicBoolean(false)
+    private val cancelled = AtomicBoolean(false)
+    private var executor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "hermes-agent").apply { isDaemon = true }
+    }
+    private var taskFuture: Future<*>? = null
+
+    private val sessions get() = HermesSessionStore.getInstance()
+    private val memory get() = HermesMemoryStore.getInstance()
+    private val skills get() = HermesSkillStore.getInstance()
+
+    private var activeSessionId: String? = null
+
+    override fun initialize(config: AgentConfig) {
+        this.config = config
+        HermesMetaTools.registerAll()
+        skills.ensureSeedSkills()
+        this.llmClient = LlmClientFactory.create(config)
+        this.toolSpecs = LangChain4jToolBridge.buildToolSpecifications()
+        XLog.i(TAG, "Hermes embedded core initialized provider=${config.provider} tools=${toolSpecs.size}")
+    }
+
+    override fun updateConfig(config: AgentConfig) {
+        this.config = config
+        if (::llmClient.isInitialized) {
+            try {
+                llmClient.close()
+            } catch (_: Exception) {
+            }
+        }
+        this.llmClient = LlmClientFactory.create(config)
+        this.toolSpecs = LangChain4jToolBridge.buildToolSpecifications()
+        XLog.i(TAG, "Hermes core config updated tools=${toolSpecs.size}")
+    }
+
+    override fun executeTask(userPrompt: String, callback: AgentCallback) {
+        if (!running.compareAndSet(false, true)) {
+            callback.onError(0, IllegalStateException("Hermes agent is already running"), 0)
+            return
+        }
+        cancelled.set(false)
+        taskFuture = executor.submit {
+            try {
+                runHermesLoop(userPrompt, callback)
+            } catch (e: Exception) {
+                if (!cancelled.get()) {
+                    XLog.e(TAG, "Hermes loop crashed", e)
+                    callback.onError(0, e, 0)
+                }
+            } finally {
+                running.set(false)
+            }
+        }
+    }
+
+    private fun runHermesLoop(userPrompt: String, callback: AgentCallback) {
+        val parsed = TaskPromptEnvelope.parse(userPrompt)
+        val rawUserRequest = parsed.currentRequest
+
+        // Fresh session per task (memory/skills still persist across sessions).
+        // Avoid resuming a half-open session from a crash mid-task.
+        sessions.latestOpenSession()?.let { stale ->
+            sessions.endSession(stale.id, "superseded")
+        }
+        val session = sessions.createSession(
+            title = rawUserRequest.take(60),
+            source = "arya",
+            metadata = mapOf("provider" to config.provider.name)
+        )
+        activeSessionId = session.id
+        sessions.appendMessage(session.id, "user", rawUserRequest)
+
+        val inAppSearchGuard = InAppSearchGuard.fromTask(rawUserRequest)
+        val emailComposeGuard = EmailComposeGuard.fromTask(rawUserRequest)
+        val directDeviceDataGuard = DirectDeviceDataGuard.fromTask(rawUserRequest)
+
+        val extraGuards = buildString {
+            append(inAppSearchGuard.buildPromptSection())
+            append(emailComposeGuard.buildPromptSection())
+            append(directDeviceDataGuard.buildPromptSection())
+        }
+
+        val systemPrompt = HermesPromptBuilder.build(
+            basePrompt = HermesPromptBuilder.ARYA_HERMES_IDENTITY,
+            userTask = rawUserRequest,
+            includeMemory = true,
+            includeSkills = true,
+            extraSections = extraGuards
+        )
+
+        val messages = mutableListOf<ChatMessage>()
+        messages.add(SystemMessage.from(systemPrompt))
+
+        val promptForModel = buildString {
+            if (parsed.hasChatHistory || parsed.hasBackgroundState) {
+                appendLine("You are continuing an existing chatroom.")
+                parsed.backgroundState?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    appendLine("Background status:\n$it\n")
+                }
+                parsed.chatHistory?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    appendLine("Chatroom so far:\n$it\n")
+                }
+            }
+            appendLine("Current user request:")
+            append(rawUserRequest)
+        }
+
+        val looksLikeTask = looksLikeTask(rawUserRequest)
+        val enrichedPrompt = if (looksLikeTask) {
+            try {
+                val screenTool = ToolRegistry.getInstance().getTool("get_screen_info")
+                val screenResult = screenTool?.execute(emptyMap())
+                if (screenResult != null && screenResult.isSuccess && !screenResult.data.isNullOrBlank()) {
+                    XLog.i(TAG, "pre-warm screen attached (${screenResult.data!!.length} chars)")
+                    "$promptForModel\n\nCurrent screen:\n${screenResult.data}"
+                } else promptForModel
+            } catch (_: Exception) {
+                promptForModel
+            }
+        } else {
+            promptForModel
+        }
+        messages.add(UserMessage.from(enrichedPrompt))
+
+        var iterations = 0
+        var totalTokens = 0
+        var actualModelName: String? = null
+        val maxIterations = config.maxIterations
+        val loopHistory = LinkedList<RoundFingerprint>()
+        var lastScreenHash = 0
+        var previousScreenTexts: Set<String> = emptySet()
+        val tokenMonitor = TokenMonitor(config.modelName)
+        val stuckDetector = StuckDetector()
+        val taskBudget = TaskBudget.fromSettings()
+        var softLimitWarned = false
+        var finalAnswer: String? = null
+
+        while (iterations < maxIterations && !cancelled.get()) {
+            iterations++
+            callback.onLoopStart(iterations)
+
+            HermesContextCompressor.compress(messages)
+
+            val llmResponse: LlmResponse = try {
+                chatWithRetry(messages, callback, iterations)
+            } catch (e: Exception) {
+                XLog.e(TAG, "LLM call failed", e)
+                callback.onError(
+                    iterations,
+                    RuntimeException(
+                        ClawApplication.instance.getString(R.string.agent_api_call_failed, e.message)
+                    ),
+                    totalTokens
+                )
+                sessions.endSession(session.id, "error")
+                return
+            }
+
+            if (cancelled.get()) {
+                val msg = ClawApplication.instance.getString(R.string.agent_task_cancel)
+                callback.onComplete(iterations, msg, totalTokens, actualModelName)
+                sessions.endSession(session.id, "cancelled")
+                return
+            }
+
+            if (actualModelName == null && !llmResponse.modelName.isNullOrEmpty()) {
+                actualModelName = llmResponse.modelName
+            }
+            llmResponse.tokenUsage?.totalTokenCount()?.let { totalTokens += it }
+            tokenMonitor.record(
+                step = iterations,
+                inputTokens = llmResponse.tokenUsage?.inputTokenCount(),
+                outputTokens = llmResponse.tokenUsage?.outputTokenCount(),
+                totalTokenCount = llmResponse.tokenUsage?.totalTokenCount()
+            )
+            callback.onTokenUpdate(tokenMonitor.getStatus())
+
+            when (taskBudget.check(tokenMonitor.getStatus().totalTokens, tokenMonitor.getStatus().estimatedCostUsd)) {
+                TaskBudget.Status.HARD_LIMIT -> {
+                    val status = tokenMonitor.getStatus()
+                    val msg =
+                        "Task stopped: budget limit (${status.formattedTokens}, ${status.formattedCost})."
+                    callback.onComplete(iterations, msg, totalTokens, actualModelName)
+                    postTurnLearn(session.id, rawUserRequest, msg)
+                    sessions.endSession(session.id, "budget")
+                    return
+                }
+                TaskBudget.Status.SOFT_LIMIT -> {
+                    if (!softLimitWarned) {
+                        softLimitWarned = true
+                        messages.add(
+                            UserMessage.from(
+                                "[System] Approaching budget limit. Finish efficiently with finish(summary=...)."
+                            )
+                        )
+                    }
+                }
+                TaskBudget.Status.OK -> Unit
+            }
+
+            XLog.i(
+                TAG,
+                "iter=$iterations tools=${llmResponse.toolExecutionRequests.size} text=${llmResponse.text?.take(200)}"
+            )
+
+            val aiMessage = if (llmResponse.hasToolExecutionRequests()) {
+                if (llmResponse.text.isNullOrEmpty()) {
+                    AiMessage.from(llmResponse.toolExecutionRequests)
+                } else {
+                    AiMessage.from(llmResponse.text, llmResponse.toolExecutionRequests)
+                }
+            } else {
+                AiMessage.from(llmResponse.text ?: "")
+            }
+            messages.add(aiMessage)
+            sessions.appendMessage(
+                session.id,
+                "assistant",
+                llmResponse.text ?: "(tool_calls=${llmResponse.toolExecutionRequests.size})"
+            )
+
+            if (!config.streaming && !llmResponse.text.isNullOrEmpty()) {
+                val suppress =
+                    !llmResponse.hasToolExecutionRequests() &&
+                        (inAppSearchGuard.shouldBlockTextOnlyCompletion() ||
+                            emailComposeGuard.shouldBlockTextOnlyCompletion())
+                if (!suppress) callback.onContent(iterations, llmResponse.text)
+            }
+
+            // Text-only completion
+            if (!llmResponse.hasToolExecutionRequests()) {
+                val responseText = llmResponse.text.orEmpty()
+                if (responseText.isNotEmpty()) {
+                    if (inAppSearchGuard.shouldBlockTextOnlyCompletion()) {
+                        messages.add(UserMessage.from(inAppSearchGuard.buildCompletionCorrection()))
+                        continue
+                    }
+                    if (directDeviceDataGuard.shouldBlockTextOnlyCompletion()) {
+                        messages.add(UserMessage.from(directDeviceDataGuard.buildCompletionCorrection()))
+                        continue
+                    }
+                    if (emailComposeGuard.shouldBlockTextOnlyCompletion()) {
+                        messages.add(UserMessage.from(emailComposeGuard.buildCompletionCorrection()))
+                        continue
+                    }
+                    finalAnswer = responseText
+                    callback.onComplete(iterations, responseText, totalTokens, actualModelName)
+                    postTurnLearn(session.id, rawUserRequest, responseText)
+                    sessions.endSession(session.id, "completed")
+                    return
+                }
+                callback.onComplete(
+                    iterations,
+                    ClawApplication.instance.getString(R.string.agent_task_completed),
+                    totalTokens,
+                    actualModelName
+                )
+                sessions.endSession(session.id, "empty")
+                return
+            }
+
+            // Execute tools
+            for (toolRequest in llmResponse.toolExecutionRequests) {
+                if (cancelled.get()) {
+                    val msg = ClawApplication.instance.getString(R.string.agent_task_cancel)
+                    callback.onComplete(iterations, msg, totalTokens, actualModelName)
+                    sessions.endSession(session.id, "cancelled")
+                    return
+                }
+
+                val toolName = toolRequest.name() ?: ""
+                val displayName = ToolRegistry.getInstance().getDisplayName(toolName)
+                val toolArgs = toolRequest.arguments() ?: "{}"
+                val mapType = object : TypeToken<Map<String, Any>>() {}.type
+                var params: Map<String, Any> = try {
+                    GSON.fromJson(toolArgs, mapType) ?: emptyMap()
+                } catch (e: Exception) {
+                    XLog.w(TAG, "Bad tool args $toolName: $toolArgs", e)
+                    emptyMap()
+                }
+
+                val blockedFinish = if (toolName == "finish") {
+                    val screenInfo = try {
+                        ToolRegistry.getInstance()
+                            .getTool("get_screen_info")
+                            ?.execute(emptyMap())
+                            ?.takeIf { it.isSuccess }
+                            ?.data
+                    } catch (_: Exception) {
+                        null
+                    }
+                    directDeviceDataGuard.maybeBlockFinish()
+                        ?: inAppSearchGuard.maybeBlockFinish(screenInfo)
+                        ?: emailComposeGuard.maybeBlockFinish(screenInfo)
+                } else null
+
+                if (blockedFinish != null) {
+                    val blockedResult = ToolResult.error(blockedFinish)
+                    callback.onToolCall(iterations, toolName, displayName, toolArgs)
+                    callback.onToolResult(iterations, toolName, displayName, params.toString(), blockedResult)
+                    messages.add(ToolExecutionResultMessage.from(toolRequest, GSON.toJson(blockedResult)))
+                    messages.add(UserMessage.from(blockedFinish))
+                    continue
+                }
+
+                callback.onToolCall(iterations, toolName, displayName, toolArgs)
+                directDeviceDataGuard.recordToolAttempt(toolName)
+                emailComposeGuard.recordToolAttempt(toolName)
+
+                val result = ToolRegistry.getInstance().executeTool(toolName, params)
+                callback.onToolResult(iterations, toolName, displayName, params.toString(), result)
+                sessions.appendMessage(
+                    session.id,
+                    "tool",
+                    if (result.isSuccess) result.data ?: "ok" else result.error ?: "error",
+                    toolName
+                )
+
+                if (result.isSuccess) {
+                    inAppSearchGuard.recordSuccessfulTool(toolName, params)
+                    emailComposeGuard.recordSuccessfulTool(toolName)
+                }
+
+                if (!result.isSuccess && result.error == GetScreenInfoTool.SYSTEM_DIALOG_BLOCKED) {
+                    callback.onSystemDialogBlocked(iterations, totalTokens)
+                    sessions.endSession(session.id, "system_dialog")
+                    return
+                }
+
+                if (toolName == "finish" && result.isSuccess) {
+                    finalAnswer = result.data
+                        ?: ClawApplication.instance.getString(R.string.agent_task_completed)
+                    callback.onComplete(iterations, finalAnswer!!, totalTokens, actualModelName)
+                    postTurnLearn(session.id, rawUserRequest, finalAnswer!!)
+                    sessions.endSession(session.id, "completed")
+                    return
+                }
+
+                val combinedJson: String = if (toolName in ACTION_TOOLS) {
+                    try {
+                        Thread.sleep(SCREEN_SETTLE_MS)
+                        val screenAfter = ToolRegistry.getInstance()
+                            .getTool("get_screen_info")
+                            ?.execute(emptyMap())
+                        if (screenAfter != null && screenAfter.isSuccess && !screenAfter.data.isNullOrBlank()) {
+                            lastScreenHash = screenAfter.data!!.hashCode()
+                            val currentTexts = screenAfter.data!!.lines()
+                                .map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                            val added = currentTexts - previousScreenTexts
+                            val removed = previousScreenTexts - currentTexts
+                            previousScreenTexts = currentTexts
+                            val diff = buildString {
+                                if (added.isNotEmpty()) append("\nNew on screen: ${added.take(10).joinToString()}")
+                                if (removed.isNotEmpty()) append("\nGone: ${removed.take(10).joinToString()}")
+                            }
+                            val enrichedData = "${result.data ?: ""}\n\nScreen after action:\n${screenAfter.data}$diff"
+                            val enriched = if (result.isSuccess) ToolResult.success(enrichedData)
+                            else ToolResult.error(result.error ?: "")
+                            GSON.toJson(enriched)
+                        } else GSON.toJson(result)
+                    } catch (e: Exception) {
+                        XLog.w(TAG, "screen attach failed after $toolName", e)
+                        GSON.toJson(result)
+                    }
+                } else {
+                    if (toolName == "get_screen_info" && result.isSuccess && result.data != null) {
+                        lastScreenHash = result.data.hashCode()
+                    }
+                    GSON.toJson(result)
+                }
+
+                if (toolName.isNotEmpty()) {
+                    loopHistory.addLast(RoundFingerprint(lastScreenHash, "$toolName:$toolArgs"))
+                    if (loopHistory.size > LOOP_DETECT_WINDOW) loopHistory.removeFirst()
+                }
+
+                messages.add(ToolExecutionResultMessage.from(toolRequest, combinedJson))
+            }
+
+            // Stuck recovery
+            val lastAction = llmResponse.toolExecutionRequests.firstOrNull()?.let {
+                "${it.name()}:${it.arguments()?.take(50)}"
+            } ?: ""
+            val detection = stuckDetector.record(lastAction, lastScreenHash, previousScreenTexts.size, null)
+            if (detection != null) {
+                when (detection.level) {
+                    StuckDetector.RecoveryLevel.AUTO_KILL -> {
+                        val status = tokenMonitor.getStatus()
+                        val msg =
+                            "Task stopped: stuck (${detection.signal.description}). ${status.formattedTokens}"
+                        callback.onComplete(iterations, msg, totalTokens, actualModelName)
+                        sessions.endSession(session.id, "stuck")
+                        return
+                    }
+                    else -> messages.add(UserMessage.from(detection.recoveryHint))
+                }
+            }
+        }
+
+        if (cancelled.get()) {
+            callback.onComplete(
+                iterations,
+                ClawApplication.instance.getString(R.string.agent_task_cancel),
+                totalTokens,
+                actualModelName
+            )
+            sessions.endSession(session.id, "cancelled")
+        } else {
+            callback.onError(
+                iterations,
+                RuntimeException(
+                    ClawApplication.instance.getString(R.string.agent_max_iterations, maxIterations)
+                ),
+                totalTokens
+            )
+            sessions.endSession(session.id, "max_iterations")
+        }
+    }
+
+    /**
+     * Post-turn learning: episodic log + light profile note for non-trivial tasks.
+     * Mirrors Hermes background memory/skill review in a lightweight form.
+     */
+    private fun postTurnLearn(sessionId: String, userTask: String, answer: String) {
+        try {
+            memory.appendEpisode(
+                "Task: ${userTask.take(300)}\nResult: ${answer.take(500)}"
+            )
+            // If the user stated a durable preference/fact, the model may already
+            // have called hermes_memory. We still capture a short episode always.
+            val skill = skills.match(userTask)
+            if (skill != null && answer.length > 40) {
+                // Nudge skill quality with outcome note (safe, append-only)
+                skills.improveSkill(
+                    skill.id,
+                    "Observed outcome for «${userTask.take(80)}»: ${answer.take(200)}"
+                )
+            }
+            XLog.i(TAG, "postTurnLearn session=$sessionId")
+        } catch (e: Exception) {
+            XLog.w(TAG, "postTurnLearn failed", e)
+        }
+    }
+
+    private fun chatWithRetry(
+        messages: List<ChatMessage>,
+        callback: AgentCallback,
+        iteration: Int
+    ): LlmResponse {
+        var lastError: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                return if (config.streaming) {
+                    llmClient.chatStreaming(messages, toolSpecs, object : StreamingListener {
+                        override fun onPartialText(token: String) {
+                            callback.onContent(iteration, token)
+                        }
+                        override fun onComplete(response: LlmResponse) {}
+                        override fun onError(error: Throwable) {}
+                    })
+                } else {
+                    llmClient.chat(messages, toolSpecs)
+                }
+            } catch (e: Exception) {
+                lastError = e
+                XLog.w(TAG, "LLM attempt ${attempt + 1} failed: ${e.message}")
+                Thread.sleep(400L * (attempt + 1))
+            }
+        }
+        throw lastError ?: RuntimeException("LLM failed")
+    }
+
+    private fun looksLikeTask(text: String): Boolean {
+        val lower = text.lowercase()
+        val en = listOf(
+            "open ", "send ", "tap ", "search ", "play ", "take ", "install ",
+            "click ", "go to ", "navigate ", "turn on ", "turn off ", "monitor ",
+            "close ", "swipe ", "scroll ", "check ", "compose ", "find ", "screen",
+            "notification", "read my", "call ", "dial "
+        )
+        val fa = listOf(
+            "باز کن", "بفرست", "بزن", "جستجو", "پیدا کن", "نصب", "ببند",
+            "پیام", "تماس", "تنظیمات", "واتساپ", "تلگرام", "اسکرین", "اعلان",
+            "روشن", "خاموش", "برو به", "چک کن", "بخون", "بخوان"
+        )
+        return en.any { lower.contains(it) } || fa.any { text.contains(it) }
+    }
+
+    private data class RoundFingerprint(val screenHash: Int, val toolCall: String)
+
+    override fun cancel() {
+        cancelled.set(true)
+        XLog.i(TAG, "cancel requested")
+        if (config.provider != LlmProvider.LOCAL) {
+            taskFuture?.cancel(true)
+        }
+    }
+
+    override fun shutdown() {
+        cancel()
+        executor.shutdownNow()
+        if (::llmClient.isInitialized) {
+            try {
+                llmClient.close()
+            } catch (_: Exception) {
+            }
+        }
+        activeSessionId?.let {
+            try {
+                sessions.endSession(it, "shutdown")
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    override fun isRunning(): Boolean = running.get()
+}

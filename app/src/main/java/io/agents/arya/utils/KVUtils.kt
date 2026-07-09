@@ -369,6 +369,16 @@ object KVUtils {
     fun hasLlmConfig(): Boolean =
         getLlmApiKey().isNotEmpty() || getLlmBaseUrl().isNotEmpty() || getLocalModelPath().isNotEmpty()
 
+    // ==================== Embedded Hermes Core ====================
+    // When enabled, TaskOrchestrator uses HermesAgentService (in-process brain
+    // with memory + skills) instead of DefaultAgentService. No Termux required.
+    // Default TRUE for Arya product builds.
+
+    private const val KEY_HERMES_EMBEDDED_ENABLED = "KEY_HERMES_EMBEDDED_ENABLED"
+
+    fun isHermesEmbeddedEnabled(): Boolean = getBoolean(KEY_HERMES_EMBEDDED_ENABLED, true)
+    fun setHermesEmbeddedEnabled(enabled: Boolean) = putBoolean(KEY_HERMES_EMBEDDED_ENABLED, enabled)
+
     // ==================== Global Prompt (#45) ====================
     // User-defined persistent instructions prepended to every system prompt.
     // Empty string = disabled. No separate enable toggle by design (less to misconfigure).

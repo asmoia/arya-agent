@@ -48,9 +48,10 @@ class TaskOrchestrator(
     // ==================== Agent Lifecycle ====================
 
     fun initAgent() {
-        agentService = AgentServiceFactory.create()
+        val config = agentConfigProvider()
+        agentService = AgentServiceFactory.create(config)
         try {
-            agentService.initialize(agentConfigProvider())
+            agentService.initialize(config)
         } catch (e: Exception) {
             XLog.e(TAG, "Failed to initialize AgentService", e)
         }
@@ -60,12 +61,25 @@ class TaskOrchestrator(
         return try {
             val config = agentConfigProvider()
             if (::agentService.isInitialized) {
-                agentService.updateConfig(config)
-                XLog.d(TAG, "Agent config updated: model=${config.modelName}, temp=${config.temperature}")
+                // If Hermes toggle flipped, recreate the service implementation.
+                val wantHermes = config.hermesEnabled
+                val isHermes = agentService is io.agents.arya.agent.hermes.core.HermesAgentService
+                if (wantHermes != isHermes) {
+                    XLog.i(TAG, "Agent implementation switch hermes=$wantHermes — recreating service")
+                    try {
+                        agentService.shutdown()
+                    } catch (_: Exception) {
+                    }
+                    agentService = AgentServiceFactory.create(config)
+                    agentService.initialize(config)
+                } else {
+                    agentService.updateConfig(config)
+                }
+                XLog.d(TAG, "Agent config updated: model=${config.modelName}, temp=${config.temperature}, hermes=$wantHermes")
                 true
             } else {
                 XLog.w(TAG, "AgentService not initialized, initializing with new config")
-                agentService = AgentServiceFactory.create()
+                agentService = AgentServiceFactory.create(config)
                 agentService.initialize(config)
                 true
             }
@@ -231,8 +245,9 @@ class TaskOrchestrator(
         if (!::agentService.isInitialized) {
             XLog.e(TAG, "AgentService not initialized, attempting to initialize")
             try {
-                agentService = AgentServiceFactory.create()
-                agentService.initialize(agentConfigProvider())
+                val config = agentConfigProvider()
+                agentService = AgentServiceFactory.create(config)
+                agentService.initialize(config)
             } catch (e: Exception) {
                 XLog.e(TAG, "Failed to initialize AgentService", e)
                 releaseTask()

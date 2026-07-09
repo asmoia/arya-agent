@@ -6,11 +6,35 @@
 
 | تغییر | توضیح |
 |---|---|
-| 🇮🇷 شخصیت فارسی «آریا» | System prompt فارسی-انگلیسی دو‌زبانه |
+| 🇮🇷 شخصیت فارسی «آریا» | System prompt فارسی-انگلیسی دو‌زبانه (Hermes identity) |
+| 🧠 **هستهٔ هرمس توکار** | `HermesAgentService` — حافظه، مهارت، session، بدون Termux |
 | 📅 تقویم شمسی | ابزار `shamsi_calendar` — تاریخ شمسی + تبدیل |
 | ⚙️ تنظیمات EMUI | ابزار `emui_settings` — کنترل مخصوص هواوی |
 | 🔤 رابط فارسی | فایل `values-fa/strings.xml` کامل |
 | 🏷️ پکیج جدید | `io.agents.arya` — نصب کنار PokeClaw اصلی |
+
+## هستهٔ هرمس (Embedded Hermes)
+
+برنامه **مستقل** است؛ نیازی به Termux یا `hermes gateway` نیست.
+
+```
+UI / Accessibility / Tools
+          │
+          ▼
+   HermesAgentService   ← پیش‌فرض فعال
+     ├─ Memory (MEMORY.md + episodes)
+     ├─ Skills (skills/*.md)
+     ├─ Sessions (SQLite)
+     └─ Phone ToolRegistry
+```
+
+- فعال/غیرفعال: `KVUtils.setHermesEmbeddedEnabled(true/false)` (پیش‌فرض: true)
+- مستندات: `HERMES_CORE.md`
+
+ابزارهای متا برای مدل:
+
+- `hermes_memory` — read / append / write / search / episode
+- `hermes_skill` — list / get / write / improve / delete / match
 
 ## ساخت
 
