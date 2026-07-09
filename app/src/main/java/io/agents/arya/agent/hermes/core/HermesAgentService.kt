@@ -287,7 +287,7 @@ class HermesAgentService : AgentService {
             userTask = rawUserRequest,
             providerIsLocal = config.provider == LlmProvider.LOCAL
         )
-        val maxIterations = minOf(config.maxIterations, policy.maxIterations)
+        val maxIterations = if (config.provider == LlmProvider.LOCAL) policy.maxIterations else minOf(config.maxIterations, policy.maxIterations + 4)
         val screenSettleMs = policy.screenSettleMs
         val loopHistory = LinkedList<RoundFingerprint>()
         var lastScreenHash = 0

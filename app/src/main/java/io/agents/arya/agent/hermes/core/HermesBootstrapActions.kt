@@ -98,6 +98,32 @@ object HermesBootstrapActions {
 
     fun execute(step: Step): ToolResult {
         XLog.i(TAG, "bootstrap ${step.tool} ${step.params}")
-        return ToolRegistry.getInstance().executeTool(step.tool, step.params)
+        val reg = ToolRegistry.getInstance()
+        var result = reg.executeTool(step.tool, step.params)
+        // Telegram forks / Huawei AppGallery installs
+        if (!result.isSuccess && step.tool == "open_app") {
+            val pkg = step.params["package_name"]?.toString().orEmpty().lowercase()
+            val alts = when {
+                pkg.contains("telegram") || pkg == "telegram" -> listOf(
+                    "org.telegram.messenger",
+                    "org.telegram.messenger.web",
+                    "org.thunderdog.challegram",
+                    "org.telegram.plus"
+                )
+                pkg.contains("whatsapp") || pkg == "whatsapp" -> listOf(
+                    "com.whatsapp", "com.whatsapp.w4b"
+                )
+                pkg.contains("chrome") || pkg == "chrome" -> listOf(
+                    "com.android.chrome", "com.chrome.beta", "com.huawei.browser"
+                )
+                else -> emptyList()
+            }
+            for (alt in alts) {
+                XLog.i(TAG, "bootstrap open_app retry package=$alt")
+                result = reg.executeTool("open_app", mapOf("package_name" to alt))
+                if (result.isSuccess) break
+            }
+        }
+        return result
     }
 }
