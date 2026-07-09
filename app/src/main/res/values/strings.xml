@@ -89,7 +89,7 @@
     <string name="wechat_media_unknown">media</string>
     <string name="channel_config_saved">Configuration saved</string>
     <string name="channel_config_lan_hint">💡 Enable \"LAN Config\" in Settings to configure via browser</string>
-    <string name="channel_config_lan_hint_running">💡 Open %s in your browser to configure</string>
+    <string name="channel_config_lan_hint_running">💡 Local-only configuration. Open %s in a browser on this phone; do not share this URL.</string>
     <string name="channel_config_lan_copied">Address copied</string>
 
     <!-- LLM Config -->

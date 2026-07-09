@@ -8,7 +8,7 @@ BLOCKED=0
 TIMEOUT=0
 TOTAL=0
 
-RESULTS_FILE="${RESULTS_FILE:-/tmp/pokeclaw-e2e-${MODE}-quick-tasks-$(date +%Y%m%d-%H%M%S).log}"
+RESULTS_FILE="${RESULTS_FILE:-/tmp/arya-e2e-${MODE}-quick-tasks-$(date +%Y%m%d-%H%M%S).log}"
 LOCAL_MODEL_PATH="${LOCAL_MODEL_PATH:-}"
 LOCAL_MODEL_NAME="${LOCAL_MODEL_NAME:-}"
 CLOUD_MODEL_NAME="${CLOUD_MODEL_NAME:-gpt-4.1}"
@@ -42,7 +42,7 @@ resolve_local_model() {
         return 0
     fi
 
-    local models_dir="/storage/emulated/0/Android/data/io.agents.pokeclaw/files/models"
+    local models_dir="/storage/emulated/0/Android/data/io.agents.arya/files/models"
     local e4b_path="${models_dir}/gemma-4-E4B-it.litertlm"
     local e2b_path="${models_dir}/gemma-4-E2B-it.litertlm"
 
@@ -70,19 +70,19 @@ resolve_local_model() {
 configure_mode() {
     case "$MODE" in
         cloud)
-            if [ -z "${OPENAI_API_KEY:-}" ] && [ -f /home/nicole/MyGithub/PokeClaw/.env ]; then
+            if [ -z "${OPENAI_API_KEY:-}" ] && [ -f /home/nicole/MyGithub/Arya/.env ]; then
                 # shellcheck disable=SC1091
-                source /home/nicole/MyGithub/PokeClaw/.env
+                source /home/nicole/MyGithub/Arya/.env
             fi
             if [ -z "${OPENAI_API_KEY:-}" ]; then
                 echo "OPENAI_API_KEY not set and .env not available"
                 exit 1
             fi
-            adb_retry adb shell "am broadcast -a io.agents.pokeclaw.DEBUG_TASK -p io.agents.pokeclaw --es task 'config:' --es api_key '$OPENAI_API_KEY' --es model_name '$CLOUD_MODEL_NAME'" >/dev/null
+            adb_retry adb shell "am broadcast -a io.agents.arya.DEBUG_TASK -p io.agents.arya --es task 'config:' --es api_key '$OPENAI_API_KEY' --es model_name '$CLOUD_MODEL_NAME'" >/dev/null
             ;;
         local)
             resolve_local_model
-            adb_retry adb shell "am broadcast -a io.agents.pokeclaw.DEBUG_TASK -p io.agents.pokeclaw --es task 'config:' --es provider 'LOCAL' --es base_url '$LOCAL_MODEL_PATH' --es model_name '$LOCAL_MODEL_NAME'" >/dev/null
+            adb_retry adb shell "am broadcast -a io.agents.arya.DEBUG_TASK -p io.agents.arya --es task 'config:' --es provider 'LOCAL' --es base_url '$LOCAL_MODEL_PATH' --es model_name '$LOCAL_MODEL_NAME'" >/dev/null
             ;;
         -h|--help|help)
             print_usage
@@ -98,14 +98,14 @@ configure_mode() {
 }
 
 cancel_running_task() {
-    adb_retry adb shell "am broadcast -a io.agents.pokeclaw.DEBUG_TASK -p io.agents.pokeclaw --es task 'cancel:'" >/dev/null 2>&1 || true
+    adb_retry adb shell "am broadcast -a io.agents.arya.DEBUG_TASK -p io.agents.arya --es task 'cancel:'" >/dev/null 2>&1 || true
     sleep "${TASK_CANCEL_SETTLE_SECONDS:-2}"
 }
 
 dismiss_blocking_system_dialogs() {
     local window_state
     window_state="$(adb shell dumpsys window 2>/dev/null || true)"
-    if printf '%s' "$window_state" | grep -q "Application Not Responding: io.agents.pokeclaw"; then
+    if printf '%s' "$window_state" | grep -q "Application Not Responding: io.agents.arya"; then
         # Android ANR dialogs use package=android and block Accessibility focus.
         # Coordinates default to the Pixel 8 Pro QA device; override if needed.
         adb shell input tap "${ANR_CLOSE_X:-300}" "${ANR_CLOSE_Y:-1158}" >/dev/null 2>&1 || true
@@ -116,12 +116,12 @@ dismiss_blocking_system_dialogs() {
 wait_for_accessibility() {
     local attempt
     for attempt in $(seq 1 "${ACCESSIBILITY_WAIT_ATTEMPTS:-10}"); do
-        if adb shell dumpsys accessibility 2>/dev/null | grep -q "Bound services:{Service\\[label=PokeClaw"; then
+        if adb shell dumpsys accessibility 2>/dev/null | grep -q "io.agents.arya"; then
             return 0
         fi
         sleep 1
     done
-    echo "    WARN — PokeClaw Accessibility service did not report bound before task start" | tee -a "$RESULTS_FILE"
+    echo "    WARN — Arya Accessibility service did not report bound before task start" | tee -a "$RESULTS_FILE"
     return 1
 }
 
@@ -130,7 +130,7 @@ reset_foreground() {
     adb shell wm dismiss-keyguard >/dev/null 2>&1 || true
     adb shell cmd statusbar collapse >/dev/null 2>&1 || true
     dismiss_blocking_system_dialogs
-    adb_retry adb shell am start -n io.agents.pokeclaw/.ui.splash.SplashActivity >/dev/null 2>&1 || true
+    adb_retry adb shell am start -n io.agents.arya/.ui.splash.SplashActivity >/dev/null 2>&1 || true
     wait_for_accessibility >/dev/null 2>&1 || true
     sleep "${TASK_RESET_SETTLE_SECONDS:-2}"
 }
@@ -165,7 +165,7 @@ run() {
     reset_foreground
     adb_retry adb logcat -c >/dev/null 2>&1 || true
     sleep 1
-    adb_retry adb shell "am broadcast -a io.agents.pokeclaw.DEBUG_TASK -p io.agents.pokeclaw --es task '$task'" >/dev/null 2>&1
+    adb_retry adb shell "am broadcast -a io.agents.arya.DEBUG_TASK -p io.agents.arya --es task '$task'" >/dev/null 2>&1
 
     local i=0
     while [ "$i" -lt "$max" ]; do
@@ -173,7 +173,7 @@ run() {
         i=$((i + 5))
 
         local pid
-        pid="$(adb shell pidof io.agents.pokeclaw 2>/dev/null | tr -d '\r')"
+        pid="$(adb shell pidof io.agents.arya 2>/dev/null | tr -d '\r')"
         if [ -z "$pid" ]; then
             record_result "FAIL" "$i" "app process missing"
             FAIL=$((FAIL + 1))
@@ -193,7 +193,7 @@ run() {
             cancel_running_task
             reset_foreground
             adb_retry adb logcat -c >/dev/null 2>&1 || true
-            adb_retry adb shell "am broadcast -a io.agents.pokeclaw.DEBUG_TASK -p io.agents.pokeclaw --es task '$task'" >/dev/null 2>&1
+            adb_retry adb shell "am broadcast -a io.agents.arya.DEBUG_TASK -p io.agents.arya --es task '$task'" >/dev/null 2>&1
             continue
         fi
 
@@ -239,19 +239,19 @@ run() {
 }
 
 echo "==========================================" | tee "$RESULTS_FILE"
-echo "  POKECLAW E2E — QUICK TASKS (${MODE^^})" | tee -a "$RESULTS_FILE"
+echo "  ARYA E2E — QUICK TASKS (${MODE^^})" | tee -a "$RESULTS_FILE"
 echo "  $(date)" | tee -a "$RESULTS_FILE"
 echo "  results: $RESULTS_FILE" | tee -a "$RESULTS_FILE"
 echo "==========================================" | tee -a "$RESULTS_FILE"
 
-adb_retry adb shell am start -n io.agents.pokeclaw/.ui.splash.SplashActivity >/dev/null 2>&1 || true
+adb_retry adb shell am start -n io.agents.arya/.ui.splash.SplashActivity >/dev/null 2>&1 || true
 sleep 3
 configure_mode
 cancel_running_task
 reset_foreground
 
 if [ "$MODE" = "cloud" ]; then
-    run "Reddit pokeclaw"       "Open Reddit and search for pokeclaw" 60
+    run "Reddit arya"       "Open Reddit and search for arya" 60
     run "YouTube cat fails"     "Search YouTube for funny cat fails" 60
     run "Install Telegram"      "Install Telegram from Play Store" 90
     run "Twitter trending"      "Check whats trending on Twitter and tell me" 60

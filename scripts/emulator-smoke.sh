@@ -34,16 +34,16 @@ adb install -r -t "$APK"
 echo "::endgroup::"
 
 echo "::group::Verify package installed"
-adb shell pm list packages | grep io.agents.pokeclaw || { echo "Package not installed!"; exit 1; }
+adb shell pm list packages | grep io.agents.arya || { echo "Package not installed!"; exit 1; }
 echo "::endgroup::"
 
 echo "::group::Launch app"
 adb logcat -c
-# Correct component is io.agents.pokeclaw/.ui.splash.SplashActivity
+# Correct component is io.agents.arya/.ui.splash.SplashActivity
 # (the .ui.splash. path is the actual class location; earlier rev had a stale
 # com.apk.claw.android.ui.splash.SplashActivity name from a pre-rename build).
-adb shell am start -W -n io.agents.pokeclaw/.ui.splash.SplashActivity \
-  || adb shell monkey -p io.agents.pokeclaw -c android.intent.category.LAUNCHER 1
+adb shell am start -W -n io.agents.arya/.ui.splash.SplashActivity \
+  || adb shell monkey -p io.agents.arya -c android.intent.category.LAUNCHER 1
 echo "::endgroup::"
 
 echo "::group::Wait for app to settle"
@@ -51,9 +51,9 @@ sleep 8
 echo "::endgroup::"
 
 echo "::group::Verify process running"
-PID="$(adb shell pidof io.agents.pokeclaw || echo "")"
+PID="$(adb shell pidof io.agents.arya || echo "")"
 if [ -z "$PID" ]; then
-  echo "::error::App crashed on launch! No process found for io.agents.pokeclaw"
+  echo "::error::App crashed on launch! No process found for io.agents.arya"
   adb logcat -d -t 200 > "logcat-crash.txt"
   exit 1
 fi
