@@ -203,6 +203,37 @@ class TaskOrchestrator(
                 }, "direct-tool-${route.toolName}").start()
                 return
             }
+            is PipelineRouter.Route.PrimeThenAgent -> {
+                if (!isFallback) {
+                    XLog.i(TAG, "Pipeline fast-prime: ${route.toolName} → ${route.description}")
+                    Thread({
+                        taskEventCallback?.invoke(TaskEvent.Progress(1, route.description))
+                        ForegroundService.updateTaskStatus(ClawApplication.instance, route.description)
+                        val result = try {
+                            pipelineRouter.executeTool(route.toolName, route.params)
+                        } catch (e: Exception) {
+                            ToolResult.error(e.message ?: "fast priming failed")
+                        }
+                        if (result.isSuccess) {
+                            taskEventCallback?.invoke(TaskEvent.Progress(2, "خواندن پیام‌های قابل‌مشاهده…"))
+                            XLog.i(TAG, "Fast-prime succeeded; running bounded read pass")
+                            startNewTask(
+                                channel = channel,
+                                task = task,
+                                messageID = messageID,
+                                agentPromptOverride = route.agentInstruction,
+                                isFallback = true,
+                            )
+                        } else {
+                            XLog.w(TAG, "Fast-prime failed: ${result.error}; falling back once")
+                            taskEventCallback?.invoke(TaskEvent.ToolAction("باز کردن چت ناموفق بود؛ تلاش محدود با agent…"))
+                            startNewTask(channel, task, messageID, isFallback = true)
+                        }
+                    }, "fast-prime-${route.toolName}").start()
+                    return
+                }
+                XLog.i(TAG, "Skipping fast-prime on fallback; entering agent loop")
+            }
             is PipelineRouter.Route.Skill -> {
                 if (isFallback) {
                     XLog.i(TAG, "Skipping skill route on fallback, going to agent loop: ${route.skillId}")

@@ -80,6 +80,7 @@ object HermesRuntimePolicy {
         val stored = currentMode()
         val (avail, total, low) = memorySnapshot()
         val knownFastFlow = TelegramSavedMediaMatcher.matches(userTask)
+        val primedReadFlow = userTask.contains(io.agents.arya.agent.FastTaskMatchers.FAST_READ_MARKER)
         val complexity = estimateComplexity(userTask)
 
         val resolved = when {
@@ -87,7 +88,7 @@ object HermesRuntimePolicy {
             // not see a play control, the fallback must stay short. More model
             // rounds will not reveal inaccessible media and used to cause several
             // minutes of futile local inference.
-            knownFastFlow -> HermesThinkingMode.INSTANT
+            knownFastFlow || primedReadFlow -> HermesThinkingMode.INSTANT
             stored == HermesThinkingMode.ADAPTIVE -> when {
                 // Prefer Instant for speed; only HIGH when RAM is healthy AND task is hard.
                 low || avail < 1000 -> HermesThinkingMode.INSTANT
@@ -112,8 +113,8 @@ object HermesRuntimePolicy {
             // The deterministic Telegram tool already did the expensive navigation.
             // Give a fallback model only two focused actions, never a 7-minute
             // re-planning loop.
-            knownFastFlow && providerIsLocal -> 2
-            knownFastFlow -> 3
+            (knownFastFlow || primedReadFlow) && providerIsLocal -> 2
+            knownFastFlow || primedReadFlow -> 3
             providerIsLocal -> when (resolved) {
                 HermesThinkingMode.INSTANT -> 4
                 HermesThinkingMode.THINKING -> if (low || avail < 900) 5 else 6
@@ -151,6 +152,7 @@ object HermesRuntimePolicy {
             append("mode=${stored.name}→${resolved.name} complexity=$complexity ")
             append("mem=${avail}MB/${total}Mb low=$low")
             if (knownFastFlow) append(" | known-fast-flow")
+            if (primedReadFlow) append(" | primed-read-flow")
             if (low) append(" | low-RAM: tighter caps")
         }
 

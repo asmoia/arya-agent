@@ -31,6 +31,17 @@ class PipelineRouter(private val context: Context) {
         /** Tier 2: Execute a registered skill */
         data class Skill(val skillId: String, val params: Map<String, String>, val description: String) : Route()
 
+        /**
+         * Deterministically put the app on the right chat screen, then invoke a
+         * very small agent pass to read/summarize only what is visible.
+         */
+        data class PrimeThenAgent(
+            val toolName: String,
+            val params: Map<String, Any>,
+            val description: String,
+            val agentInstruction: String,
+        ) : Route()
+
         /** Tier 2/3: Run the full agent loop */
         data class AgentLoop(val task: String, val app: String? = null) : Route()
 
@@ -62,6 +73,29 @@ class PipelineRouter(private val context: Context) {
                 params = emptyMap(),
                 description = "Opening Telegram Saved Messages and playing a visible media item"
             )
+        }
+
+        // Read/analyze requests still need language reasoning, but opening a
+        // named Telegram channel/group is deterministic. Prime the UI first so
+        // the model spends its one short pass reading, not navigating.
+        FastTaskMatchers.matchChatAnalysis(task)?.let { chat ->
+            return Route.PrimeThenAgent(
+                toolName = "open_messaging_chat",
+                params = mapOf("contact" to chat.chatName, "app" to chat.app),
+                description = "باز کردن ${chat.chatName} در ${chat.app}",
+                agentInstruction = "${FastTaskMatchers.FAST_READ_MARKER}\n" +
+                    "${chat.app} chat/channel '${chat.chatName}' is already open. " +
+                    "Call get_screen_info exactly once, summarize ONLY the visible latest messages in Persian, " +
+                    "and finish. Do not reopen apps, search, scroll repeatedly, send a message, or invent hidden messages."
+            )
+        }
+
+        // Tier 1: explicit Persian/English commands with all parameters given.
+        // These high-level tools remove multiple local-model planning turns while
+        // still going through ToolRegistry and its sensitive-action gate.
+        FastTaskMatchers.match(task)?.let { match ->
+            XLog.i(TAG, "Fast deterministic match: ${match.toolName} → ${match.description}")
+            return Route.DirectTool(match.toolName, match.params, match.description)
         }
 
         // Tier 1: Deterministic regex matching

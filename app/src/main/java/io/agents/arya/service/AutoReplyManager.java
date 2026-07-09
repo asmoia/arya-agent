@@ -139,6 +139,7 @@ public class AutoReplyManager {
         // Default monitored apps
         monitoredApps.add("com.whatsapp");
         monitoredApps.add("org.telegram.messenger");
+        monitoredApps.add("org.thunderdog.challegram"); // Telegram X
         monitoredApps.add("com.google.android.apps.messaging");
         monitoredApps.add("jp.naver.line.android");
         monitoredApps.add("com.tencent.mm");
@@ -1168,7 +1169,8 @@ public class AutoReplyManager {
     private String resolveAppName(String packageName) {
         switch (packageName) {
             case "com.whatsapp": return "WhatsApp";
-            case "org.telegram.messenger": return "Telegram";
+            case "org.telegram.messenger":
+            case "org.thunderdog.challegram": return "Telegram";
             case "com.google.android.apps.messaging": return "Messages";
             case "jp.naver.line.android": return "LINE";
             case "com.tencent.mm": return "WeChat";
@@ -1181,6 +1183,8 @@ public class AutoReplyManager {
         String lower = appName.trim().toLowerCase(java.util.Locale.ROOT);
         switch (lower) {
             case "telegram":
+            case "telegram x":
+            case "telegramx":
                 return "Telegram";
             case "messages":
             case "google messages":
@@ -1201,7 +1205,7 @@ public class AutoReplyManager {
             case "WhatsApp":
                 return "com.whatsapp";
             case "Telegram":
-                return "org.telegram.messenger";
+                return resolveTelegramPackage();
             case "Messages":
                 return "com.google.android.apps.messaging";
             case "LINE":
@@ -1211,5 +1215,20 @@ public class AutoReplyManager {
             default:
                 return null;
         }
+    }
+
+    private String resolveTelegramPackage() {
+        try {
+            android.content.pm.PackageManager pm = ClawApplication.Companion.getInstance().getPackageManager();
+            if (pm.getLaunchIntentForPackage("org.telegram.messenger") != null) {
+                return "org.telegram.messenger";
+            }
+            if (pm.getLaunchIntentForPackage("org.thunderdog.challegram") != null) {
+                return "org.thunderdog.challegram";
+            }
+        } catch (Exception e) {
+            XLog.w(TAG, "resolveTelegramPackage failed", e);
+        }
+        return "org.telegram.messenger";
     }
 }

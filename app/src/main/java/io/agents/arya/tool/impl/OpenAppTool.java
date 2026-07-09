@@ -186,7 +186,13 @@ public class OpenAppTool extends BaseTool {
         // Common app name → package name mapping
         switch (lower) {
             case "whatsapp": return "com.whatsapp";
-            case "telegram": return "org.telegram.messenger";
+            case "telegram":
+            case "telegram x":
+            case "telegramx":
+                return resolveFirstInstalledPackage(
+                        "org.telegram.messenger",
+                        "org.thunderdog.challegram"
+                );
             case "instagram": return "com.instagram.android";
             case "youtube": return "com.google.android.youtube";
             case "chrome": return "com.android.chrome";
@@ -258,6 +264,25 @@ public class OpenAppTool extends BaseTool {
             XLog.w(TAG, "resolveAppName: failed to search installed apps", e);
         }
         return null;
+    }
+
+    /**
+     * Prefer the regular Telegram package but transparently support Telegram X
+     * when it is the only installed Telegram client. This keeps the higher-level
+     * messaging tools app-agnostic instead of hard-failing before UI search.
+     */
+    private String resolveFirstInstalledPackage(String... candidates) {
+        try {
+            android.content.pm.PackageManager pm = ClawApplication.Companion.getInstance().getPackageManager();
+            for (String candidate : candidates) {
+                if (pm.getLaunchIntentForPackage(candidate) != null) {
+                    return candidate;
+                }
+            }
+        } catch (Exception e) {
+            XLog.w(TAG, "resolveFirstInstalledPackage failed", e);
+        }
+        return candidates.length > 0 ? candidates[0] : null;
     }
 
     /**

@@ -746,7 +746,12 @@ class HermesAgentService : AgentService {
             }
             lower.contains("send ") || lower.contains("message") || task.contains("پیام") -> {
                 names += "send_message"
+                names += "open_messaging_chat"
             }
+        }
+        if (lower.contains("browser") || lower.contains("chrome") || lower.contains("google") ||
+            task.contains("مرورگر") || task.contains("کروم") || task.contains("گوگل")) {
+            names += "search_browser"
         }
         if (task.contains("هواوی") || lower.contains("emui")) names += "emui_settings"
         if (task.contains("شمسی") || lower.contains("shamsi")) names += "shamsi_calendar"

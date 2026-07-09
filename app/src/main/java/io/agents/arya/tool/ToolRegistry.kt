@@ -79,8 +79,10 @@ object ToolRegistry {
         register(ShamsiCalendarTool())
         // Background listen for messaging/voice notifications (Hermes)
         register(HermesListenVoiceTool())
-        // Bounded no-LLM shortcut for Telegram Saved Messages media playback.
+        // Bounded no-LLM shortcuts for common phone tasks.
         register(TelegramSavedMediaTool())
+        register(SearchBrowserTool())
+        register(OpenMessagingChatTool())
     }
 
     fun register(tool: BaseTool) {

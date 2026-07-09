@@ -44,6 +44,8 @@ object HermesToolPlaybook {
 | `clipboard` | get/set clipboard |
 | `make_call` | Dialer (user confirms) |
 | `send_message` | Messaging apps (may need user confirm) |
+| `open_messaging_chat` | Open a named Telegram/Telegram X/WhatsApp person, group or channel before reading it |
+| `search_browser` | Open browser, type and submit an explicit Google/web query without model planning |
 | `take_screenshot` | Capture screen |
 | `shamsi_calendar` | Persian date |
 | `emui_settings` | Huawei quick settings |
@@ -101,6 +103,7 @@ Pick any visible playable item on screen; don't loop forever choosing.
 ## TOOLS (you control the phone — USE THEM)
 See: get_screen_info, find_node_info, open_app, get_installed_apps, system_key, wait
 Touch: find_and_tap, tap_node, tap, long_press, swipe, scroll_to_find, input_text
+Fast: search_browser (explicit web query), open_messaging_chat (named person/group/channel)
 Data: get_device_info, get_notifications, clipboard, make_call, send_message, take_screenshot, shamsi_calendar, emui_settings
 Hermes: listen_voice, hermes_voice(transcript), hermes_memory, hermes_skill, finish
 

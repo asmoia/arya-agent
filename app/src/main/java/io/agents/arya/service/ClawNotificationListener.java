@@ -41,6 +41,7 @@ public class ClawNotificationListener extends NotificationListenerService {
     static {
         MESSAGING_APPS.add("com.whatsapp");
         MESSAGING_APPS.add("org.telegram.messenger");
+        MESSAGING_APPS.add("org.thunderdog.challegram"); // Telegram X
         MESSAGING_APPS.add("com.google.android.apps.messaging");
         MESSAGING_APPS.add("jp.naver.line.android");
         MESSAGING_APPS.add("com.tencent.mm");

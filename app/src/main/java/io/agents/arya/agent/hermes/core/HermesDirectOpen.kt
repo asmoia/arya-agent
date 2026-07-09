@@ -97,6 +97,8 @@ object HermesDirectOpen {
     private fun candidatesFor(hint: String): List<String> {
         val h = hint.lowercase().trim()
         return when {
+            h.contains("telegram x") || h.contains("telegramx") || h.contains("challegram") || h.contains("تلگرام ایکس") ->
+                listOf("org.thunderdog.challegram") + TELEGRAM_PKGS.filterNot { it == "org.thunderdog.challegram" }
             h.contains("telegram") || h.contains("تلگرام") || h == "telegram" -> TELEGRAM_PKGS
             h.contains("whatsapp") || h.contains("واتس") -> WHATSAPP_PKGS
             h.contains("chrome") || h.contains("browser") || h.contains("کروم") || h.contains("مرورگر") -> CHROME_PKGS
