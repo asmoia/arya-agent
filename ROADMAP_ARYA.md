@@ -7,6 +7,12 @@
 - Backup export/import (ZIP)
 - Session DB migrations (v2)
 - Process-death recovery
+- Stronger post-turn learning (P1)
+- OEM stability guide (P0)
+- Update checker → arya-agent Releases (P0)
+- Release workflow uploads to GitHub Releases (P0)
+- Cron scheduler skeleton (P3)
+- MCP HTTP client skeleton (P3)
 
 ## Next (recommended order)
 

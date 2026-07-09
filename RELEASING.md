@@ -1,87 +1,55 @@
-# Releasing PokeClaw
+# Releasing Arya (آریا)
 
-This repo now assumes a single stable release signing key.
+Package: `io.agents.arya`  
+Repo: https://github.com/asmoia/arya-agent
 
-Once a public APK is shipped with that key, every later public APK must use the same key or Android will reject in-place upgrades.
+## Why signing matters
 
-## 1. Prepare the stable keystore once
+Android only allows **in-place upgrade** (no uninstall) when the new APK is signed with the **same certificate** as the installed one.
 
-Generate one long-lived release keystore and keep it outside the repo.
+- Debug APKs from CI use the debug key → fine for testing, **not** a long-term upgrade path across machines.
+- Production path: one stable **release keystore** stored in GitHub Secrets.
 
-Recommended local inputs:
+## Required GitHub Secrets (Settings → Secrets and variables → Actions)
 
-```bash
-export KEYSTORE_FILE=/absolute/path/to/pokeclaw-release.keystore
-export KEYSTORE_PASSWORD=...
-export KEY_ALIAS=pokeclaw-release
-export KEY_PASSWORD=...
-```
+| Secret | Content |
+|---|---|
+| `ANDROID_KEYSTORE_B64` | `base64 -w 0 arya-release.keystore` |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore password |
+| `ANDROID_KEY_ALIAS` | key alias |
+| `ANDROID_KEY_PASSWORD` | key password |
 
-`app/build.gradle.kts` reads these values from either:
-
-1. environment variables, or
-2. `local.properties`
-
-Do not commit either the keystore or the secrets.
-
-## 2. Mirror the same key into GitHub Actions
-
-The tag-based release workflow expects these repo secrets:
-
-- `ANDROID_KEYSTORE_B64`
-- `ANDROID_KEYSTORE_PASSWORD`
-- `ANDROID_KEY_ALIAS`
-- `ANDROID_KEY_PASSWORD`
-
-`ANDROID_KEYSTORE_B64` should be the base64-encoded keystore file:
+Generate once:
 
 ```bash
-base64 -w 0 "$KEYSTORE_FILE"
+keytool -genkeypair -v -keystore arya-release.keystore -alias arya-release \
+  -keyalg RSA -keysize 2048 -validity 10000
+base64 -w 0 arya-release.keystore
 ```
 
-Without these secrets, `.github/workflows/release.yml` will fail closed and refuse to publish a public APK.
+Keep the keystore offline forever. Losing it = users must uninstall to switch keys.
 
-## 3. Prepare a release
+## Publish a release
 
-1. Update `versionCode` and `versionName` in `app/build.gradle.kts`
-2. Add the changelog entry in `README.md`
-3. Build locally first:
+1. Bump `versionCode` / `versionName` in `app/build.gradle.kts`
+2. Update `CHANGES.md`
+3. Commit + push `main`
+4. Tag and push:
 
 ```bash
-./gradlew :app:assembleRelease
-sha256sum app/build/outputs/apk/release/*.apk
+git tag -a v0.2.0 -m "v0.2.0"
+git push origin v0.2.0
 ```
 
-4. Smoke-test the signed APK on a device
-5. Push `main`
-6. Push the tag:
+5. Workflow `.github/workflows/release.yml`:
+   - **With secrets** → signed release APK on GitHub Releases
+   - **Without secrets** → debug APK as **prerelease** (still uploaded so Releases are never empty)
 
-```bash
-git tag -a vX.Y.Z -m "vX.Y.Z"
-git push pokeclaw vX.Y.Z
-```
+## Local models across upgrades
 
-The GitHub Actions workflow will then create the GitHub Release, upload the signed APK, and attach `SHA256SUMS.txt`.
+Models under `Android/data/io.agents.arya/files/models/` survive APK updates.  
+Only **Clear Data** / uninstall removes them. Prefer Hermes Export before destructive resets.
 
-## Optional: local upgrade smoke test
+## Update checker
 
-To verify that the next public build can upgrade in place over the current signed build, create a temporary local build with the same key and a higher version:
-
-```bash
-export POKECLAW_VERSION_CODE=15
-export POKECLAW_VERSION_NAME=0.5.1-upgrade-test
-./gradlew --no-daemon :app:assembleRelease -x lintVitalRelease -x lintVitalAnalyzeRelease -x lintVitalReportRelease
-```
-
-Then install the signed baseline APK first, followed by the higher-version APK with `adb install -r ...`.
-
-## 4. Known historical limitation
-
-The old public debug-signing path and the later public `v0.5.0` APK were signed with different keys.
-
-That mismatch is already shipped, so Android cannot retroactively upgrade those installs in place without the original lost signing key. For that cohort, the only honest path is:
-
-- show the in-app update prompt
-- explain that Android may require a one-time uninstall + reinstall
-
-Stable signing for the public `v0.6.x` line prevents this problem from repeating.
+App polls `https://api.github.com/repos/asmoia/arya-agent/releases/latest` once per day.

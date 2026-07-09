@@ -44,6 +44,7 @@ class ClawApplication : BaseApp() {
         try {
             val recovery = io.agents.arya.agent.hermes.core.HermesRecovery.runOnAppStart()
             XLog.i(TAG, recovery)
+            io.agents.arya.agent.hermes.cron.HermesCronStore.rescheduleAll(this)
         } catch (e: Exception) {
             XLog.w(TAG, "Hermes recovery skipped: ${e.message}")
         }

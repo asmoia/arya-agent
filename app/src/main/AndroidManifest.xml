@@ -173,6 +173,14 @@
 
         <!-- 开机自启动 -->
         <receiver
+            android:name=".agent.hermes.cron.HermesCronReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="io.agents.arya.HERMES_CRON_FIRE" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".service.BootReceiver"
             android:enabled="true"
             android:exported="true">

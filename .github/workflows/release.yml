@@ -4,6 +4,16 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      force_debug_release:
+        description: 'If signing secrets missing, publish debug APK as prerelease (not for production upgrades)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: write
@@ -33,28 +43,32 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-
 
-      - name: Prepare release signing
+      - name: Detect signing secrets
+        id: signing
         env:
           ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          missing=0
-          for var in ANDROID_KEYSTORE_B64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-            if [ -z "${!var}" ]; then
-              echo "::error::Missing required Actions secret: $var"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "::error::Refusing to publish a public APK without a stable signing key."
-            exit 1
+          if [ -n "$ANDROID_KEYSTORE_B64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets present — will build signed release APK"
+          else
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing secrets missing. Will build debug APK. In-place upgrades require a stable release keystore in repo secrets (see RELEASING.md)."
           fi
 
-          KEYSTORE_PATH="$RUNNER_TEMP/pokeclaw-release.keystore"
+      - name: Prepare release signing
+        if: steps.signing.outputs.mode == 'release'
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          KEYSTORE_PATH="$RUNNER_TEMP/arya-release.keystore"
           echo "$ANDROID_KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
-
           cat > local.properties <<EOF
           KEYSTORE_FILE=$KEYSTORE_PATH
           KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
@@ -63,44 +77,82 @@ jobs:
           EOF
 
       - name: Build signed release APK
+        if: steps.signing.outputs.mode == 'release'
         run: ./gradlew assembleRelease
 
-      - name: Generate release checksums
-        run: sha256sum app/build/outputs/apk/release/*.apk > app/build/outputs/apk/release/SHA256SUMS.txt
+      - name: Build debug APK (fallback)
+        if: steps.signing.outputs.mode == 'debug'
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
+            # Tag pushes without secrets: still publish debug as prerelease so Releases are never empty
+            echo "Tag without signing secrets — publishing debug prerelease"
+          fi
+          ./gradlew assembleDebug
 
-      - name: Extract release notes from README
+      - name: Collect artifacts
+        id: arts
+        run: |
+          mkdir -p dist
+          if [ "${{ steps.signing.outputs.mode }}" = "release" ]; then
+            cp app/build/outputs/apk/release/*.apk dist/ || true
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "title_suffix= (signed)" >> "$GITHUB_OUTPUT"
+          else
+            cp app/build/outputs/apk/debug/*.apk dist/ || true
+            # Rename for clarity
+            for f in dist/*.apk; do
+              [ -f "$f" ] || continue
+              base=$(basename "$f" .apk)
+              mv "$f" "dist/${base}-UNSIGNED-DEBUG.apk"
+            done
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "title_suffix= (debug unsigned — not for production upgrade path)" >> "$GITHUB_OUTPUT"
+          fi
+          ls -la dist/
+          sha256sum dist/*.apk > dist/SHA256SUMS.txt
+          cat dist/SHA256SUMS.txt
+
+      - name: Generate release notes
         env:
           VERSION: ${{ github.ref_name }}
+          MODE: ${{ steps.signing.outputs.mode }}
         run: |
           python <<'PY'
           import os
-          import re
           from pathlib import Path
-
-          version = os.environ["VERSION"].removeprefix("v")
-          text = Path("README.md").read_text()
-          header = re.compile(rf"^### v{re.escape(version)}\b.*$", re.MULTILINE)
-          match = header.search(text)
-          if not match:
-              raise SystemExit(f"Could not find changelog entry for v{version} in README.md")
-
-          rest = text[match.end():]
-          next_header = re.search(r"^### v", rest, re.MULTILINE)
-          notes = (rest[:next_header.start()] if next_header else rest).strip()
-          if not notes:
-              raise SystemExit(f"Changelog entry for v{version} is empty")
-
-          Path("release-notes.md").write_text(notes + "\n")
+          version = os.environ.get("VERSION", "manual").removeprefix("v")
+          mode = os.environ.get("MODE", "debug")
+          notes = []
+          notes.append(f"## آریا {version}\n")
+          if mode == "debug":
+              notes.append("> ⚠️ **Debug / unsigned build** — for testing only.\n")
+              notes.append("> For **upgrade without uninstall**, add release keystore secrets and re-tag.\n")
+              notes.append("> See `RELEASING.md`.\n")
+          else:
+              notes.append("> ✅ Signed release — install/upgrade with the same package `io.agents.arya`.\n")
+          # Prefer CHANGES.md + HERMES_CORE summary
+          for name in ("CHANGES.md", "ROADMAP_ARYA.md"):
+              p = Path(name)
+              if p.exists():
+                  notes.append(f"\n### From {name}\n")
+                  notes.append(p.read_text()[:4000])
+                  notes.append("\n")
+          notes.append("\n### Model note\n")
+          notes.append("Local models live under the app files directory (`…/files/models`) and **survive APK upgrades**.\n")
+          notes.append("They are only wiped by **Clear Data** / uninstall.\n")
+          Path("release-notes.md").write_text("\n".join(notes))
           PY
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}${{ steps.arts.outputs.title_suffix }}
           files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/release/SHA256SUMS.txt
+            dist/*
           body_path: release-notes.md
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.arts.outputs.prerelease }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

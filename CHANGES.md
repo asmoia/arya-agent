@@ -2,6 +2,12 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.2.0
+
+- هسته Hermes توکار + memory/skills/session/cron/MCP
+- تأیید حساس + backup + recovery + OEM guide
+- GitHub Releases + update checker برای asmoia/arya-agent
+
 ## تغییرات نسبت به PokeClaw اصلی
 
 | تغییر | توضیح |

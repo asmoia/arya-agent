@@ -34,6 +34,7 @@ import io.agents.arya.server.ConfigServerManager
 import io.agents.arya.service.ForegroundService
 import io.agents.arya.support.DebugReportManager
 import io.agents.arya.agent.hermes.backup.HermesBackupManager
+import io.agents.arya.agent.hermes.mcp.HermesMcpClient
 import io.agents.arya.utils.KVUtils
 import io.agents.arya.utils.XLog
 import kotlinx.coroutines.Dispatchers
@@ -211,6 +212,47 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
     }
 
     /** Refreshes the trailing label on the global-prompt row (#45). */
+
+    private fun configureMcp() {
+        val current = HermesMcpClient.getUrl()
+        InputDialog.show(
+            context = this,
+            title = "آدرس MCP HTTP",
+            presetText = current,
+            hint = "http://127.0.0.1:8765/mcp",
+            maxLength = 300
+        ) { text ->
+            HermesMcpClient.setUrl(text)
+            HermesMcpClient.setEnabled(text.isNotBlank())
+            Toast.makeText(
+                this,
+                if (text.isNotBlank()) "MCP فعال شد" else "MCP خاموش شد",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun showOemGuide() {
+        AlertDialog.show(
+            context = this,
+            title = "پایداری روی EMUI / HyperOS / One UI",
+            message = """برای اینکه آریا بعد از ریستارت و در پس‌زمینه بماند:
+
+۱) Accessibility آریا را روشن نگه دار
+۲) Notification Access را بده (مانیتور پیام)
+۳) Overlay / نمایش روی برنامه‌ها
+۴) باتری: Unrestricted / بدون بهینه‌سازی برای آریا
+۵) هواوی: تنظیمات → باتری → راه‌اندازی برنامه → آریا → دستی (خودکار خاموش)
+۶) شیائومی: تنظیمات → برنامه‌ها → آریا → ذخیره باتری → بدون محدودیت + Autostart
+۷) سامسونگ: باتری → محدودیت‌های پس‌زمینه → حذف آریا از Sleeping apps
+
+مدل لوکال در پوشه app (Android/data/.../files/models) است و با آپدیت اپ پاک نمی‌شود (فقط Clear Data پاک می‌کند).
+""".trimIndent(),
+            actionTitle = "باشه"
+        )
+    }
+
+
     private fun exportHermesBackup() {
         Toast.makeText(this, "در حال ساخت پشتیبان…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
@@ -608,9 +650,27 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
                     }
                 )
             },
-            showDivider = false
+            showDivider = true
         ).apply {
             setTrailingText("ZIP")
+        }
+
+        toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_share,
+            title = "MCP Server (پیشرفته)",
+            onClick = { configureMcp() },
+            showDivider = true
+        ).apply {
+            setTrailingText(if (HermesMcpClient.isEnabled()) "ON" else "OFF")
+        }
+
+        toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_info_details,
+            title = "راهنمای OEM / باتری",
+            onClick = { showOemGuide() },
+            showDivider = false
+        ).apply {
+            setTrailingText("هواوی/شیائومی")
         }
 
         // Remote Control

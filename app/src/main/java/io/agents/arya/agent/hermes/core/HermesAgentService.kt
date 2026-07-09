@@ -150,12 +150,15 @@ class HermesAgentService : AgentService {
             append(directDeviceDataGuard.buildPromptSection())
         }
 
+        val mcpSection = try {
+            io.agents.arya.agent.hermes.mcp.HermesMcpClient.buildPromptSection()
+        } catch (_: Exception) { "" }
         val systemPrompt = HermesPromptBuilder.build(
             basePrompt = HermesPromptBuilder.ARYA_HERMES_IDENTITY,
             userTask = rawUserRequest,
             includeMemory = true,
             includeSkills = true,
-            extraSections = extraGuards
+            extraSections = extraGuards + mcpSection
         )
 
         val messages = mutableListOf<ChatMessage>()
@@ -204,6 +207,7 @@ class HermesAgentService : AgentService {
         val taskBudget = TaskBudget.fromSettings()
         var softLimitWarned = false
         var finalAnswer: String? = null
+        val usedToolsThisTask = mutableListOf<String>()
 
         while (iterations < maxIterations && !cancelled.get()) {
             iterations++
@@ -251,7 +255,7 @@ class HermesAgentService : AgentService {
                     val msg =
                         "Task stopped: budget limit (${status.formattedTokens}, ${status.formattedCost})."
                     callback.onComplete(iterations, msg, totalTokens, actualModelName)
-                    postTurnLearn(session.id, rawUserRequest, msg)
+                    postTurnLearn(session.id, rawUserRequest, msg, usedToolsThisTask)
                     sessions.endSession(session.id, "budget")
                     return
                 }
@@ -315,7 +319,7 @@ class HermesAgentService : AgentService {
                     }
                     finalAnswer = responseText
                     callback.onComplete(iterations, responseText, totalTokens, actualModelName)
-                    postTurnLearn(session.id, rawUserRequest, responseText)
+                    postTurnLearn(session.id, rawUserRequest, responseText, usedToolsThisTask)
                     sessions.endSession(session.id, "completed")
                     return
                 }
@@ -377,6 +381,7 @@ class HermesAgentService : AgentService {
                 directDeviceDataGuard.recordToolAttempt(toolName)
                 emailComposeGuard.recordToolAttempt(toolName)
 
+                if (toolName.isNotEmpty()) usedToolsThisTask += toolName
                 val result = ToolRegistry.getInstance().executeTool(toolName, params)
                 callback.onToolResult(iterations, toolName, displayName, params.toString(), result)
                 sessions.appendMessage(
@@ -401,7 +406,7 @@ class HermesAgentService : AgentService {
                     finalAnswer = result.data
                         ?: ClawApplication.instance.getString(R.string.agent_task_completed)
                     callback.onComplete(iterations, finalAnswer!!, totalTokens, actualModelName)
-                    postTurnLearn(session.id, rawUserRequest, finalAnswer!!)
+                    postTurnLearn(session.id, rawUserRequest, finalAnswer!!, usedToolsThisTask)
                     sessions.endSession(session.id, "completed")
                     return
                 }
@@ -491,22 +496,11 @@ class HermesAgentService : AgentService {
      * Post-turn learning: episodic log + light profile note for non-trivial tasks.
      * Mirrors Hermes background memory/skill review in a lightweight form.
      */
-    private fun postTurnLearn(sessionId: String, userTask: String, answer: String) {
+    
+    private fun postTurnLearn(sessionId: String, userTask: String, answer: String, usedTools: List<String> = emptyList()) {
         try {
-            memory.appendEpisode(
-                "Task: ${userTask.take(300)}\nResult: ${answer.take(500)}"
-            )
-            // If the user stated a durable preference/fact, the model may already
-            // have called hermes_memory. We still capture a short episode always.
-            val skill = skills.match(userTask)
-            if (skill != null && answer.length > 40) {
-                // Nudge skill quality with outcome note (safe, append-only)
-                skills.improveSkill(
-                    skill.id,
-                    "Observed outcome for «${userTask.take(80)}»: ${answer.take(200)}"
-                )
-            }
-            XLog.i(TAG, "postTurnLearn session=$sessionId")
+            HermesLearning.learnFromTurn(userTask, answer, usedTools)
+            XLog.i(TAG, "postTurnLearn session=$sessionId tools=${usedTools.size}")
         } catch (e: Exception) {
             XLog.w(TAG, "postTurnLearn failed", e)
         }

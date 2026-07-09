@@ -54,10 +54,10 @@ android {
         applicationId = "io.agents.arya"
         minSdk = 28
         targetSdk = 36
-        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 29)
-        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "0.1.0")
+        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 30)
+        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "0.2.0")
         buildConfigField("String", "VERSION_INFO", getVersionGit())
-        buildConfigField("String", "APP_ORIGIN", "\"آریا by agents.io | github.com/agents-io/آریا\"")
+        buildConfigField("String", "APP_ORIGIN", "\"آریا · Hermes core | github.com/asmoia/arya-agent\"")
         buildConfigField("String", "BUILD_FINGERPRINT", "\"${getBuildFingerprint()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

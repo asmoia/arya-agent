@@ -29,8 +29,9 @@ object HermesMetaTools {
             val reg = ToolRegistry.getInstance()
             reg.register(HermesMemoryTool())
             reg.register(HermesSkillTool())
+            HermesExtendedTools.registerAll()
             registered = true
-            XLog.i(TAG, "Registered hermes_memory + hermes_skill tools")
+            XLog.i(TAG, "Registered hermes_memory + hermes_skill + extended tools")
         }
     }
 }
