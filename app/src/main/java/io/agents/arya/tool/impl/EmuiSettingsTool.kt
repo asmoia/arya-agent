@@ -19,8 +19,8 @@ class EmuiSettingsTool : BaseTool() {
 
     override fun getName(): String = "emui_settings"
     override fun getParameters(): List<ToolParameter> = listOf(
-        ToolParameter("action", "string", true, "Action: open_appgallery, open_phone_manager, open_settings, brightness, wifi, bluetooth, battery, storage, sound, display, apps, device_info"),
-        ToolParameter("level", "integer", false, "Brightness level 0-255 (only for brightness action)")
+        ToolParameter("action", "string", "Action: open_appgallery, open_phone_manager, open_settings, brightness, wifi, bluetooth, battery, storage, sound, display, apps, device_info", true),
+        ToolParameter("level", "integer", "Brightness level 0-255 (only for brightness action)", false)
     )
     override fun getDescriptionEN(): String = "Control Huawei EMUI-specific settings (AppGallery, Phone Manager, brightness, WiFi, Bluetooth, battery, etc.)"
     override fun getDescriptionCN(): String = "控制华为 EMUI 设置（应用市场、手机管家、亮度、WiFi、蓝牙、电池等）"

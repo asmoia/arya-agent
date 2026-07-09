@@ -15,11 +15,11 @@ class ShamsiCalendarTool : BaseTool() {
 
     override fun getName(): String = "shamsi_calendar"
     override fun getParameters(): List<ToolParameter> = listOf(
-        ToolParameter("action", "string", true, "Action: today, now, convert"),
-        ToolParameter("year", "integer", false, "Year for conversion"),
-        ToolParameter("month", "integer", false, "Month for conversion"),
-        ToolParameter("day", "integer", false, "Day for conversion"),
-        ToolParameter("direction", "string", false, "to_shamsi or to_gregorian (default: to_shamsi)")
+        ToolParameter("action", "string", "Action: today, now, convert", true),
+        ToolParameter("year", "integer", "Year for conversion", false),
+        ToolParameter("month", "integer", "Month for conversion", false),
+        ToolParameter("day", "integer", "Day for conversion", false),
+        ToolParameter("direction", "string", "to_shamsi or to_gregorian (default: to_shamsi)", false)
     )
     override fun getDescriptionEN(): String = "Get Persian/Shamsi calendar date and convert between Gregorian and Shamsi dates"
     override fun getDescriptionCN(): String = "获取波斯/沙姆西日历日期并在公历和沙姆西日期之间转换"
