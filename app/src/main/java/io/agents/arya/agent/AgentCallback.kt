@@ -15,6 +15,8 @@ interface AgentCallback {
     fun onToolCall(round: Int, toolId: String, toolName: String, parameters: String)
     fun onToolResult(round: Int, toolId: String, toolName: String, parameters: String, result: ToolResult)
     fun onTokenUpdate(status: TokenMonitor.Status) {}
+    /** Live status line for UI (phase / tool / RAM). Default no-op. */
+    fun onStatus(message: String) {}
     fun onComplete(round: Int, finalAnswer: String, totalTokens: Int, modelName: String? = null)
     fun onError(round: Int, error: Exception, totalTokens: Int)
     fun onSystemDialogBlocked(round: Int, totalTokens: Int)

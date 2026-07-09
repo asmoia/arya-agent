@@ -50,4 +50,7 @@ sealed class TaskEvent {
 
     /** Thinking/content stream from LLM (non-streaming mode). */
     data class Thinking(val content: String) : TaskEvent()
+
+    /** Live adaptive status (round, tool, RAM). */
+    data class Status(val message: String) : TaskEvent()
 }

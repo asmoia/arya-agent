@@ -118,6 +118,10 @@ class HermesAgentService : AgentService {
                     callback.onError(0, e, 0)
                 }
             } finally {
+                try {
+                    HermesAppKeeper.onTaskEnd()
+                } catch (_: Exception) {
+                }
                 running.set(false)
             }
         }
@@ -222,7 +226,12 @@ class HermesAgentService : AgentService {
         var iterations = 0
         var totalTokens = 0
         var actualModelName: String? = null
-        val maxIterations = if (config.provider == LlmProvider.LOCAL) minOf(config.maxIterations, 8) else config.maxIterations
+        val policy = HermesRuntimePolicy.resolve(
+            userTask = rawUserRequest,
+            providerIsLocal = config.provider == LlmProvider.LOCAL
+        )
+        val maxIterations = minOf(config.maxIterations, policy.maxIterations)
+        val screenSettleMs = policy.screenSettleMs
         val loopHistory = LinkedList<RoundFingerprint>()
         var lastScreenHash = 0
         var previousScreenTexts: Set<String> = emptySet()
@@ -232,10 +241,33 @@ class HermesAgentService : AgentService {
         var softLimitWarned = false
         var finalAnswer: String? = null
         val usedToolsThisTask = mutableListOf<String>()
+        val recentActions = LinkedList<String>()
+        var essayForceUsed = false
+
+        HermesAppKeeper.onTaskStart("شروع task…")
+        emitStatus(callback, policy, 0, "شروع · ${policy.resolvedMode.name} · ${HermesAppKeeper.memoryHintFa()}")
+
+        // Align local sampling with adaptive policy (action-first = lower temp).
+        if (config.provider == LlmProvider.LOCAL && kotlin.math.abs(config.temperature - policy.temperature) > 0.01) {
+            try {
+                val tuned = config.copy(temperature = policy.temperature)
+                updateConfig(tuned)
+                XLog.i(TAG, "local temp tuned to ${policy.temperature} for ${policy.resolvedMode}")
+            } catch (e: Exception) {
+                XLog.w(TAG, "temp tune failed: ${e.message}")
+            }
+        }
+
 
         while (iterations < maxIterations && !cancelled.get()) {
             iterations++
             callback.onLoopStart(iterations)
+            emitStatus(callback, policy, iterations, "نوبت $iterations/${maxIterations} · ${HermesAppKeeper.memoryHintFa()}")
+            HermesAppKeeper.onTaskProgress("نوبت $iterations/$maxIterations")
+            if (HermesAppKeeper.isUnderMemoryPressure()) {
+                XLog.w(TAG, "memory pressure mid-task — compress harder")
+                HermesContextCompressor.compress(messages)
+            }
 
             HermesContextCompressor.compress(messages)
 
@@ -349,12 +381,16 @@ class HermesAgentService : AgentService {
                         continue
                     }
                     // Phone tasks must not end as a pure essay without tools.
-                    if (looksLikeTask(rawUserRequest) && usedToolsThisTask.isEmpty() && iterations <= 2) {
+                    if (policy.forceToolOnEssay && looksLikeTask(rawUserRequest) &&
+                        usedToolsThisTask.isEmpty() && !essayForceUsed && iterations <= 3
+                    ) {
+                        essayForceUsed = true
                         XLog.w(TAG, "text-only on phone task — forcing tool use")
+                        emitStatus(callback, policy, iterations, "اجبار اقدام (بدون tool حرف نزن)")
                         messages.add(
                             UserMessage.from(
-                                "[System] You MUST use phone tools now (open_app / get_screen_info / find_and_tap). " +
-                                    "Do not claim you lack access. Call a tool in this turn."
+                                "[System] ACTION REQUIRED: call open_app or get_screen_info NOW. " +
+                                    "No essays. No 'I cannot access'. Tool call only this turn. Goal: ${rawUserRequest.take(100)}"
                             )
                         )
                         continue
@@ -420,6 +456,10 @@ class HermesAgentService : AgentService {
                 }
 
                 callback.onToolCall(iterations, toolName, displayName, toolArgs)
+                emitStatus(
+                    callback, policy, iterations,
+                    "اقدام: ${HermesStatusMessages.toolLabelFa(toolName)}"
+                )
                 directDeviceDataGuard.recordToolAttempt(toolName)
                 emailComposeGuard.recordToolAttempt(toolName)
 
@@ -455,7 +495,7 @@ class HermesAgentService : AgentService {
 
                 val combinedJson: String = if (toolName in ACTION_TOOLS) {
                     try {
-                        Thread.sleep(SCREEN_SETTLE_MS)
+                        Thread.sleep(screenSettleMs)
                         val screenAfter = ToolRegistry.getInstance()
                             .getTool("get_screen_info")
                             ?.execute(emptyMap())
@@ -492,6 +532,31 @@ class HermesAgentService : AgentService {
                 }
 
                 messages.add(ToolExecutionResultMessage.from(toolRequest, combinedJson))
+
+                // Action fingerprint for repeat detection
+                val actionKey = "$toolName:${toolArgs.take(80)}"
+                recentActions.addLast(actionKey)
+                if (recentActions.size > 6) recentActions.removeFirst()
+                if (recentActions.count { it == actionKey } >= policy.maxSameActionRepeats) {
+                    messages.add(
+                        UserMessage.from(
+                            "[System] You repeated $toolName too many times. Change strategy (new text target / swipe / different app path). Do not retry the same action."
+                        )
+                    )
+                }
+
+                // After open_app / navigation: force progress — don't die after first tool.
+                if (result.isSuccess && toolName != "finish" && toolName != "get_screen_info" &&
+                    policy.autoScreenAfterAction
+                ) {
+                    emitStatus(callback, policy, iterations, "ادامه بعد از ${HermesStatusMessages.toolLabelFa(toolName)}…")
+                    messages.add(
+                        UserMessage.from(
+                            "[System] Action done. NEXT must be a tool: get_screen_info then find_and_tap/input_text/swipe toward the user goal. " +
+                                "Do not stop with only text. Goal: ${rawUserRequest.take(120)}"
+                        )
+                    )
+                }
             }
 
             // Stuck recovery
@@ -626,6 +691,25 @@ class HermesAgentService : AgentService {
     }
 
     private data class RoundFingerprint(val screenHash: Int, val toolCall: String)
+
+
+    private fun emitStatus(
+        callback: AgentCallback,
+        policy: HermesRuntimeSnapshot,
+        round: Int,
+        messageFa: String
+    ) {
+        val msg = buildString {
+            if (round > 0) append("[$round/${policy.maxIterations}] ")
+            append(messageFa)
+        }
+        try {
+            callback.onStatus(msg)
+        } catch (e: Exception) {
+            XLog.w(TAG, "onStatus: ${e.message}")
+        }
+        HermesAppKeeper.onTaskProgress(msg)
+    }
 
     override fun cancel() {
         cancelled.set(true)

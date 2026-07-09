@@ -248,7 +248,9 @@ class ForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = createNotification(intent)
         startForeground(NOTIFICATION_ID, notification)
-        return START_NOT_STICKY
+        // STICKY while a Hermes/phone task may be running so OEMs are less eager to kill us.
+        // Idle notifications can still be dismissed by stop/resetToIdle.
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

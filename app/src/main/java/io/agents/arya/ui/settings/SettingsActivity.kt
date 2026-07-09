@@ -36,6 +36,8 @@ import io.agents.arya.support.DebugReportManager
 import io.agents.arya.agent.hermes.backup.HermesBackupManager
 import io.agents.arya.agent.hermes.mcp.HermesMcpClient
 import io.agents.arya.utils.KVUtils
+import io.agents.arya.agent.hermes.core.HermesRuntimePolicy
+import io.agents.arya.agent.hermes.core.HermesThinkingMode
 import io.agents.arya.utils.XLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -252,6 +254,28 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         )
     }
 
+
+    
+    private fun cycleThinkingMode() {
+        val order = listOf(
+            HermesThinkingMode.ADAPTIVE,
+            HermesThinkingMode.INSTANT,
+            HermesThinkingMode.THINKING,
+            HermesThinkingMode.HIGH
+        )
+        val cur = HermesRuntimePolicy.currentMode()
+        val next = order[(order.indexOf(cur) + 1) % order.size]
+        HermesRuntimePolicy.setMode(next)
+        val label = when (next) {
+            HermesThinkingMode.ADAPTIVE -> "Adaptive (خودکار · عمل‌گرا)"
+            HermesThinkingMode.INSTANT -> "Instant (۳–۴ دور · حداکثر سرعت)"
+            HermesThinkingMode.THINKING -> "Thinking (متعادل)"
+            HermesThinkingMode.HIGH -> "High (دقیق‌تر · کندتر)"
+        }
+        Toast.makeText(this, "حالت Task: $label", Toast.LENGTH_SHORT).show()
+        // refresh trailing text by recreating is heavy; toast is enough
+        recreate()
+    }
 
     private fun exportHermesBackup() {
         Toast.makeText(this, "در حال ساخت پشتیبان…", Toast.LENGTH_SHORT).show()
@@ -609,6 +633,15 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
             showDivider = true
         ).apply {
             setTrailingText(if (KVUtils.isSensitiveConfirmEnabled()) "فعال ✅" else "خاموش ⚠️")
+        }
+
+        toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_sort_by_size,
+            title = "حالت فکر Task (Adaptive)",
+            onClick = { cycleThinkingMode() },
+            showDivider = true
+        ).apply {
+            setTrailingText(HermesRuntimePolicy.currentMode().name)
         }
 
         toolsGroup.addMenuItem(

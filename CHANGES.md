@@ -2,6 +2,13 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.3.0
+
+- Adaptive runtime: Instant (3–4 rounds) / Thinking / High / Adaptive
+- Action-first: continue after open_app, force tool if essay, anti-repeat
+- Live task status lines + FG keeper (START_STICKY) + RAM-aware caps
+- Settings: cycle Task thinking mode
+
 ## v0.2.5
 
 - Arena-style compact tool playbook (browser / Telegram / WhatsApp / any UI)

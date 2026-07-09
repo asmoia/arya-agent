@@ -393,6 +393,13 @@ object KVUtils {
     fun isSensitiveAutoAllowLowRisk(): Boolean = getBoolean(KEY_SENSITIVE_AUTO_ALLOW_LOW, true)
     fun setSensitiveAutoAllowLowRisk(enabled: Boolean) = putBoolean(KEY_SENSITIVE_AUTO_ALLOW_LOW, enabled)
 
+    // ==================== Hermes thinking / adaptive speed ====================
+    private const val KEY_HERMES_THINKING_MODE = "KEY_HERMES_THINKING_MODE"
+
+    /** INSTANT | THINKING | HIGH | ADAPTIVE (default). */
+    fun getHermesThinkingMode(): String = getString(KEY_HERMES_THINKING_MODE, "ADAPTIVE")
+    fun setHermesThinkingMode(mode: String) = putString(KEY_HERMES_THINKING_MODE, mode)
+
     // ==================== Global Prompt (#45) ====================
     // User-defined persistent instructions prepended to every system prompt.
     // Empty string = disabled. No separate enable toggle by design (less to misconfigure).

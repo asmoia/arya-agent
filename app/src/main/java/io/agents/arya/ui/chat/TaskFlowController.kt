@@ -342,6 +342,18 @@ class TaskFlowController(
                     uiState.isAwaitingReply.value = false
                     uiState.isTaskRunning.value = true
                 }
+                is TaskEvent.Status -> {
+                    uiState.isAwaitingReply.value = false
+                    uiState.isTaskRunning.value = true
+                    // Replace last status system line if consecutive, else add
+                    val last = uiState.messages.lastOrNull()
+                    val line = "⏳ ${event.message}"
+                    if (last != null && last.role == ChatMessage.Role.SYSTEM && last.content.startsWith("⏳ ")) {
+                        uiState.messages[uiState.messages.lastIndex] = ChatMessage(ChatMessage.Role.SYSTEM, line)
+                    } else {
+                        addSystem(line)
+                    }
+                }
                 is TaskEvent.Thinking -> {
                     uiState.isTaskRunning.value = true
                     // stream partial text into typing bubble if present

@@ -299,6 +299,14 @@ class TaskOrchestrator(
                 ))
             }
 
+            override fun onStatus(message: String) {
+                XLog.i(TAG, "onStatus: $message")
+                taskEventCallback?.invoke(TaskEvent.Status(message))
+                if (ForegroundService.isRunning()) {
+                    ForegroundService.updateTaskStatus(ClawApplication.instance, message.take(48))
+                }
+            }
+
             override fun onContent(round: Int, content: String) {
                 if (content.isNotEmpty()) {
                     roundBuffer.append(content)
