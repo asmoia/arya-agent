@@ -324,7 +324,7 @@ object LocalModelManager {
     }
 
     private fun canWriteToDirectory(dir: File): Boolean {
-        val probe = File(dir, ".pokeclaw-write-probe")
+        val probe = File(dir, ".arya-write-probe")
         return runCatching {
             FileOutputStream(probe, false).use { output ->
                 output.write(1)
@@ -533,7 +533,7 @@ object LocalModelManager {
             // Rename temp to final
             if (targetFile.exists()) targetFile.delete()
             if (!tempFile.renameTo(targetFile)) {
-                callback.onError("Download finished but PokeClaw could not move the model into place")
+                callback.onError("Download finished but Arya could not move the model into place")
                 return
             }
 

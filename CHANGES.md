@@ -1,6 +1,14 @@
-# 🤖 آریا (Arya) — Fork of PokeClaw
+# 🤖 آریا (Arya) — یادداشت‌های انتشار
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
+
+## v0.4.1 — Arya product identity and documentation
+
+- README، GitHub Pages، demo و OG preview فقط هویت و قابلیت‌های Arya را توضیح می‌دهند.
+- بخش شفاف «پروژه‌ها و فناوری‌های استفاده‌شده» اضافه شد؛ attribution قانونی در NOTICE باقی مانده است.
+- متن‌های user-facing باقی‌مانده در notification، config page، debug report، issue links و چند locale از نام قدیمی به Arya منتقل شدند.
+- Contributor Agreement و workflow مرتبط به repository و نام Arya اشاره می‌کنند.
+- نام Gradle project به `AryaAgent` تغییر کرد.
 
 ## v0.4.0 — Fast task runtime
 
@@ -84,7 +92,7 @@
 - تأیید حساس + backup + recovery + OEM guide
 - GitHub Releases + update checker برای asmoia/arya-agent
 
-## تغییرات نسبت به PokeClaw اصلی
+## ویژگی‌های اختصاصی آریا
 
 | تغییر | توضیح |
 |---|---|
@@ -95,7 +103,7 @@
 | 📅 تقویم شمسی | ابزار `shamsi_calendar` — تاریخ شمسی + تبدیل |
 | ⚙️ تنظیمات EMUI | ابزار `emui_settings` — کنترل مخصوص هواوی |
 | 🔤 رابط فارسی | فایل `values-fa/strings.xml` کامل |
-| 🏷️ پکیج جدید | `io.agents.arya` — نصب کنار PokeClaw اصلی |
+| 🏷️ پکیج جدید | `io.agents.arya` — مسیر نصب و update مستقل آریا |
 
 ## هستهٔ هرمس (Embedded Hermes)
 
@@ -136,4 +144,4 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ## لایسنس
 
-Apache 2.0 — مثل PokeClaw اصلی
+Apache-2.0 — attributionهای لازم در NOTICE نگهداری شده‌اند

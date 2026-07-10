@@ -66,7 +66,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * PokeClaw Chat Screen — Jetpack Compose
+ * Arya Chat Screen — Jetpack Compose
  * Inspired by WhatsApp/Telegram/Slack dark theme
  */
 
@@ -716,8 +716,8 @@ private fun AssistantBubble(text: String, timestamp: Long, colors: PokeclawColor
         ) {
             // Avatar
             androidx.compose.foundation.Image(
-                painter = painterResource(R.drawable.pokeclaw_avatar),
-                contentDescription = "PokeClaw",
+                painter = painterResource(R.drawable.arya_avatar),
+                contentDescription = "Arya",
                 modifier = Modifier
                     .size(32.dp)
                     .clip(CircleShape),
@@ -1231,8 +1231,8 @@ private fun DownloadOverlay(progress: Int, colors: PokeclawColors) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 androidx.compose.foundation.Image(
-                    painter = painterResource(R.drawable.pokeclaw_avatar),
-                    contentDescription = "PokeClaw",
+                    painter = painterResource(R.drawable.arya_avatar),
+                    contentDescription = "Arya",
                     modifier = Modifier
                         .size(64.dp)
                         .clip(RoundedCornerShape(16.dp)),
@@ -1307,15 +1307,15 @@ private fun EmptyStateWithPrompts(
     ) {
         Spacer(Modifier.height(40.dp))
         androidx.compose.foundation.Image(
-            painter = painterResource(R.drawable.pokeclaw_avatar),
-            contentDescription = "PokeClaw",
+            painter = painterResource(R.drawable.arya_avatar),
+            contentDescription = "Arya",
             modifier = Modifier
                 .size(48.dp)
                 .clip(RoundedCornerShape(12.dp)),
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "PokeClaw",
+            "Arya",
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             color = colors.textPrimary,
@@ -1415,7 +1415,7 @@ private fun QuickTasksPanel(
     // Cloud-only tasks at the top (multi-step, Siri/GA can't do these)
     // Cloud-only tasks (multi-step, Siri can't do)
     val cloudOnlyTasks = listOf(
-        "🦞 Open Reddit and search for pokeclaw",
+        "🦞 Open Reddit and search for arya",
         "🎬 Search YouTube for funny cat fails",
         "📦 Install Telegram from Play Store",
         "🐦 Check what's trending on Twitter and tell me",
@@ -1718,7 +1718,7 @@ private fun SidebarContent(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             androidx.compose.foundation.Image(
-                painter = painterResource(R.drawable.pokeclaw_avatar),
+                painter = painterResource(R.drawable.arya_avatar),
                 contentDescription = null,
                 modifier = Modifier
                     .size(28.dp)
@@ -1726,7 +1726,7 @@ private fun SidebarContent(
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                "PokeClaw",
+                "Arya",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.textPrimary,

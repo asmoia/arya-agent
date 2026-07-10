@@ -421,9 +421,9 @@ class TaskOrchestrator(
                 val completedSession = releaseTask()
                 ChannelManager.flushMessages(completedSession.channel ?: channel)
                 FloatingCircleManager.setSuccessState()
-                // Auto-return to PokeClaw after in-app task completes
+                // Auto-return to Arya after in-app task completes
                 if (completedSession.autoReturnToChat) {
-                    XLog.i(TAG, "onComplete: auto-returning to PokeClaw chatroom")
+                    XLog.i(TAG, "onComplete: auto-returning to Arya chatroom")
                     try {
                         val context = ClawApplication.instance
                         val intent = android.content.Intent(context, io.agents.arya.ui.chat.ComposeChatActivity::class.java).apply {

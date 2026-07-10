@@ -305,7 +305,7 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
         val appName = try {
             val appInfo = app.packageManager.getApplicationInfo(app.packageName, 0)
             app.packageManager.getApplicationLabel(appInfo).toString()
-        } catch (_: Exception) { "PokeClaw" }
+        } catch (_: Exception) { "Arya" }
         sb.append("\n## This App Info\n")
         sb.append("- App Name: ").append(appName).append("\n")
         sb.append("- Package Name: ").append(app.packageName).append("\n")

@@ -51,7 +51,7 @@ public class ClawAccessibilityService extends AccessibilityService {
     }
 
     /**
-     * Checks whether PokeClaw is enabled in Android's Accessibility settings.
+     * Checks whether Arya is enabled in Android's Accessibility settings.
      * This does NOT mean the service is connected — use {@link #isRunning()} for that.
      * Use this to distinguish "not enabled" (user action needed) from "enabled but
      * still binding" (just wait).
@@ -160,7 +160,7 @@ public class ClawAccessibilityService extends AccessibilityService {
 
     /**
      * Android Settings keeps its own back stack during the Accessibility enable flow.
-     * When the user came here from PokeClaw Settings, unwind that stack once, then
+     * When the user came here from Arya Settings, unwind that stack once, then
      * explicitly surface the app Settings screen again.
      */
     private void maybeReturnToAppAfterPermissionFlow() {
@@ -732,7 +732,7 @@ public class ClawAccessibilityService extends AccessibilityService {
                 @SuppressWarnings("deprecation")
                 android.os.PowerManager.WakeLock wl = pm.newWakeLock(
                         android.os.PowerManager.SCREEN_DIM_WAKE_LOCK | android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                        "PokeClaw:unlock"
+                        "Arya:unlock"
                 );
                 wl.acquire(3000);
                 wl.release();

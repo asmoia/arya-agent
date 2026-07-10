@@ -116,7 +116,7 @@ class AppViewModel : ViewModel() {
             ?: return
         wakeLock = pm.newWakeLock(
             PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-            "PokeClaw::ScreenWakeLock"
+            "Arya::ScreenWakeLock"
         ).apply {
             acquire(10 * 60 * 1000L) // 10 minute timeout to prevent battery drain
         }

@@ -24,14 +24,14 @@ jobs:
           PERSONAL_ACCESS_TOKEN: ${{ secrets.CLA_TOKEN }}
         with:
           path-to-signatures: signatures/cla.json
-          path-to-document: https://github.com/agents-io/PokeClaw/blob/main/CLA.md
+          path-to-document: https://github.com/asmoia/arya-agent/blob/main/CLA.md
           branch: main
           allowlist: bot*
 
           custom-notsigned-prcomment: |
-            Thank you for your contribution to PokeClaw!
+            Thank you for your contribution to Arya!
 
-            Before we can merge this PR, please sign our [Contributor License Agreement](https://github.com/agents-io/PokeClaw/blob/main/CLA.md).
+            Before we can merge this PR, please read the [Arya Contributor Agreement](https://github.com/asmoia/arya-agent/blob/main/CLA.md).
 
             To sign, add a comment on this PR with exactly:
             > I have read the CLA and I agree
