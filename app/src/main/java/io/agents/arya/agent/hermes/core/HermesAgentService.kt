@@ -327,6 +327,17 @@ class HermesAgentService : AgentService {
             providerIsLocal = config.provider == LlmProvider.LOCAL
         )
         val maxIterations = if (config.provider == LlmProvider.LOCAL) policy.maxIterations else minOf(config.maxIterations, policy.maxIterations + 4)
+        // A model that is technically making progress but takes many minutes is
+        // still a failed phone-assistant experience. Keep Local mode bounded as
+        // a whole task, not only per inference turn.
+        val localTaskDeadlineAt = if (config.provider == LlmProvider.LOCAL) {
+            System.currentTimeMillis() + when (policy.resolvedMode) {
+                HermesThinkingMode.INSTANT -> 120_000L
+                HermesThinkingMode.THINKING -> 180_000L
+                HermesThinkingMode.HIGH -> 240_000L
+                HermesThinkingMode.ADAPTIVE -> 180_000L
+            }
+        } else Long.MAX_VALUE
         val screenSettleMs = policy.screenSettleMs
         val loopHistory = LinkedList<RoundFingerprint>()
         var lastScreenHash = 0
@@ -350,6 +361,14 @@ class HermesAgentService : AgentService {
 
 
         while (iterations < maxIterations && !cancelled.get()) {
+            val remainingTaskMs = localTaskDeadlineAt - System.currentTimeMillis()
+            if (remainingTaskMs <= 0L) {
+                val timeoutMessage = "مدل محلی در زمان مجاز task پاسخ نهایی نداد؛ task متوقف شد. مدل سبک‌تر یا حالت Instant را امتحان کن."
+                XLog.w(TAG, "Local task deadline reached after ${iterations} rounds")
+                callback.onError(iterations, RuntimeException(timeoutMessage), totalTokens)
+                sessions.endSession(session.id, "local_task_timeout")
+                return
+            }
             iterations++
             callback.onLoopStart(iterations)
             val phaseLabel = if (usedToolsThisTask.isEmpty()) "فکر مدل…" else "ادامه اقدام…"
@@ -363,7 +382,7 @@ class HermesAgentService : AgentService {
             HermesContextCompressor.compress(messages)
 
             val llmResponse: LlmResponse = try {
-                chatWithRetry(messages, callback, iterations)
+                chatWithRetry(messages, callback, iterations, localTaskDeadlineAt)
             } catch (e: Exception) {
                 if (cancelled.get()) {
                     XLog.i(TAG, "LLM aborted by cancel: ${e.message}")
@@ -764,13 +783,16 @@ class HermesAgentService : AgentService {
     private fun invokeLlmWithDeadline(
         messages: List<ChatMessage>,
         callback: AgentCallback,
-        iteration: Int
+        iteration: Int,
+        taskDeadlineAt: Long,
     ): LlmResponse {
-        val timeoutMs = if (config.provider == LlmProvider.LOCAL) {
+        val configuredTimeoutMs = if (config.provider == LlmProvider.LOCAL) {
             LOCAL_TURN_TIMEOUT_MS
         } else {
             CLOUD_TURN_TIMEOUT_MS
         }
+        val remainingTaskMs = (taskDeadlineAt - System.currentTimeMillis()).coerceAtLeast(1L)
+        val timeoutMs = minOf(configuredTimeoutMs, remainingTaskMs)
         val call = inferenceExecutor.submit(Callable {
             if (config.streaming) {
                 llmClient.chatStreaming(messages, toolSpecs, object : StreamingListener {
@@ -811,7 +833,8 @@ class HermesAgentService : AgentService {
     private fun chatWithRetry(
         messages: List<ChatMessage>,
         callback: AgentCallback,
-        iteration: Int
+        iteration: Int,
+        taskDeadlineAt: Long,
     ): LlmResponse {
         var lastError: Exception? = null
         // Retrying a remote transient failure can help. Retrying a local engine
@@ -821,7 +844,7 @@ class HermesAgentService : AgentService {
         repeat(attempts) { attempt ->
             if (cancelled.get()) throw RuntimeException("cancelled")
             try {
-                return invokeLlmWithDeadline(messages, callback, iteration)
+                return invokeLlmWithDeadline(messages, callback, iteration, taskDeadlineAt)
             } catch (e: Exception) {
                 lastError = e
                 XLog.w(TAG, "LLM attempt ${attempt + 1}/$attempts failed: ${e.message}")
