@@ -2,6 +2,17 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.4.2 — E4B local runtime coordination
+
+- `LocalInferenceCoordinator` مالکیت conversation مدل Local را بین Chat، Task و background work سریال می‌کند.
+- E4B برای Chat و Task از context مشترک 2048 استفاده می‌کند تا handoff مدل باعث reload بی‌دلیل engine نشود.
+- Task E4B قبل از inference، RAM آزاد و readiness مدل را بررسی می‌کند؛ E4B روی CPU برای Task اجرا نمی‌شود.
+- direct taskها conversation Chat را بیهوده نمی‌بندند؛ acknowledgement فوری پیش از token مدل نمایش داده می‌شود.
+- Screen context به nodeهای actionable و مرتبط کاهش می‌یابد؛ نتیجهٔ ابزار دیگر به 400 کاراکتر اول محدود نمی‌شود.
+- batch محدود فقط برای navigation/readهای deterministic مجاز است؛ عملیات حساس همچنان single-step و confirmation-gated هستند.
+- learning پنهان Hermes پس از Local Task غیرفعال است تا RAM و thermal budget سریع آزاد شود.
+- failure مسیر Saved Messages به Agent کند fallback نمی‌شود و error واقعی را برمی‌گرداند.
+
 ## v0.4.1 — Arya product identity and documentation
 
 - README، GitHub Pages، demo و OG preview فقط هویت و قابلیت‌های Arya را توضیح می‌دهند.
