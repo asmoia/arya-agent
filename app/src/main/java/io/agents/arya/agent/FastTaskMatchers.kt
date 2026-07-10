@@ -54,11 +54,51 @@ object FastTaskMatchers {
         """^\s*(?:analyze|summarize)\s+(?:new|latest|recent)\s+messages?\s+(?:in|from)\s+(?:the\s+)?(?:channel|group|chat)\s+(.+?)\s+(?:on|in)\s+(telegram(?:\s*x)?)\s*$""",
         RegexOption.IGNORE_CASE,
     )
+    private val persianOpenAppPrefix = Regex(
+        """^\s*باز(?:ش)?\s*کن\s+(.+?)\s*$""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val persianOpenAppSuffix = Regex(
+        """^\s*(.+?)\s*(?:را|رو)?\s+باز(?:ش)?\s*کن\s*$""",
+        RegexOption.IGNORE_CASE,
+    )
 
     fun match(task: String): ToolMatch? {
         matchPersianSend(task)?.let { return it }
         matchBrowserSearch(task)?.let { return it }
+        matchSimplePersianControl(task)?.let { return it }
+        matchSimplePersianOpenApp(task)?.let { return it }
         return null
+    }
+
+    private fun matchSimplePersianControl(task: String): ToolMatch? {
+        val compact = task.trim().lowercase().replace(Regex("""\s+"""), " ")
+        return when (compact) {
+            "برو خانه", "برو خونه", "صفحه اصلی", "برو صفحه اصلی" ->
+                ToolMatch("system_key", mapOf("key" to "home"), "رفتن به صفحهٔ اصلی")
+            "برگرد", "برگشت", "برو عقب", "یه مرحله برگرد" ->
+                ToolMatch("system_key", mapOf("key" to "back"), "بازگشت")
+            "اسکرین شات بگیر", "اسکرین‌شات بگیر", "عکس از صفحه بگیر" ->
+                ToolMatch("take_screenshot", emptyMap(), "گرفتن اسکرین‌شات")
+            else -> null
+        }
+    }
+
+    private fun matchSimplePersianOpenApp(task: String): ToolMatch? {
+        // Only accept a single imperative. A comma, conjunction, URL or a second
+        // action means this is an agent task, not a safe instant open.
+        if (task.contains(Regex("[,،؛]")) || task.contains(" و ") || task.contains(" بعد ") ||
+            task.contains(" سپس ") || task.contains("http", ignoreCase = true)) return null
+        val raw = persianOpenAppPrefix.matchEntire(task)?.groupValues?.getOrNull(1)
+            ?: persianOpenAppSuffix.matchEntire(task)?.groupValues?.getOrNull(1)
+            ?: return null
+        val app = raw.trim().removePrefix("اپ ").removePrefix("برنامه ").trim()
+        if (app.isBlank() || app.length > 60) return null
+        return ToolMatch(
+            toolName = "open_app",
+            params = mapOf("app_name" to app),
+            description = "باز کردن $app",
+        )
     }
 
     /** A named Telegram group/channel can be opened deterministically before one bounded summary turn. */

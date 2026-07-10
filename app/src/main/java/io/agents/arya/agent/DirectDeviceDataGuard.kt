@@ -85,33 +85,39 @@ internal class DirectDeviceDataGuard private constructor(
         fun deterministicToolCall(task: String): DeterministicToolCall? {
             val normalized = normalize(task)
             return when {
-                isClipboardDataRequest(normalized) ->
+                isClipboardDataRequest(normalized) || task.contains("کلیپ") ->
                     DeterministicToolCall("clipboard", mapOf("action" to "get"))
 
-                normalized.contains("notif") || normalized.contains("notification") ->
+                normalized.contains("notif") || normalized.contains("notification") ||
+                    task.contains("اعلان") || task.contains("نوتیف") ->
                     DeterministicToolCall("get_notifications", emptyMap())
 
                 normalized.contains("what apps do i have") ||
                     normalized.contains("installed apps") ||
-                    normalized.contains("apps do i have") ->
+                    normalized.contains("apps do i have") ||
+                    task.contains("چه برنامه") || task.contains("برنامه‌های نصب") || task.contains("برنامه های نصب") ->
                     DeterministicToolCall("get_installed_apps", emptyMap())
 
-                normalized.contains("battery") ->
+                normalized.contains("battery") || task.contains("باتری") || task.contains("شارژ") ->
                     DeterministicToolCall("get_device_info", mapOf("category" to "battery"))
 
-                normalized.contains("wifi") ->
+                normalized.contains("wifi") || task.contains("وای‌فای") || task.contains("وای فای") ->
                     DeterministicToolCall("get_device_info", mapOf("category" to "wifi"))
 
-                normalized.contains("bluetooth") ->
+                normalized.contains("bluetooth") || task.contains("بلوتوث") ->
                     DeterministicToolCall("get_device_info", mapOf("category" to "bluetooth"))
 
-                normalized.contains("storage") ->
+                normalized.contains("storage") || task.contains("حافظه") || task.contains("فضای گوشی") || task.contains("فضای تلفن") ->
                     DeterministicToolCall("get_device_info", mapOf("category" to "storage"))
 
                 normalized.contains("android version") ||
                     normalized.contains("phone temp") ||
-                    normalized.contains("temperature") ->
-                    DeterministicToolCall("get_device_info", mapOf("category" to if (normalized.contains("android version")) "device" else "battery"))
+                    normalized.contains("temperature") ||
+                    task.contains("نسخه اندروید") || task.contains("دمای گوشی") || task.contains("حرارت گوشی") ->
+                    DeterministicToolCall(
+                        "get_device_info",
+                        mapOf("category" to if (normalized.contains("android version") || task.contains("نسخه اندروید")) "device" else "battery")
+                    )
 
                 else -> null
             }
@@ -120,7 +126,7 @@ internal class DirectDeviceDataGuard private constructor(
         private fun parse(task: String): Match? {
             val normalized = normalize(task)
             return when {
-                isClipboardDataRequest(normalized) ->
+                isClipboardDataRequest(normalized) || task.contains("کلیپ") ->
                     Match(
                         taskText = task.trim(),
                         taskLabel = "clipboard",
@@ -128,7 +134,8 @@ internal class DirectDeviceDataGuard private constructor(
                         requiredAction = "Call clipboard(action=\"get\") before you answer.",
                     )
 
-                normalized.contains("notif") || normalized.contains("notification") ->
+                normalized.contains("notif") || normalized.contains("notification") ||
+                    task.contains("اعلان") || task.contains("نوتیف") ->
                     Match(
                         taskText = task.trim(),
                         taskLabel = "notification",
@@ -136,13 +143,13 @@ internal class DirectDeviceDataGuard private constructor(
                         requiredAction = "Call get_notifications() before you answer.",
                     )
 
-                normalized.contains("battery") ||
-                    normalized.contains("wifi") ||
-                    normalized.contains("bluetooth") ||
-                    normalized.contains("storage") ||
-                    normalized.contains("android version") ||
-                    normalized.contains("phone temp") ||
-                    normalized.contains("temperature") ->
+                normalized.contains("battery") || normalized.contains("wifi") ||
+                    normalized.contains("bluetooth") || normalized.contains("storage") ||
+                    normalized.contains("android version") || normalized.contains("phone temp") ||
+                    normalized.contains("temperature") || task.contains("باتری") || task.contains("شارژ") ||
+                    task.contains("وای‌فای") || task.contains("وای فای") || task.contains("بلوتوث") ||
+                    task.contains("حافظه") || task.contains("فضای گوشی") || task.contains("نسخه اندروید") ||
+                    task.contains("دمای گوشی") || task.contains("حرارت گوشی") ->
                     Match(
                         taskText = task.trim(),
                         taskLabel = "device info",
@@ -150,9 +157,9 @@ internal class DirectDeviceDataGuard private constructor(
                         requiredAction = "Call get_device_info(category=...) with the matching category before you answer.",
                     )
 
-                normalized.contains("what apps do i have") ||
-                    normalized.contains("installed apps") ||
-                    normalized.contains("apps do i have") ->
+                normalized.contains("what apps do i have") || normalized.contains("installed apps") ||
+                    normalized.contains("apps do i have") || task.contains("چه برنامه") ||
+                    task.contains("برنامه‌های نصب") || task.contains("برنامه های نصب") ->
                     Match(
                         taskText = task.trim(),
                         taskLabel = "installed apps",

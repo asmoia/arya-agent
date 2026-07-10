@@ -2,6 +2,18 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.4.0 — Fast task runtime
+
+- **Telegram Saved Messages → Play** اکنون مسیر deterministic و bounded دارد: بازکردن Telegram/Telegram X، رفتن به Saved Messages و لمس فقط کنترل Play قابل‌مشاهده، بدون چند دور inference مدل.
+- **Telegram X** در بازکردن اپ، پیام‌رسانی، monitor و Notification Listener پشتیبانی می‌شود.
+- دستورهای فارسی صریح برای **ارسال پیام**، **بازکردن اپ**، **جستجوی گوگل/مرورگر**، دکمهٔ Home/Back و داده‌های گوشی (باتری، وای‌فای، اعلان، حافظه و …) قبل از LLM route می‌شوند.
+- **Browser search** و **بازکردن مخاطب/گروه/کانال Telegram** ابزارهای high-level دارند تا مدل لازم نباشد چند دور فقط navigation انجام دهد.
+- تحلیل یک کانال/گروه نام‌دار ابتدا chat را deterministic باز می‌کند؛ سپس فقط یک پاس محدود برای خواندن پیام‌های قابل‌مشاهده می‌گیرد.
+- مدل محلی دیگر قبل از direct route initialize نمی‌شود؛ schema ابزارها task-aware شده‌اند.
+- سقف زمان هر inference محلی ۷۵ ثانیه و سقف کل task محلی ۲ تا ۴ دقیقه است؛ چرخه‌های چندین‌دقیقه‌ای fail-fast می‌شوند.
+- CI: unit test اجباری شده و smoke matrix از package قدیمی جدا شده است.
+- Config server دیگر secret خام برنمی‌گرداند، CORS باز ندارد و برای session محلی token کوتاه‌عمر می‌خواهد.
+
 ## v0.3.4
 
 - **Remove bootstrap scroll spam** (find_and_tap max_scrolls gone from bootstrap)

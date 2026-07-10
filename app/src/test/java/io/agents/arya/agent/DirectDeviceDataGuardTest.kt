@@ -31,6 +31,16 @@ class DirectDeviceDataGuardTest {
     }
 
     @Test
+    fun `persian battery and notification requests route directly`() {
+        val battery = requireNotNull(DirectDeviceDataGuard.deterministicToolCall("باتری گوشی چقدره؟"))
+        assertTrue(battery.toolName == "get_device_info")
+        assertTrue(battery.params["category"] == "battery")
+
+        val notifications = requireNotNull(DirectDeviceDataGuard.deterministicToolCall("اعلان‌های جدیدم رو بخون"))
+        assertTrue(notifications.toolName == "get_notifications")
+    }
+
+    @Test
     fun `conceptual clipboard question stays out of device data guard`() {
         val guard = DirectDeviceDataGuard.fromTask("What is an Android clipboard?")
 

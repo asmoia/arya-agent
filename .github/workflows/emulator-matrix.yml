@@ -128,7 +128,10 @@ jobs:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
           arch: ${{ matrix.arch }}
-          force-avd-creation: false
+          # Do not reuse a possibly stale cached AVD at execution time. API 29
+          # repeatedly stalled after loading the old default_boot snapshot even
+          # though the APK was healthy on newer APIs.
+          force-avd-creation: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           # NOTE: reactivecircus/android-emulator-runner@v2 runs each LINE of the

@@ -39,6 +39,18 @@ class FastTaskMatchersTest {
     }
 
     @Test
+    fun opensSinglePersianAppCommandWithoutModel() {
+        val match = requireNotNull(FastTaskMatchers.match("تلگرامو باز کن"))
+        assertEquals("open_app", match.toolName)
+        assertEquals("تلگرامو", match.params["app_name"])
+    }
+
+    @Test
+    fun doesNotTreatMultiStepOpenAsInstantOpen() {
+        assertNull(FastTaskMatchers.match("تلگرامو باز کن، برو تو سیو مسیجم"))
+    }
+
+    @Test
     fun keepsAmbiguousMessageOutOfFastPath() {
         assertNull(FastTaskMatchers.match("به علی یه پیام خوب بده"))
     }
