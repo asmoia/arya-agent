@@ -27,6 +27,9 @@ object LocalModelRuntime {
         maxNumTokens: Int = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.TASK),
         allowCpuFallback: Boolean = !LocalRuntimePolicy.isE4b(modelPath),
     ): LocalEngineLease {
+        require(!LocalModelManager.isRetiredHeavyLocalModel(modelPath)) {
+            "Retired large local models are disabled in Fast Local mode."
+        }
         LocalRuntimePolicy.checkBackendAdmission(modelPath)?.let { throw IllegalStateException(it) }
         val shouldUseCpu = LocalBackendHealth.shouldForceCpu(preferCpu)
         if (shouldUseCpu) {
@@ -93,6 +96,9 @@ object LocalModelRuntime {
         maxRetries: Int = DEFAULT_RETRY_COUNT,
     ): LocalConversationLease {
         require(maxRetries >= 1) { "maxRetries must be at least one" }
+        require(!LocalModelManager.isRetiredHeavyLocalModel(modelPath)) {
+            "Retired large local models are disabled in Fast Local mode."
+        }
         LocalRuntimePolicy.checkAdmission(context, modelPath, owner)?.let { throw IllegalStateException(it) }
         LocalRuntimePolicy.checkBackendAdmission(modelPath)?.let { throw IllegalStateException(it) }
         LocalInferenceCoordinator.acquire(owner, modelPath)

@@ -12,6 +12,7 @@ import io.agents.arya.agent.PlanExecutor
 import io.agents.arya.agent.LlmProvider
 import io.agents.arya.agent.llm.LocalInferenceCoordinator
 import io.agents.arya.agent.llm.LocalInferenceOwner
+import io.agents.arya.agent.llm.LocalModelManager
 import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.agent.skill.SkillExecutor
 import io.agents.arya.agent.skill.SkillRegistry
@@ -318,8 +319,22 @@ class TaskOrchestrator(
 
         // Agent creation/config refresh is deliberately lazy: all direct routes
         // above have already returned, so a fast task never pays model startup.
+        val requestedConfig = agentConfigProvider()
+        if (requestedConfig.provider == LlmProvider.LOCAL &&
+            LocalModelManager.isRetiredHeavyLocalModel(requestedConfig.baseUrl)
+        ) {
+            val message = "Large local models are disabled in Fast Local mode. Use a deterministic command or configure optional Cloud AI."
+            XLog.w(TAG, message)
+            taskEventCallback?.invoke(TaskEvent.Failed(message))
+            ChannelManager.sendMessage(channel, "✗ $message", messageID)
+            releaseTask()
+            ForegroundService.resetToIdle(ClawApplication.instance)
+            FloatingCircleManager.setErrorState()
+            onTaskFinished()
+            return
+        }
         try {
-            val config = agentConfigProvider()
+            val config = requestedConfig
             if (!::agentService.isInitialized) {
                 XLog.i(TAG, "AgentService not initialized; initializing for agent-loop task")
                 agentService = AgentServiceFactory.create(config)

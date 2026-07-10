@@ -146,6 +146,10 @@ object LlmSessionManager {
         return try {
             val modelPath = ModelConfigRepository.snapshot().local.modelPath
             if (modelPath.isNullOrEmpty()) return null
+            if (LocalModelManager.isRetiredHeavyLocalModel(modelPath)) {
+                XLog.w(TAG, "singleShotLocal skipped: retired large local model is disabled in Fast Local mode")
+                return null
+            }
 
             val context = io.agents.arya.ClawApplication.instance
             LocalModelRuntime.runSingleShot(

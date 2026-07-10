@@ -23,6 +23,7 @@ import io.agents.arya.agent.TaskPromptEnvelope
 import io.agents.arya.agent.TaskAcknowledgement
 import io.agents.arya.agent.TaskPerfTrace
 import io.agents.arya.agent.llm.ModelConfigRepository
+import io.agents.arya.agent.llm.LocalModelManager
 import io.agents.arya.agent.llm.LocalInferenceOwner
 import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.service.ClawAccessibilityService
@@ -186,6 +187,15 @@ class TaskFlowController(
             ?.let { SkillRegistry.findById(it.skillId)?.allowAgentFallback == true }
             ?: false
         val localMode = ModelConfigRepository.snapshot().isLocalActive()
+        val configuredLocalPath = ModelConfigRepository.snapshot().local.modelPath
+
+        if (needsLlm && localMode && LocalModelManager.isRetiredHeavyLocalModel(configuredLocalPath)) {
+            addUser(text)
+            val message = "Fast Local does not load retired large local models. This request needs optional Cloud AI or a more specific direct command."
+            addSystem("⚡ $message")
+            onTaskTerminal?.invoke(TaskEvent.Failed(message))
+            return
+        }
 
         if (needsLlm && hasLocalModelLoadFailure()) {
             addUser(text)
@@ -533,8 +543,7 @@ class TaskFlowController(
         if (!ModelConfigRepository.snapshot().isLocalActive()) return false
         val status = uiState.modelStatus.value.lowercase()
         return status.contains("model load failed") || status.contains("load failed") ||
-            status.contains("failed to load model") || status.contains("model error") ||
-            status.contains("e4b needs") || status.contains("gpu/npu unavailable")
+            status.contains("failed to load model") || status.contains("model error")
     }
 
     private fun isLikelyMonitorRequest(text: String): Boolean {

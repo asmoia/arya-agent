@@ -115,6 +115,15 @@ class ChatSessionController(
 
         cloudClient = null
         val modelPath = resolvedConfig.local.modelPath
+        if (LocalModelManager.isRetiredHeavyLocalModel(modelPath)) {
+            uiState.modelStatus.value = "● Fast Local · Large local model disabled"
+            isModelReady = false
+            uiState.isDownloading.value = false
+            // Keep Task input available: deterministic routes do not need a model.
+            setButtonsEnabled(true)
+            addSystem("Large local Gemma models are disabled for speed. Fast Local handles direct actions; configure Cloud only if you want optional complex reasoning.")
+            return
+        }
         if (isTaskRunning()) {
             uiState.modelStatus.value = "● Local task using model"
             isModelReady = false
@@ -147,11 +156,12 @@ class ChatSessionController(
             val deviceSupport = LocalModelManager.deviceSupport(activity)
             val defaultModel = deviceSupport.bestSupportedModel
             if (defaultModel == null) {
-                uiState.modelStatus.value = "Local model unavailable on this device"
+                uiState.modelStatus.value = "● Fast Local · No model load"
                 uiState.isDownloading.value = false
-                setButtonsEnabled(false)
+                // Direct Task commands remain usable without a conversational model.
+                setButtonsEnabled(true)
                 addSystem(
-                    "This device reports ${deviceSupport.deviceRamGb}GB RAM. Current built-in local models need at least ${deviceSupport.minimumBuiltInRamGb}GB."
+                    "Fast Local is ready for direct phone actions without loading a large model. Configure optional Cloud AI only for complex or open-ended requests."
                 )
                 return
             }
@@ -507,15 +517,7 @@ class ChatSessionController(
                     ).show()
                 } else {
                     val failure = e.message.orEmpty()
-                    val status = when {
-                        failure.contains("needs", ignoreCase = true) &&
-                            failure.contains("free RAM", ignoreCase = true) ->
-                            "⚠ E4B needs more free RAM — tap model to retry"
-                        failure.contains("GPU/NPU", ignoreCase = true) ->
-                            "⚠ E4B GPU/NPU unavailable — tap model to retry"
-                        else -> "⚠ Load failed — tap model to retry"
-                    }
-                    uiState.modelStatus.value = status
+                    uiState.modelStatus.value = "⚠ Local model load failed — tap model to retry"
                     addSystem("Failed to load model: ${failure.take(160)}")
                     Toast.makeText(
                         activity,

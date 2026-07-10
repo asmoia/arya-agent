@@ -2,13 +2,17 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.4.5 — Fast Local default
+
+- Gemma E4B/E2B auto-download، auto-select و runtime use بازنشسته شدند.
+- Fast Local مسیر پیش‌فرض است: compiler deterministic، intentهای native و high-level toolها بدون model load اجرا می‌شوند.
+- انتخاب legacy large local model در preferences، chat، task و single-shot به‌صورت fail-fast و روشن block می‌شود.
+- Cloud AI فقط به‌صورت opt-in برای requestهای پیچیده باقی مانده است.
+- pipeline training/model E4B و artifactهای مرتبط از product path حذف شدند.
+
 ## v0.4.4 — Adaptive E4B memory budget
 
-- E4B دیگر با حدود ۵ تا ۶GB RAM آزاد به‌صورت قطعی reject نمی‌شود؛ آریا خودکار بین پروفایل‌های `Full`، `Balanced` و `Compact` انتخاب می‌کند.
-- حالت Balanced context را به 1024 و حالت Compact به 768 کاهش می‌دهد؛ CPU fallback برای E4B همچنان ممنوع است.
-- hard safety floor تنها زیر 4.8GB RAM آزاد load را متوقف می‌کند.
-- status UI و Debug Report حالت budget، context مؤثر، RAM آزاد، hard floor و target کامل را نشان می‌دهند.
-- تست policy برای 5.1GB compact، 6GB balanced، hard floor و full profile اضافه شد.
+- این release برای سازگاری تاریخی نگه داشته شده است؛ مسیر E4B در v0.4.5 بازنشسته شد.
 
 ## v0.4.3 — Keep-alive lifecycle hotfix
 

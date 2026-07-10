@@ -74,34 +74,22 @@ object LocalModelManager {
         NEUTRAL,
     }
 
-    val AVAILABLE_MODELS = listOf(
-        ModelInfo(
-            id = "gemma4-e2b",
-            displayName = "Gemma 4 E2B — 2.6GB",
-            url = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-            fileName = "gemma-4-E2B-it.litertlm",
-            sizeBytes = 2_580_000_000L,
-            minRamGb = 8
-        ),
-        ModelInfo(
-            id = "gemma4-e4b",
-            displayName = "Gemma 4 E4B — 3.6GB",
-            url = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
-            fileName = "gemma-4-E4B-it.litertlm",
-            sizeBytes = 3_650_000_000L,
-            minRamGb = 10
-        ),
-    )
-
     /**
-     * Prefer Gemma 4 E4B (3.6GB) whenever the device meets its min RAM (10GB+).
-     * Fall back to E2B on smaller phones. User can still pick either in LLM Config.
+     * Arya no longer ships or auto-downloads a large local model. E4B/E2B made
+     * startup and common phone actions slower than the deterministic Fast Local
+     * path. Custom models remain an explicit advanced setting, but are never
+     * auto-selected or downloaded.
      */
-    fun recommendedModel(context: Context): ModelInfo {
-        val totalRamGb = getDeviceRamGb(context)
-        val e4b = AVAILABLE_MODELS.first { it.id == "gemma4-e4b" }
-        val e2b = AVAILABLE_MODELS.first { it.id == "gemma4-e2b" }
-        return if (totalRamGb >= e4b.minRamGb) e4b else e2b
+    val AVAILABLE_MODELS: List<ModelInfo> = emptyList()
+
+    fun recommendedModel(context: Context): ModelInfo? = null
+
+    /** Blocks retired large Gemma selections left in old app preferences. */
+    fun isRetiredHeavyLocalModel(modelPath: String?): Boolean {
+        val path = modelPath.orEmpty().lowercase()
+        return path.contains("gemma-4-e4b") || path.contains("gemma4-e4b") ||
+            path.contains("gemma-4-e2b") || path.contains("gemma4-e2b") ||
+            path.contains("e4b-it") || path.contains("e2b-it")
     }
 
     fun getDeviceRamGb(context: Context): Int {
@@ -115,7 +103,7 @@ object LocalModelManager {
         val deviceRamGb = getDeviceRamGb(context)
         return DeviceSupport(
             deviceRamGb = deviceRamGb,
-            minimumBuiltInRamGb = AVAILABLE_MODELS.minOf { it.minRamGb },
+            minimumBuiltInRamGb = AVAILABLE_MODELS.minOfOrNull { it.minRamGb } ?: 0,
             bestSupportedModel = AVAILABLE_MODELS
                 .filter { it.minRamGb <= deviceRamGb }
                 .maxByOrNull { it.minRamGb }
@@ -394,27 +382,7 @@ object LocalModelManager {
         }
     }
 
-    private fun builtInAliases(model: ModelInfo): List<String> {
-        return when (model.id) {
-            "gemma4-e2b" -> listOf(
-                "gemma4-e2b",
-                "gemma-4-e2b",
-                "gemma 4 e2b",
-                "gemma4_2b",
-                "gemma-4-2b",
-                "gemma 4 2b",
-            )
-            "gemma4-e4b" -> listOf(
-                "gemma4-e4b",
-                "gemma-4-e4b",
-                "gemma 4 e4b",
-                "gemma4_4b",
-                "gemma-4-4b",
-                "gemma 4 4b",
-            )
-            else -> emptyList()
-        }
-    }
+    private fun builtInAliases(model: ModelInfo): List<String> = emptyList()
 
     /**
      * Download a model from HuggingFace with progress reporting.

@@ -114,7 +114,7 @@ class HermesVoiceTool : BaseTool() {
                     "note",
                     "Offline waveform→text (Whisper) is not embedded yet. " +
                         "Use system STT (mic in chat) or provide transcript= for analyze_transcript. " +
-                        "Analysis uses your active model (prefer local Gemma 4 E4B 3.6GB)."
+                        "Analysis uses your active optional Cloud AI configuration when available."
                 )
             ToolResult.success(json.toString(2))
         } catch (e: Exception) {
@@ -148,7 +148,7 @@ class HermesVoiceTool : BaseTool() {
                 .put(
                     "offline_note",
                     "On-device STT quality depends on the phone's offline speech pack. " +
-                        "Full Whisper offline ASR is planned; until then use system STT + local Gemma for understanding."
+                        "Full Whisper offline ASR is planned; until then use system STT and optional Cloud AI for complex transcript understanding."
                 )
                 .toString(2)
         )
@@ -177,15 +177,13 @@ class HermesVoiceTool : BaseTool() {
             appendLine(transcript.take(MAX_TRANSCRIPT_CHARS))
         }
 
-        // Prefer whatever is configured (local Gemma E4B if selected).
-        val answer = LlmSessionManager.singleShot(prompt, temperature = 0.2)
-            ?: LlmSessionManager.singleShotLocal(prompt, temperature = 0.2)
-            ?: LlmSessionManager.singleShotCloud(prompt, temperature = 0.2)
+        // Fast Local intentionally has no large on-device model. Voice analysis
+        // uses an explicitly configured cloud model when the user enables it.
+        val answer = LlmSessionManager.singleShotCloud(prompt, temperature = 0.2)
 
         return if (answer.isNullOrBlank()) {
             ToolResult.error(
-                "No LLM available to analyze transcript. " +
-                    "Download/select local Gemma 4 E4B (3.6GB) in LLM Config, or configure cloud."
+                "No optional Cloud AI is configured to analyze this transcript. Configure Cloud AI in Settings, or use Fast Local commands."
             )
         } else {
             ToolResult.success(answer)

@@ -61,8 +61,8 @@
 
 | حالت | کاربرد |
 |---|---|
-| **Local** | inference روی خود گوشی با LiteRT-LM و مدل Gemma؛ مناسب حریم خصوصی و کارهای معمول، ولی سرعت به RAM/CPU/GPU گوشی وابسته است. |
-| **Cloud** | provider سازگار با OpenAI یا Anthropic؛ برای reasoning پیچیده‌تر، با این تفاوت که context موردنیاز task به provider منتخب ارسال می‌شود. |
+| **Fast Local** | compiler deterministic، native intent و high-level tool بدون model load؛ مسیر پیش‌فرض برای پاسخ و اقدام سریع. |
+| **Cloud (اختیاری)** | provider سازگار با OpenAI یا Anthropic برای reasoning پیچیده، فقط پس از تنظیم و انتخاب صریح کاربر. |
 
 برای جلوگیری از گیرکردن طولانی در Local mode:
 
@@ -72,10 +72,18 @@
 - کل task محلی نیز زمان محدود دارد؛
 - اگر مدل یا runtime واقعاً گیر کند، task با خطای روشن متوقف می‌شود، نه اینکه چندین دقیقه روی «thinking» بماند.
 
-مدل‌های محلی پیشنهادی در تنظیمات:
+### Fast Local
 
-- **Gemma 4 E2B** — حدود 2.6GB، مناسب دستگاه‌های با حداقل 8GB RAM
-- **Gemma 4 E4B** — حدود 3.6GB، مناسب دستگاه‌های با حداقل 10GB RAM
+حالت پیش‌فرض آریا **Fast Local** است:
+
+- command compiler و high-level toolها بدون model load اجرا می‌شوند؛
+- app open، back/home، screenshot، device data، search و پیام‌های صریح تا حد
+  ممکن مسیر deterministic دارند؛
+- مدل‌های بزرگ محلی برای جلوگیری از load طولانی، RAM pressure و agent loop
+  کند auto-download یا auto-select نمی‌شوند.
+
+برای درخواست‌های پیچیده و غیرقابل‌compile، کاربر می‌تواند Cloud AI را به‌صورت
+صریح در Settings تنظیم کند. Cloud هرگز به‌صورت silent فعال نمی‌شود.
 
 ---
 
@@ -89,7 +97,7 @@ TaskOrchestrator
  ├─ Fast deterministic router
  ├─ Built-in skills
  └─ HermesAgentService
-        ├─ Local LiteRT-LM یا Cloud LLM
+        ├─ Optional Cloud LLM (explicit user opt-in)
         ├─ ToolRegistry
         ├─ Memory / Skills / Sessions
         ├─ Cron

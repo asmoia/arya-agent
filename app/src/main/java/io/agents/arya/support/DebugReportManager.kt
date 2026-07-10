@@ -11,8 +11,6 @@ import io.agents.arya.BuildConfig
 import io.agents.arya.agent.llm.LocalBackendHealth
 import io.agents.arya.agent.llm.LocalModelManager
 import io.agents.arya.agent.llm.LocalInferenceCoordinator
-import io.agents.arya.agent.llm.LocalInferenceOwner
-import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.agent.llm.ModelConfigRepository
 import io.agents.arya.agent.TaskPerfTrace
 import io.agents.arya.service.AutoReplyManager
@@ -97,18 +95,10 @@ object DebugReportManager {
             appendLine("- Conversation lease: owner=${localInference.owner}, phase=${localInference.phase}, backend=${localInference.backend ?: "-"}, generation=${localInference.generation}")
             appendLine("- Active lease failure: ${localInference.failure ?: "(none)"}")
             appendLine("- Last local runtime failure: ${localInference.lastFailure ?: "(none)"}")
-            config.local.modelPath.takeIf { it.isNotBlank() }?.let { path ->
-                LocalRuntimePolicy.requiredFreeMb(path, LocalInferenceOwner.CHAT)?.let { required ->
-                    appendLine("- E4B hard safety floor: ${required / 1000.0} GB available")
-                }
-                LocalRuntimePolicy.preferredFreeMb(path, LocalInferenceOwner.CHAT)?.let { preferred ->
-                    appendLine("- E4B full chat target: ${preferred / 1000.0} GB available")
-                }
-                LocalRuntimePolicy.preferredFreeMb(path, LocalInferenceOwner.TASK)?.let { preferred ->
-                    appendLine("- E4B full task target: ${preferred / 1000.0} GB available")
-                }
-                val chatBudget = LocalRuntimePolicy.memoryBudget(context, path, LocalInferenceOwner.CHAT)
-                appendLine("- E4B current chat budget: ${chatBudget.mode.label}, context=${chatBudget.maxNumTokens}, available=${chatBudget.availableMb} MB")
+            if (LocalModelManager.isRetiredHeavyLocalModel(config.local.modelPath)) {
+                appendLine("- Retired large local model: disabled by Fast Local policy")
+            } else {
+                appendLine("- Fast Local: deterministic actions do not require a model load")
             }
             val openClPaths = detectOpenClLibraryPaths()
             appendLine("- OpenCL libraries found: ${if (openClPaths.isEmpty()) "(none) — GPU path will not work" else openClPaths.joinToString(", ")}")
