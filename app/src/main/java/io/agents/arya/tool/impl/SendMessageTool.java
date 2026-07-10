@@ -342,7 +342,7 @@ public class SendMessageTool extends BaseTool {
             if (composer == null) return true;
             CharSequence text = composer.getText();
             String current = text != null ? text.toString().trim() : "";
-            return current.isEmpty() || (expected.isNotEmpty() &&
+            return current.isEmpty() || (!expected.isEmpty() &&
                     !current.equals(expected) && !current.contains(expected));
         });
         XLog.i(TAG, "tapSendOrEnter: " + pathLabel + " composer cleared=" + cleared);
