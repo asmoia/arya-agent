@@ -16,6 +16,8 @@ import io.agents.arya.agent.llm.LlmSessionManager
 import io.agents.arya.agent.llm.LocalModelManager
 import io.agents.arya.agent.llm.LocalModelRuntime
 import io.agents.arya.agent.llm.LocalInferenceCoordinator
+import io.agents.arya.agent.llm.LocalInferenceBusyException
+import io.agents.arya.agent.llm.LocalBackendHealth
 import io.agents.arya.agent.llm.LocalInferenceOwner
 import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.agent.llm.ModelConfigRepository
@@ -133,6 +135,8 @@ class ChatSessionController(
                     oldConv?.close()
                 } catch (e: Exception) {
                     XLog.w(TAG, "loadModelIfReady: conv close error", e)
+                } finally {
+                    LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
                 }
                 postToMain { loadModelIfReady() }
             }
@@ -200,80 +204,40 @@ class ChatSessionController(
         conversationId: String,
         visibleMessages: List<ChatMessage>,
     ) {
-        syncUiToActiveModel()
-        val currentModelPath = ModelConfigRepository.snapshot().local.modelPath
-        if (currentModelPath.isNotEmpty() && currentModelPath != loadedModelPath) {
+        val config = ModelConfigRepository.snapshot()
+        if (!config.isLocalActive()) {
+            syncUiToActiveModel()
+            return
+        }
+
+        val currentModelPath = config.local.modelPath
+        if (currentModelPath.isBlank()) {
+            syncUiToActiveModel()
+            return
+        }
+        if (isTaskRunning()) {
+            uiState.modelStatus.value = "● Local task using model"
+            setButtonsEnabled(false)
+            return
+        }
+
+        // A single load entry-point prevents onResume + syncUiToActiveModel from
+        // issuing two createConversation calls for the one-session LiteRT Engine.
+        if (currentModelPath != loadedModelPath || !isModelReady || conversation == null) {
             loadModelIfReady(conversationId, visibleMessages)
-        } else if (!isModelReady && engine != null && currentModelPath.isNotEmpty()) {
-            val generation = ++localUiGeneration
-            executor.submit {
-                try {
-                    try {
-                        conversation?.close()
-                    } catch (_: Exception) {
-                    }
-                    conversation = null
-                    val lease = LocalModelRuntime.openConversation(
-                        activity,
-                        currentModelPath,
-                        buildConversationConfig(buildRestoredSystemPrompt(conversationId, visibleMessages))
-                    )
-                    engine = lease.engine
-                    conversation = lease.conversation
-                    isModelReady = true
-                    postToMain {
-                        if (!isLocalUiStillExpected(currentModelPath, generation)) {
-                            return@postToMain
-                        }
-                        updateLocalModelStatus(currentModelPath)
-                        setButtonsEnabled(true)
-                    }
-                } catch (e: Exception) {
-                    XLog.e(TAG, "Failed to recreate conversation", e)
-                    val isSessionConflict = e.message?.contains("session already exists") == true
-                    postToMain {
-                        if (isSessionConflict) {
-                            uiState.modelStatus.value = "⚠ Model busy — tap model to retry"
-                            Toast.makeText(
-                                activity,
-                                "Model is being used by a task. Wait for it to finish, then tap the model name to retry.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            uiState.modelStatus.value = "⚠ Model load failed — tap to retry"
-                            Toast.makeText(
-                                activity,
-                                "Failed to load model: ${e.message?.take(80)}",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                        setButtonsEnabled(false)
-                    }
-                }
-            }
-        } else if (!isModelReady && engine == null && currentModelPath.isNotEmpty()) {
-            loadModelIfReady(conversationId, visibleMessages)
+        } else {
+            updateLocalModelStatus(currentModelPath)
+            setButtonsEnabled(true)
         }
     }
 
     fun onPause(conversationId: String) {
-        if (engine != null && ConversationCompactor.needsCompaction(uiState.messages)) {
-            executor.submit {
-                try {
-                    conversation?.close()
-                } catch (_: Exception) {
-                }
-                conversation = null
-                ConversationCompactor.compact(engine!!, uiState.messages, activity, conversationId)
-                isModelReady = false
-            }
-        }
+        // Do not start an invisible model-powered compaction on pause. LiteRT has
+        // one native Conversation; a background summary can race the next task
+        // and was not worth a failed foreground command. Existing saved digests
+        // are still used when a conversation is restored.
         executor.submit {
-            try {
-                conversation?.close()
-            } catch (_: Exception) {
-            }
-            conversation = null
+            closeLocalConversation()
             isModelReady = false
         }
     }
@@ -281,33 +245,20 @@ class ChatSessionController(
     fun onDestroy() {
         executor.submit {
             XLog.i(TAG, "onDestroy: closing conversation (engine stays in EngineHolder)")
-            try {
-                conversation?.close()
-            } catch (e: Exception) {
-                XLog.w(TAG, "onDestroy: conversation close error", e)
-            }
-            conversation = null
+            closeLocalConversation()
+            isModelReady = false
         }
     }
 
     fun releaseForTask() {
-        try {
-            conversation?.close()
-        } catch (_: Exception) {
-        }
-        conversation = null
+        closeLocalConversation()
         isModelReady = false
-        LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
     }
 
+    /** Called before the task path reserves the only LiteRT conversation. */
     fun prepareForTaskStart() {
-        try {
-            conversation?.close()
-        } catch (_: Exception) {
-        }
-        conversation = null
+        closeLocalConversation()
         isModelReady = false
-        LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
     }
 
     fun sendChat(text: String) {
@@ -341,7 +292,15 @@ class ChatSessionController(
                     if (currentConversation == null || !isModelReady) {
                         throw IllegalStateException("Local model is still loading. Try again in a moment.")
                     }
-                    val response = currentConversation.sendMessage(text)
+                    LocalInferenceCoordinator.markBusy(LocalInferenceOwner.CHAT)
+                    val response = try {
+                        currentConversation.sendMessage(text)
+                    } finally {
+                        LocalInferenceCoordinator.markReady(
+                            LocalInferenceOwner.CHAT,
+                            LocalModelRuntime.currentBackendLabel(loadedModelPath),
+                        )
+                    }
                     val responseText = response?.toString() ?: "(no response)"
                     val inputTokensEst = text.length / 4 + 1
                     val outputTokensEst = responseText.length / 4 + 1
@@ -355,10 +314,14 @@ class ChatSessionController(
                     }
                 }
             } catch (e: Exception) {
-                if (conversation != null && LocalModelRuntime.isGpuBackendFailure(e)) {
+                val localPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
+                if (conversation != null &&
+                    !LocalRuntimePolicy.isE4b(localPath) &&
+                    LocalModelRuntime.isGpuBackendFailure(e)
+                ) {
                     XLog.w(TAG, "GPU inference failed, falling back to CPU: ${e.message}")
                     try {
-                        val modelPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
+                        val modelPath = localPath
                         val responseText = retryLocalChatOnCpu(modelPath, text)
                         val inputTokensEst = text.length / 4 + 1
                         val outputTokensEst = responseText.length / 4 + 1
@@ -375,9 +338,21 @@ class ChatSessionController(
                         XLog.e(TAG, "CPU fallback also failed", cpuError)
                     }
                 }
+                if (ModelConfigRepository.snapshot().isLocalActive()) {
+                    if (LocalModelRuntime.isGpuBackendFailure(e)) {
+                        LocalBackendHealth.noteRecoverableGpuFailure(localPath, e)
+                    }
+                    LocalInferenceCoordinator.markFailed(LocalInferenceOwner.CHAT, e)
+                    closeLocalConversation()
+                    isModelReady = false
+                }
                 XLog.e(TAG, "Chat error", e)
                 postToMain {
                     replaceTypingIndicator("Error: ${e.message}")
+                    if (ModelConfigRepository.snapshot().isLocalActive()) {
+                        uiState.modelStatus.value = "⚠ Model error — tap to retry"
+                        setButtonsEnabled(false)
+                    }
                     uiState.isAwaitingReply.value = false
                 }
             }
@@ -427,13 +402,16 @@ class ChatSessionController(
         }
 
         executor.submit {
-            try {
-                conversation?.close()
-            } catch (_: Exception) {
-            }
+            closeLocalConversation()
             val modelPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
             if (modelPath.isNotEmpty()) {
-                val lease = LocalModelRuntime.openConversation(activity, modelPath, buildConversationConfig())
+                val lease = LocalModelRuntime.openConversation(
+                    context = activity,
+                    modelPath = modelPath,
+                    conversationConfig = buildConversationConfig(),
+                    owner = LocalInferenceOwner.CHAT,
+                    maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
+                )
                 engine = lease.engine
                 conversation = lease.conversation
                 isModelReady = true
@@ -453,10 +431,7 @@ class ChatSessionController(
         if (engine != null) {
             executor.submit {
                 try {
-                    try {
-                        conversation?.close()
-                    } catch (_: Exception) {
-                    }
+                    closeLocalConversation()
                     val recentMsgs = messages.takeLast(5)
                     val systemPrompt = ConversationCompactor.buildRestoredSystemPrompt(activity, conversationId, recentMsgs)
                     val modelPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
@@ -466,7 +441,9 @@ class ChatSessionController(
                         conversationConfig = ConversationConfig(
                             systemInstruction = Contents.of(systemPrompt),
                             samplerConfig = SamplerConfig(topK = 64, topP = 0.95, temperature = 0.7)
-                        )
+                        ),
+                        owner = LocalInferenceOwner.CHAT,
+                        maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
                     )
                     engine = lease.engine
                     conversation = lease.conversation
@@ -490,12 +467,7 @@ class ChatSessionController(
     ) {
         try {
             XLog.i(TAG, "loadModel: acquiring shared runtime for $modelPath")
-            try {
-                conversation?.close()
-            } catch (_: Exception) {
-            }
-            conversation = null
-            Thread.sleep(200)
+            closeLocalConversation()
 
             val lease = LocalModelRuntime.openConversation(
                 context = activity,
@@ -522,8 +494,8 @@ class ChatSessionController(
             LocalInferenceCoordinator.markFailed(LocalInferenceOwner.CHAT, e)
             LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
             XLog.e(TAG, "Model load failed", e)
-            val isSessionConflict = e.message?.contains("session already exists") == true
-                || e.message?.contains("5 retries") == true
+            val isSessionConflict = LocalModelRuntime.isSessionConflict(e) ||
+                e is LocalInferenceBusyException
             postToMain {
                 if (isSessionConflict) {
                     uiState.modelStatus.value = "⚠ Model busy — tap model to retry"
@@ -534,11 +506,20 @@ class ChatSessionController(
                         Toast.LENGTH_LONG
                     ).show()
                 } else {
-                    uiState.modelStatus.value = "⚠ Load failed — tap model to retry"
-                    addSystem("Failed to load model: ${e.message?.take(100)}")
+                    val failure = e.message.orEmpty()
+                    val status = when {
+                        failure.contains("needs", ignoreCase = true) &&
+                            failure.contains("free RAM", ignoreCase = true) ->
+                            "⚠ E4B needs more free RAM — tap model to retry"
+                        failure.contains("GPU/NPU", ignoreCase = true) ->
+                            "⚠ E4B GPU/NPU unavailable — tap model to retry"
+                        else -> "⚠ Load failed — tap model to retry"
+                    }
+                    uiState.modelStatus.value = status
+                    addSystem("Failed to load model: ${failure.take(160)}")
                     Toast.makeText(
                         activity,
-                        "Model load failed: ${e.message?.take(80)}",
+                        "Model load failed: ${failure.take(140)}",
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -549,17 +530,22 @@ class ChatSessionController(
 
     private fun retryLocalChatOnCpu(modelPath: String, text: String): String {
         require(modelPath.isNotEmpty()) { "Local model path missing for CPU retry" }
-        try {
-            conversation?.close()
-        } catch (_: Exception) {
+        require(!LocalRuntimePolicy.isE4b(modelPath)) {
+            "Gemma 4 E4B CPU fallback is disabled for interactive use."
         }
-        conversation = null
-        LocalModelRuntime.forceCpuEngine(activity, modelPath)
+        closeLocalConversation()
+        LocalModelRuntime.forceCpuEngine(
+            activity,
+            modelPath,
+            LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
+        )
         val lease = LocalModelRuntime.openConversation(
             context = activity,
             modelPath = modelPath,
             conversationConfig = buildConversationConfig(),
             preferCpu = true,
+            owner = LocalInferenceOwner.CHAT,
+            maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
         )
         engine = lease.engine
         loadedModelPath = modelPath
@@ -670,11 +656,7 @@ class ChatSessionController(
             return
         }
         if (conversation != null) {
-            try {
-                conversation?.close()
-            } catch (_: Exception) {
-            }
-            conversation = null
+            closeLocalConversation()
             isModelReady = false
         }
         loadedModelPath = null
@@ -700,6 +682,19 @@ class ChatSessionController(
             baseName
         } else {
             "$baseName ($backendLabel)"
+        }
+    }
+
+    /** Close Arya's native chat session and surrender its single-session lease. */
+    private fun closeLocalConversation(releaseLease: Boolean = true) {
+        val current = conversation
+        conversation = null
+        try {
+            current?.close()
+        } catch (e: Exception) {
+            XLog.w(TAG, "closeLocalConversation: close error", e)
+        } finally {
+            if (releaseLease) LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
         }
     }
 

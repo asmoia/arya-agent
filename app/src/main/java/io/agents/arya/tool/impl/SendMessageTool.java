@@ -12,6 +12,7 @@ import io.agents.arya.service.ClawAccessibilityService;
 import io.agents.arya.tool.BaseTool;
 import io.agents.arya.tool.ToolParameter;
 import io.agents.arya.tool.ToolResult;
+import io.agents.arya.tool.UiWait;
 import io.agents.arya.utils.ContactListUiUtils;
 import io.agents.arya.utils.UiActionMatchUtils;
 import io.agents.arya.utils.ContactMatchUtils;
@@ -86,7 +87,6 @@ public class SendMessageTool extends BaseTool {
                 return ToolResult.error("Failed to open " + app + ". Is it installed?");
             }
             XLog.i(TAG, "Step 1: Opened " + app + " (" + packageName + ")");
-            Thread.sleep(2000);
 
             // Step 2: Wait for the messaging app window to become active
             if (!waitForActiveWindow(service, packageName, 8000)) {
@@ -109,25 +109,22 @@ public class SendMessageTool extends BaseTool {
                     return ToolResult.error("Could not find '" + contact + "' in " + app + " chat list.");
                 }
                 XLog.i(TAG, "Step 3: Tapped " + contact);
-                Thread.sleep(3000);
-                waitForActiveWindow(service, packageName, 5000);
+                if (!waitForMessageInput(service, 4_000L)) {
+                    return ToolResult.error("Chat opened, but its message input did not become visible.");
+                }
             }
 
-            // Step 4: Type message in the bottommost input field (retry — chat may still be loading)
-            boolean typed = false;
-            for (int retry = 0; retry < 5; retry++) {
-                if (typeInBottomEditText(service, message)) {
-                    typed = true;
-                    break;
-                }
-                XLog.i(TAG, "Step 4: retry " + (retry + 1) + " — waiting for chat to load");
-                Thread.sleep(1000);
-            }
-            if (!typed) {
+            // Step 4: Wait for the actual composer, then type once. This avoids
+            // both a hard 3-second pause and repeatedly setting text while the
+            // chat UI is still animating.
+            if (!waitForMessageInput(service, 4_000L)) {
                 return ToolResult.error("Could not find message input field.");
             }
+            if (!typeInBottomEditText(service, message)) {
+                return ToolResult.error("Could not type into the message input field.");
+            }
             XLog.i(TAG, "Step 4: Typed '" + message + "'");
-            Thread.sleep(500);
+            UiWait.until(700L, 50L, () -> composerContains(service, message));
 
             // Step 5: Tap send (by desc) or press Enter as fallback
             if (!tapSendOrEnter(service, message)) {
@@ -187,17 +184,19 @@ public class SendMessageTool extends BaseTool {
      * Works for ANY app — just checks packageName on root node.
      */
     private boolean waitForActiveWindow(ClawAccessibilityService service, String packageName, long timeoutMs) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + timeoutMs;
-        while (System.currentTimeMillis() < deadline) {
+        return UiWait.until(timeoutMs, 80L, () -> {
             AccessibilityNodeInfo root = service.getRootInActiveWindow();
-            if (root != null) {
-                CharSequence pkg = root.getPackageName();
-                XLog.d(TAG, "waitForActiveWindow: current=" + pkg + " want=" + packageName);
-                if (pkg != null && pkg.toString().equals(packageName)) return true;
-            }
-            Thread.sleep(500);
-        }
-        return false;
+            CharSequence pkg = root != null ? root.getPackageName() : null;
+            XLog.d(TAG, "waitForActiveWindow: current=" + pkg + " want=" + packageName);
+            return pkg != null && pkg.toString().equals(packageName);
+        });
+    }
+
+    private boolean waitForMessageInput(ClawAccessibilityService service, long timeoutMs) throws InterruptedException {
+        return UiWait.until(timeoutMs, 80L, () -> {
+            AccessibilityNodeInfo root = service.getRootInActiveWindow();
+            return root != null && findBottomEditText(root) != null;
+        });
     }
 
     /**
@@ -273,7 +272,7 @@ public class SendMessageTool extends BaseTool {
         // Focus + click + set text
         best.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
         best.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-        Thread.sleep(500);
+        UiWait.until(500L, 40L, best::isFocused);
 
         Bundle args = new Bundle();
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, message);
@@ -335,33 +334,27 @@ public class SendMessageTool extends BaseTool {
             String expectedMessage,
             String pathLabel
     ) throws InterruptedException {
-        Thread.sleep(500);
+        final String expected = expectedMessage != null ? expectedMessage.trim() : "";
+        boolean cleared = UiWait.until(1_500L, 60L, () -> {
+            AccessibilityNodeInfo root = service.getRootInActiveWindow();
+            if (root == null) return false;
+            AccessibilityNodeInfo composer = findBottomEditText(root);
+            if (composer == null) return true;
+            CharSequence text = composer.getText();
+            String current = text != null ? text.toString().trim() : "";
+            return current.isEmpty() || (expected.isNotEmpty() &&
+                    !current.equals(expected) && !current.contains(expected));
+        });
+        XLog.i(TAG, "tapSendOrEnter: " + pathLabel + " composer cleared=" + cleared);
+        return cleared;
+    }
+
+    private boolean composerContains(ClawAccessibilityService service, String expectedMessage) {
         AccessibilityNodeInfo root = service.getRootInActiveWindow();
-        if (root == null) {
-            XLog.i(TAG, "tapSendOrEnter: " + pathLabel + " verification root missing; treating as success");
-            return true;
-        }
-
-        AccessibilityNodeInfo composer = findBottomEditText(root);
-        if (composer == null) {
-            XLog.i(TAG, "tapSendOrEnter: " + pathLabel + " verification composer missing; treating as success");
-            return true;
-        }
-
-        CharSequence composerText = composer.getText();
-        String current = composerText != null ? composerText.toString().trim() : "";
-        String expected = expectedMessage != null ? expectedMessage.trim() : "";
-        XLog.i(TAG, "tapSendOrEnter: " + pathLabel + " verification composerText='" + current + "'");
-
-        if (current.isEmpty()) {
-            return true;
-        }
-
-        if (expected.isEmpty()) {
-            return !current.isEmpty();
-        }
-
-        return !current.equals(expected) && !current.contains(expected);
+        AccessibilityNodeInfo composer = root == null ? null : findBottomEditText(root);
+        CharSequence text = composer != null ? composer.getText() : null;
+        String current = text == null ? "" : text.toString();
+        return expectedMessage != null && current.contains(expectedMessage);
     }
 
     private Rect findBottomEditTextBounds(AccessibilityNodeInfo root) {

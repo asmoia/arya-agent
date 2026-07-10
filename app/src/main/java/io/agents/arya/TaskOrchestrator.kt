@@ -12,6 +12,7 @@ import io.agents.arya.agent.PlanExecutor
 import io.agents.arya.agent.LlmProvider
 import io.agents.arya.agent.llm.LocalInferenceCoordinator
 import io.agents.arya.agent.llm.LocalInferenceOwner
+import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.agent.skill.SkillExecutor
 import io.agents.arya.agent.skill.SkillRegistry
 import io.agents.arya.channel.Channel
@@ -282,20 +283,27 @@ class TaskOrchestrator(
                                 FloatingCircleManager.setSuccessState()
                                 ForegroundService.resetToIdle(ClawApplication.instance)
                                 onTaskFinished()
-                            } else if (!skill.allowAgentFallback) {
-                                XLog.w(TAG, "Skill ${skill.id} failed with fallback disabled: ${skillResult.message}")
-                                ChannelManager.sendMessage(channel, "✗ ${skillResult.message}", messageID)
-                                taskEventCallback?.invoke(TaskEvent.Failed(skillResult.message))
-                                releaseTask()
-                                FloatingCircleManager.setErrorState()
-                                ForegroundService.resetToIdle(ClawApplication.instance)
-                                onTaskFinished()
                             } else {
+                                val fallbackBlockReason = localAgentFallbackBlockReason()
                                 val fallbackGoal = skill.fallbackGoal
                                     .let { g -> route.params.entries.fold(g) { acc, (k, v) -> acc.replace("{$k}", v) } }
-                                XLog.i(TAG, "Skill ${skill.id} failed, falling back to agent loop: $fallbackGoal")
-                                taskEventCallback?.invoke(TaskEvent.ToolAction("Retrying with AI agent"))
-                                startNewTask(channel, fallbackGoal, messageID, isFallback = true)
+                                if (!skill.allowAgentFallback || fallbackGoal.isBlank() || fallbackBlockReason != null) {
+                                    val message = fallbackBlockReason ?: skillResult.message
+                                    XLog.w(
+                                        TAG,
+                                        "Skill ${skill.id} failed without agent fallback: $message"
+                                    )
+                                    ChannelManager.sendMessage(channel, "✗ $message", messageID)
+                                    taskEventCallback?.invoke(TaskEvent.Failed(message))
+                                    releaseTask()
+                                    FloatingCircleManager.setErrorState()
+                                    ForegroundService.resetToIdle(ClawApplication.instance)
+                                    onTaskFinished()
+                                } else {
+                                    XLog.i(TAG, "Skill ${skill.id} failed, falling back to agent loop: $fallbackGoal")
+                                    taskEventCallback?.invoke(TaskEvent.ToolAction("Retrying with AI agent"))
+                                    startNewTask(channel, fallbackGoal, messageID, isFallback = true)
+                                }
                             }
                         }, "skill-executor").start()
                         return
@@ -522,5 +530,21 @@ class TaskOrchestrator(
                 onTaskFinished()
             }
         })
+    }
+
+    /**
+     * A deterministic skill may ask to escalate, but an unhealthy E4B must not
+     * turn that failure into a long CPU/model loop. Direct skill errors remain
+     * explicit and the caller can retry after freeing memory or reloading GPU.
+     */
+    private fun localAgentFallbackBlockReason(): String? {
+        val config = agentConfigProvider()
+        if (config.provider != LlmProvider.LOCAL) return null
+        if (config.baseUrl.isBlank()) return "No local model is configured for fallback."
+        return LocalRuntimePolicy.checkAdmission(
+            ClawApplication.instance,
+            config.baseUrl,
+            LocalInferenceOwner.TASK,
+        ) ?: LocalRuntimePolicy.checkBackendAdmission(config.baseUrl)
     }
 }

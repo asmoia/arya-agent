@@ -11,6 +11,7 @@ import io.agents.arya.service.ClawAccessibilityService;
 import io.agents.arya.tool.BaseTool;
 import io.agents.arya.tool.ToolParameter;
 import io.agents.arya.tool.ToolResult;
+import io.agents.arya.tool.UiWait;
 import io.agents.arya.utils.ContactListUiUtils;
 import io.agents.arya.utils.ContactMatchUtils;
 import io.agents.arya.utils.UiActionMatchUtils;
@@ -98,12 +99,20 @@ public class TelegramSavedMediaTool extends BaseTool {
 
             for (int attempt = 0; attempt <= MAX_MEDIA_SCROLLS; attempt++) {
                 AccessibilityNodeInfo root = service.getRootInActiveWindow();
+                String beforeTap = safeTree(root);
                 AccessibilityNodeInfo playControl = findBestPlayControl(root);
                 if (playControl != null) {
                     boolean clicked = service.clickNode(playControl);
                     if (clicked) {
-                        XLog.i(TAG, "Tapped visible Telegram media play control on attempt=" + attempt);
-                        return ToolResult.success("Telegram Saved Messages opened and a visible media item is playing.");
+                        boolean stateChanged = UiWait.until(1_200L, 80L, () -> {
+                            String afterTap = safeTree(service.getRootInActiveWindow());
+                            return !afterTap.isEmpty() && !afterTap.equals(beforeTap);
+                        });
+                        XLog.i(TAG, "Tapped visible Telegram media play control on attempt=" + attempt
+                                + " stateChanged=" + stateChanged);
+                        return ToolResult.success(stateChanged
+                                ? "Telegram Saved Messages opened and playback state changed."
+                                : "Telegram Saved Messages opened and a visible media play control was tapped.");
                     }
                 }
 
@@ -228,9 +237,14 @@ public class TelegramSavedMediaTool extends BaseTool {
 
     private void collectPlayCandidates(AccessibilityNodeInfo node, Rect screen, Candidate best) {
         if (node == null || !node.isVisibleToUser() || !node.isEnabled()) return;
-        int score = scorePlayCandidate(node, screen);
+        // Telegram often puts the "Play" description on a non-clickable icon
+        // nested inside a clickable message container. Score the semantic child,
+        // but tap its nearest clickable ancestor instead of declaring that no
+        // control exists.
+        AccessibilityNodeInfo tapTarget = nearestClickableAncestor(node);
+        int score = scorePlayCandidate(node, tapTarget, screen);
         if (score > best.score) {
-            best.node = node;
+            best.node = tapTarget;
             best.score = score;
         }
         for (int i = 0; i < node.getChildCount(); i++) {
@@ -239,16 +253,32 @@ public class TelegramSavedMediaTool extends BaseTool {
         }
     }
 
-    private int scorePlayCandidate(AccessibilityNodeInfo node, Rect screen) {
-        if (!node.isClickable() && !node.isLongClickable()) return Integer.MIN_VALUE;
+    private AccessibilityNodeInfo nearestClickableAncestor(AccessibilityNodeInfo node) {
+        AccessibilityNodeInfo current = node;
+        for (int depth = 0; current != null && depth < 5; depth++) {
+            if (current.isClickable() || current.isLongClickable()) return current;
+            current = current.getParent();
+        }
+        return null;
+    }
+
+    private int scorePlayCandidate(
+            AccessibilityNodeInfo semanticNode,
+            AccessibilityNodeInfo tapTarget,
+            Rect screen
+    ) {
+        if (tapTarget == null || !tapTarget.isEnabled()) return Integer.MIN_VALUE;
         Rect bounds = new Rect();
-        node.getBoundsInScreen(bounds);
+        semanticNode.getBoundsInScreen(bounds);
+        if (bounds.isEmpty() || bounds.width() <= 0 || bounds.height() <= 0) {
+            tapTarget.getBoundsInScreen(bounds);
+        }
         if (bounds.isEmpty() || bounds.width() <= 0 || bounds.height() <= 0) return Integer.MIN_VALUE;
 
-        String text = value(node.getText());
-        String desc = value(node.getContentDescription());
-        String id = value(node.getViewIdResourceName());
-        String className = value(node.getClassName());
+        String text = value(semanticNode.getText());
+        String desc = value(semanticNode.getContentDescription());
+        String id = value(semanticNode.getViewIdResourceName());
+        String className = value(semanticNode.getClassName()) + " " + value(tapTarget.getClassName());
         String all = (text + " " + desc + " " + id).toLowerCase(Locale.ROOT);
 
         boolean explicitPlay = containsAny(all,

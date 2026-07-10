@@ -18,11 +18,11 @@ import io.agents.arya.ServiceBindingState
 import io.agents.arya.TaskEvent
 import io.agents.arya.agent.DirectDeviceDataGuard
 import io.agents.arya.agent.PipelineRouter
+import io.agents.arya.agent.skill.SkillRegistry
 import io.agents.arya.agent.TaskPromptEnvelope
 import io.agents.arya.agent.TaskAcknowledgement
 import io.agents.arya.agent.TaskPerfTrace
 import io.agents.arya.agent.llm.ModelConfigRepository
-import io.agents.arya.agent.llm.LocalInferenceCoordinator
 import io.agents.arya.agent.llm.LocalInferenceOwner
 import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.service.ClawAccessibilityService
@@ -182,6 +182,11 @@ class TaskFlowController(
         val needsLlm = initialRoute is PipelineRouter.Route.AgentLoop ||
             initialRoute is PipelineRouter.Route.Chat ||
             initialRoute is PipelineRouter.Route.PrimeThenAgent
+        val routeMayFallbackToAgent = (initialRoute as? PipelineRouter.Route.Skill)
+            ?.let { SkillRegistry.findById(it.skillId)?.allowAgentFallback == true }
+            ?: false
+        val localMode = ModelConfigRepository.snapshot().isLocalActive()
+
         if (needsLlm && hasLocalModelLoadFailure()) {
             addUser(text)
             val message = "مدل محلی آماده نیست. اول روی وضعیت مدل بالا بزن و مدل را دوباره بارگذاری کن؛ سپس task را اجرا کن."
@@ -194,18 +199,21 @@ class TaskFlowController(
             onTaskTerminal?.invoke(TaskEvent.Failed("Configure LLM in Settings first."))
             return
         }
-        val localTaskReservation = needsLlm && ModelConfigRepository.snapshot().isLocalActive()
-        if (localTaskReservation) {
+
+        // A LiteRT Engine permits one native Conversation. Close Chat before an
+        // agent task (or a skill that may explicitly escalate) takes its lease;
+        // the old order reserved TASK first and left the Chat session alive.
+        if (localMode && (needsLlm || routeMayFallbackToAgent)) {
+            chatSessionController.prepareForTaskStart()
+        }
+        if (needsLlm && localMode) {
             val modelPath = ModelConfigRepository.snapshot().local.modelPath
             if (modelPath.isNotBlank()) {
                 LocalRuntimePolicy.checkAdmission(activity, modelPath, LocalInferenceOwner.TASK)?.let { reason ->
                     addUser(text); addSystem("⚠️ $reason"); onTaskTerminal?.invoke(TaskEvent.Failed(reason)); return
                 }
-                try { LocalInferenceCoordinator.acquire(LocalInferenceOwner.TASK, modelPath) }
-                catch (_: IllegalStateException) {
-                    addUser(text)
-                    val message = "مدل محلی هنوز درگیر است؛ چند لحظه صبر کن و دوباره task را اجرا کن."
-                    addSystem("⚠️ $message"); onTaskTerminal?.invoke(TaskEvent.Failed(message)); return
+                LocalRuntimePolicy.checkBackendAdmission(modelPath)?.let { reason ->
+                    addUser(text); addSystem("⚠️ $reason"); onTaskTerminal?.invoke(TaskEvent.Failed(reason)); return
                 }
             }
         }
@@ -231,9 +239,6 @@ class TaskFlowController(
             // Bootstrap ownership is intentionally inside HermesAgentService.
             // Direct routes own their own app launch; this UI layer only dispatches.
 
-            // Direct tools and deterministic skills do not need E4B; avoid a chat unload/reload race.
-            if (needsLlm) chatSessionController.prepareForTaskStart()
-
             activity.runOnUiThread {
                 try {
                     TaskPerfTrace.mark(taskId, "task_dispatched")
@@ -241,7 +246,6 @@ class TaskFlowController(
                         activity.runOnUiThread { handleTaskEvent(event) }
                     }
                 } catch (e: Exception) {
-                    if (localTaskReservation) LocalInferenceCoordinator.release(LocalInferenceOwner.TASK)
                     XLog.e(TAG, "sendTask failed: ${e.message}", e)
                     addSystem("Error: ${e.message}")
                     cleanupAfterTask()
@@ -528,7 +532,9 @@ class TaskFlowController(
     private fun hasLocalModelLoadFailure(): Boolean {
         if (!ModelConfigRepository.snapshot().isLocalActive()) return false
         val status = uiState.modelStatus.value.lowercase()
-        return status.contains("model load failed") || status.contains("load failed") || status.contains("failed to load model")
+        return status.contains("model load failed") || status.contains("load failed") ||
+            status.contains("failed to load model") || status.contains("model error") ||
+            status.contains("e4b needs") || status.contains("gpu/npu unavailable")
     }
 
     private fun isLikelyMonitorRequest(text: String): Boolean {

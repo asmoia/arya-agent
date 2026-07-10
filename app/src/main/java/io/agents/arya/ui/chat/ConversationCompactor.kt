@@ -5,11 +5,7 @@ package io.agents.arya.ui.chat
 
 import android.content.Context
 import io.agents.arya.utils.XLog
-import com.google.ai.edge.litertlm.Contents
-import com.google.ai.edge.litertlm.Conversation
-import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.SamplerConfig
 import java.io.File
 
 /**
@@ -51,7 +47,7 @@ object ConversationCompactor {
      * @return the digest text, or null if compaction not needed/failed
      */
     fun compact(
-        engine: Engine,
+        @Suppress("UNUSED_PARAMETER") engine: Engine,
         messages: List<ChatMessage>,
         context: Context,
         conversationId: String
@@ -72,29 +68,35 @@ object ConversationCompactor {
         if (olderText.isBlank()) return null
 
         try {
-            // Create temporary conversation for summarization
-            val tempConversation = engine.createConversation(
-                ConversationConfig(
-                    systemInstruction = Contents.of("You are a summarization assistant. Summarize conversations concisely, preserving key facts, decisions, and action items."),
-                    samplerConfig = SamplerConfig(topK = 64, topP = 0.95, temperature = 0.3)
-                )
-            )
+            // Do not create a hidden second LiteRT Conversation to summarize a
+            // chat. The runtime permits one native Conversation and compaction
+            // may run exactly when a foreground task needs that lease. Preserve
+            // the most recent factual turns deterministically instead.
+            val digest = deterministicDigest(olderMessages)
+            if (digest.isBlank()) return null
 
-            val prompt = "Summarize this conversation in 3-5 sentences. Keep names, dates, decisions, and action items:\n\n$olderText"
-            val response = tempConversation.sendMessage(prompt)
-            val digest = response?.toString()?.trim() ?: return null
-
-            tempConversation.close()
-
-            // Save digest to .memory.md
             saveDigest(context, conversationId, digest, messages)
-
-            XLog.i(TAG, "Compacted: ${olderMessages.size} messages → ${digest.length} chars digest")
+            XLog.i(TAG, "Compacted deterministically: ${olderMessages.size} messages → ${digest.length} chars")
             return digest
         } catch (e: Exception) {
             XLog.e(TAG, "Compaction failed", e)
             return null
         }
+    }
+
+    private fun deterministicDigest(messages: List<ChatMessage>): String {
+        return messages.takeLast(8).joinToString(separator = "\n") { message ->
+            val role = when (message.role) {
+                ChatMessage.Role.USER -> "User"
+                ChatMessage.Role.ASSISTANT -> "Assistant"
+                else -> "System"
+            }
+            val compact = message.content
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .take(360)
+            "$role: $compact"
+        }.trim()
     }
 
     /**

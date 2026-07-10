@@ -44,44 +44,18 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
 
     private var gpuFailed = false
 
-    private fun ensureEngine() {
-        val modelPath = config.baseUrl
-        val context = ClawApplication.instance
-        try {
-            val shared = LocalModelRuntime.acquireSharedEngine(
-                context = context,
-                modelPath = modelPath,
-                preferCpu = gpuFailed,
-                maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.TASK),
-            ).engine
-            if (engine !== shared) {
-                XLog.i(TAG, "ensureEngine: obtained shared engine for $modelPath")
-                engine = shared
-            }
-        } catch (e: Exception) {
-            if (gpuFailed || !LocalModelRuntime.isGpuBackendFailure(e)) {
-                XLog.e(TAG, "ensureEngine: failed to get engine from shared runtime", e)
-                throw e
-            }
-
-            if (LocalRuntimePolicy.isE4b(modelPath)) {
-                throw IllegalStateException("Gemma 4 E4B GPU/NPU backend failed. Arya refuses CPU task fallback because it cannot meet phone-agent latency.", e)
-            }
-            XLog.w(TAG, "ensureEngine: GPU engine init failed, retrying on CPU: ${e.message}")
-            gpuFailed = true
-            val cpuShared = LocalModelRuntime.forceCpuEngine(context, modelPath, LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.TASK)).engine
-            if (engine !== cpuShared) {
-                XLog.i(TAG, "ensureEngine: obtained shared CPU engine for $modelPath")
-                engine = cpuShared
-            }
-        }
-    }
+    // Engine acquisition is intentionally performed only by createConversation()
+    // through LocalModelRuntime. Acquiring it before the conversation lease could
+    // replace a Chat engine while its one native Conversation was still active.
 
     /**
      * Force engine to recreate with CPU backend. Called when GPU inference fails
      * (e.g. OpenCL library not found).
      */
     private fun fallbackToCpu() {
+        check(!LocalRuntimePolicy.isE4b(config.baseUrl)) {
+            "Gemma 4 E4B CPU fallback is disabled for interactive use."
+        }
         XLog.w(TAG, "fallbackToCpu: GPU inference failed, switching to CPU")
         gpuFailed = true
         try { conversation?.close() } catch (_: Exception) {}
@@ -95,9 +69,12 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
      * Create a new conversation with system prompt and tool declarations.
      */
     private fun createConversation(systemPrompt: String, toolSpecs: List<ToolSpecification>) {
-        // LiteRT-LM only supports one session at a time — close existing first
+        // LiteRT-LM only supports one session at a time. Releasing the
+        // coordinator lease is just as important as closing the native object;
+        // otherwise a rebuilt task conversation looks like a phantom session.
         try { conversation?.close() } catch (_: Exception) {}
         conversation = null
+        LocalInferenceCoordinator.release(LocalInferenceOwner.TASK)
 
         // Convert tool specs to native LiteRT-LM tools
         val nativeTools = toolSpecs.mapNotNull { spec ->
@@ -151,11 +128,16 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
             chatInternal(messages, toolSpecs)
         } catch (e: Exception) {
             // GPU inference failure (OpenCL not found) — fallback to CPU and retry once
-            if (!gpuFailed && LocalModelRuntime.isGpuBackendFailure(e)) {
+            if (!gpuFailed &&
+                !LocalRuntimePolicy.isE4b(config.baseUrl) &&
+                LocalModelRuntime.isGpuBackendFailure(e)
+            ) {
                 XLog.w(TAG, "chat: GPU inference failed, retrying with CPU: ${e.message}")
                 fallbackToCpu()
                 chatInternal(messages, toolSpecs)
             } else {
+                // E4B on CPU is not an interactive fallback. Surface the real
+                // GPU/native failure so UI can give a recovery instruction.
                 throw e
             }
         }
@@ -164,9 +146,9 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
     private fun chatInternal(messages: List<ChatMessage>, toolSpecs: List<ToolSpecification>): LlmResponse {
         val t0 = System.currentTimeMillis()
         XLog.i(TAG, "chatInternal: ENTER msgs=${messages.size} tools=${toolSpecs.size}")
-        ensureEngine()
 
-        // Detect new task or recreate needed
+        // Detect new task or recreate needed. createConversation() obtains the
+        // exclusive native Conversation lease before it touches EngineHolder.
         if (processedMessageCount == 0 || messages.size < processedMessageCount || sendCount >= 8) {
             val systemPrompt = messages.filterIsInstance<SystemMessage>().firstOrNull()?.text()
                 ?: config.systemPrompt.ifEmpty { LOCAL_SYSTEM_PROMPT }

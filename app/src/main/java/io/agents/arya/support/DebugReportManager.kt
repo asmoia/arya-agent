@@ -10,6 +10,9 @@ import io.agents.arya.AppCapabilityCoordinator
 import io.agents.arya.BuildConfig
 import io.agents.arya.agent.llm.LocalBackendHealth
 import io.agents.arya.agent.llm.LocalModelManager
+import io.agents.arya.agent.llm.LocalInferenceCoordinator
+import io.agents.arya.agent.llm.LocalInferenceOwner
+import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.agent.llm.ModelConfigRepository
 import io.agents.arya.agent.TaskPerfTrace
 import io.agents.arya.service.AutoReplyManager
@@ -53,6 +56,10 @@ object DebugReportManager {
         val httpLogs = httpDir.listFiles()?.size ?: 0
         val appLogs = AppLogStore.listLogFiles(context).size
         val modelStorage = LocalModelManager.storageDiagnostics(context)
+        val runtimeMemory = ActivityManager.MemoryInfo().also { info ->
+            (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(info)
+        }
+        val localInference = LocalInferenceCoordinator.snapshot()
         val autoReplyManager = AutoReplyManager.getInstance()
         val monitorTargets = autoReplyManager.monitoredTargets.joinToString(", ") { it.displayLabel }
         val cpuSafeAt = KVUtils.getLocalCpuSafeAt()
@@ -83,8 +90,21 @@ object DebugReportManager {
             appendLine("- Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
             appendLine("- Supported ABIs: ${Build.SUPPORTED_ABIS.joinToString(", ")}")
             appendLine("- RAM (total): ${getDeviceRamGb(context)} GB")
+            appendLine("- RAM (available at report): ${formatMb(runtimeMemory.availMem)}")
+            appendLine("- Low-memory threshold: ${formatMb(runtimeMemory.threshold)}")
             appendLine()
             appendLine("Local Inference Runtime (#41 / #14 diagnostics)")
+            appendLine("- Conversation lease: owner=${localInference.owner}, phase=${localInference.phase}, backend=${localInference.backend ?: "-"}, generation=${localInference.generation}")
+            appendLine("- Active lease failure: ${localInference.failure ?: "(none)"}")
+            appendLine("- Last local runtime failure: ${localInference.lastFailure ?: "(none)"}")
+            config.local.modelPath.takeIf { it.isNotBlank() }?.let { path ->
+                LocalRuntimePolicy.requiredFreeMb(path, LocalInferenceOwner.CHAT)?.let { required ->
+                    appendLine("- E4B chat admission requirement: ${required / 1000.0} GB available")
+                }
+                LocalRuntimePolicy.requiredFreeMb(path, LocalInferenceOwner.TASK)?.let { required ->
+                    appendLine("- E4B task admission requirement: ${required / 1000.0} GB available")
+                }
+            }
             val openClPaths = detectOpenClLibraryPaths()
             appendLine("- OpenCL libraries found: ${if (openClPaths.isEmpty()) "(none) — GPU path will not work" else openClPaths.joinToString(", ")}")
             appendLine("- Backend health: ${LocalBackendHealth.debugStateSummary()}")
@@ -193,6 +213,8 @@ object DebugReportManager {
                 "LocalModelManager:V",
                 "EngineHolder:V",
                 "LocalModelRuntime:V",
+                "LocalInferenceCoordinator:V",
+                "ChatSessionController:V",
                 "InputTextTool:V",
                 "SendMessageTool:V",
                 "*:S",
@@ -235,6 +257,11 @@ object DebugReportManager {
     private fun formatEpoch(value: Long): String {
         if (value <= 0L) return "(none)"
         return Date(value).toString()
+    }
+
+    private fun formatMb(bytes: Long): String {
+        if (bytes <= 0L) return "(unknown)"
+        return String.format(Locale.US, "%.1f GB", bytes / (1000.0 * 1000.0 * 1000.0))
     }
 
     /** Returns total device RAM in GB (rounded up). Used in debug summary for GPU/model RAM
