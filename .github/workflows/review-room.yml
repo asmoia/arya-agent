@@ -4,16 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       duration_minutes:
-        description: "Room lifetime in minutes (maximum 30)"
+        description: "Room lifetime in minutes (maximum 90)"
         required: true
-        default: "30"
+        default: "90"
         type: string
 
 jobs:
   host:
     name: Flask review room via TryCloudflare
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 95
     permissions:
       contents: write
 
@@ -35,8 +35,8 @@ jobs:
         run: |
           set -euo pipefail
           duration="${REQUESTED_DURATION:-30}"
-          if ! [[ "$duration" =~ ^[0-9]+$ ]] || [ "$duration" -lt 1 ] || [ "$duration" -gt 30 ]; then
-            echo "duration_minutes must be an integer from 1 to 30" >&2
+          if ! [[ "$duration" =~ ^[0-9]+$ ]] || [ "$duration" -lt 1 ] || [ "$duration" -gt 90 ]; then
+            echo "duration_minutes must be an integer from 1 to 90" >&2
             exit 1
           fi
 
