@@ -15,6 +15,9 @@ import io.agents.arya.agent.llm.LlmClient
 import io.agents.arya.agent.llm.LlmSessionManager
 import io.agents.arya.agent.llm.LocalModelManager
 import io.agents.arya.agent.llm.LocalModelRuntime
+import io.agents.arya.agent.llm.LocalInferenceCoordinator
+import io.agents.arya.agent.llm.LocalInferenceOwner
+import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.agent.llm.ModelConfigRepository
 import io.agents.arya.utils.XLog
 import com.google.ai.edge.litertlm.Contents
@@ -294,6 +297,7 @@ class ChatSessionController(
         }
         conversation = null
         isModelReady = false
+        LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
     }
 
     fun prepareForTaskStart() {
@@ -303,6 +307,7 @@ class ChatSessionController(
         }
         conversation = null
         isModelReady = false
+        LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
     }
 
     fun sendChat(text: String) {
@@ -493,9 +498,11 @@ class ChatSessionController(
             Thread.sleep(200)
 
             val lease = LocalModelRuntime.openConversation(
-                activity,
-                modelPath,
-                buildConversationConfig(restoredSystemPrompt)
+                context = activity,
+                modelPath = modelPath,
+                conversationConfig = buildConversationConfig(restoredSystemPrompt),
+                owner = LocalInferenceOwner.CHAT,
+                maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
             )
             engine = lease.engine
             XLog.i(TAG, "loadModel: engine ready (${lease.backendLabel})")
@@ -512,6 +519,8 @@ class ChatSessionController(
                 setButtonsEnabled(true)
             }
         } catch (e: Exception) {
+            LocalInferenceCoordinator.markFailed(LocalInferenceOwner.CHAT, e)
+            LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
             XLog.e(TAG, "Model load failed", e)
             val isSessionConflict = e.message?.contains("session already exists") == true
                 || e.message?.contains("5 retries") == true

@@ -184,7 +184,9 @@ object BuiltInSkills {
                 retries = 1
             )
         ),
-        fallbackGoal = "Telegram is already open. Go only to Saved Messages, inspect the current screen, and tap one visible audio/voice Play control. Do not reopen Telegram, do not search the web, and stop after two UI actions if no media is visible."
+        // Do not convert a bounded UI failure into a slow E4B retry loop.
+        fallbackGoal = "",
+        allowAgentFallback = false,
     )
 
     fun waitForContent() = Skill(

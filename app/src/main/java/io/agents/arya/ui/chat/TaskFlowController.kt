@@ -19,7 +19,11 @@ import io.agents.arya.TaskEvent
 import io.agents.arya.agent.DirectDeviceDataGuard
 import io.agents.arya.agent.PipelineRouter
 import io.agents.arya.agent.TaskPromptEnvelope
+import io.agents.arya.agent.TaskAcknowledgement
 import io.agents.arya.agent.llm.ModelConfigRepository
+import io.agents.arya.agent.llm.LocalInferenceCoordinator
+import io.agents.arya.agent.llm.LocalInferenceOwner
+import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.service.ClawAccessibilityService
 import io.agents.arya.service.ForegroundService
 import io.agents.arya.service.AutoReplyManager
@@ -176,10 +180,32 @@ class TaskFlowController(
         val needsLlm = initialRoute is PipelineRouter.Route.AgentLoop ||
             initialRoute is PipelineRouter.Route.Chat ||
             initialRoute is PipelineRouter.Route.PrimeThenAgent
+        if (needsLlm && hasLocalModelLoadFailure()) {
+            addUser(text)
+            val message = "مدل محلی آماده نیست. اول روی وضعیت مدل بالا بزن و مدل را دوباره بارگذاری کن؛ سپس task را اجرا کن."
+            addSystem("⚠️ $message")
+            onTaskTerminal?.invoke(TaskEvent.Failed(message))
+            return
+        }
         if (needsLlm && !KVUtils.hasLlmConfig()) {
             Toast.makeText(activity, "Configure LLM in Settings first", Toast.LENGTH_LONG).show()
             onTaskTerminal?.invoke(TaskEvent.Failed("Configure LLM in Settings first."))
             return
+        }
+        val localTaskReservation = needsLlm && ModelConfigRepository.snapshot().isLocalActive()
+        if (localTaskReservation) {
+            val modelPath = ModelConfigRepository.snapshot().local.modelPath
+            if (modelPath.isNotBlank()) {
+                LocalRuntimePolicy.checkAdmission(activity, modelPath, LocalInferenceOwner.TASK)?.let { reason ->
+                    addUser(text); addSystem("⚠️ $reason"); onTaskTerminal?.invoke(TaskEvent.Failed(reason)); return
+                }
+                try { LocalInferenceCoordinator.acquire(LocalInferenceOwner.TASK, modelPath) }
+                catch (_: IllegalStateException) {
+                    addUser(text)
+                    val message = "مدل محلی هنوز درگیر است؛ چند لحظه صبر کن و دوباره task را اجرا کن."
+                    addSystem("⚠️ $message"); onTaskTerminal?.invoke(TaskEvent.Failed(message)); return
+                }
+            }
         }
 
         val agentPromptOverride = buildAgentPromptOverride(text)
@@ -194,7 +220,7 @@ class TaskFlowController(
         uiState.isTaskRunning.value = true
         XLog.i(TAG, "sendTask: isProcessing=TRUE isTaskRunning=TRUE")
         uiState.messages.add(ChatMessage(ChatMessage.Role.ASSISTANT, "..."))
-        addSystem("⏳ شروع فوری task — اگر اپ شناخته شود بدون انتظار مدل باز می‌شود…")
+        addSystem("⚡ ${TaskAcknowledgement.forTask(text, initialRoute)}")
 
         val taskId = "task_${System.currentTimeMillis()}"
 
@@ -224,7 +250,8 @@ class TaskFlowController(
                 }
             }
 
-            chatSessionController.prepareForTaskStart()
+            // Direct tools and deterministic skills do not need E4B; avoid a chat unload/reload race.
+            if (needsLlm) chatSessionController.prepareForTaskStart()
 
             activity.runOnUiThread {
                 try {
@@ -232,6 +259,7 @@ class TaskFlowController(
                         activity.runOnUiThread { handleTaskEvent(event) }
                     }
                 } catch (e: Exception) {
+                    if (localTaskReservation) LocalInferenceCoordinator.release(LocalInferenceOwner.TASK)
                     XLog.e(TAG, "sendTask failed: ${e.message}", e)
                     addSystem("Error: ${e.message}")
                     cleanupAfterTask()
@@ -337,7 +365,7 @@ class TaskFlowController(
                     checkAutoReplyConfirmation()
                 }
                 is TaskEvent.Failed -> {
-                    replaceTypingIndicator("Error: ${event.error}")
+                    replaceTypingIndicator(event.error)
                     onTaskTerminal?.invoke(event)
                     cleanupAfterTask()
                 }
@@ -505,6 +533,12 @@ class TaskFlowController(
             append(contacts.joinToString(", "))
             append('.')
         }
+    }
+
+    private fun hasLocalModelLoadFailure(): Boolean {
+        if (!ModelConfigRepository.snapshot().isLocalActive()) return false
+        val status = uiState.modelStatus.value.lowercase()
+        return status.contains("model load failed") || status.contains("load failed") || status.contains("failed to load model")
     }
 
     private fun isLikelyMonitorRequest(text: String): Boolean {

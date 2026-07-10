@@ -33,6 +33,7 @@ import io.agents.arya.agent.langchain.LangChain4jToolBridge
 import io.agents.arya.agent.llm.LlmClient
 import io.agents.arya.agent.llm.LlmClientFactory
 import io.agents.arya.agent.llm.LlmResponse
+import io.agents.arya.agent.llm.ScreenContextReducer
 import io.agents.arya.agent.llm.StreamingListener
 import io.agents.arya.tool.ToolRegistry
 import io.agents.arya.tool.ToolResult
@@ -146,6 +147,10 @@ class HermesAgentService : AgentService {
                     callback.onError(0, e, 0)
                 }
             } finally {
+                // Keep the Engine warm but release the only LiteRT conversation for Chat.
+                if (::llmClient.isInitialized && config.provider == LlmProvider.LOCAL) {
+                    try { llmClient.close() } catch (e: Exception) { XLog.w(TAG, "task conversation close failed: ${e.message}") }
+                }
                 try {
                     HermesAppKeeper.onTaskEnd()
                 } catch (_: Exception) {
@@ -286,8 +291,9 @@ class HermesAgentService : AgentService {
                 val screenTool = ToolRegistry.getInstance().getTool("get_screen_info")
                 val screenResult = screenTool?.execute(emptyMap())
                 if (screenResult != null && screenResult.isSuccess && !screenResult.data.isNullOrBlank()) {
-                    XLog.i(TAG, "pre-warm screen attached (${screenResult.data!!.length} chars)")
-                    "$promptForModel\n\nCurrent screen:\n${screenResult.data}"
+                    val compactScreen = if (config.provider == LlmProvider.LOCAL) ScreenContextReducer.reduceScreen(screenResult.data!!, rawUserRequest) else screenResult.data!!
+                    XLog.i(TAG, "pre-warm screen attached (${compactScreen.length} chars)")
+                    "$promptForModel\n\nCurrent screen:\n$compactScreen"
                 } else promptForModel
             } catch (_: Exception) {
                 promptForModel
@@ -521,8 +527,12 @@ class HermesAgentService : AgentService {
                 return
             }
 
-            // Execute tools
-            for (toolRequest in llmResponse.toolExecutionRequests) {
+            // Batch only deterministic launch/observation or independent read calls.
+            val selectedToolRequests = ToolBatchPolicy.select(llmResponse.toolExecutionRequests)
+            if (selectedToolRequests.size < llmResponse.toolExecutionRequests.size) {
+                XLog.i(TAG, "Deferred unsafe tool batch: ${llmResponse.toolExecutionRequests.size} → ${selectedToolRequests.size}")
+            }
+            for (toolRequest in selectedToolRequests) {
                 if (cancelled.get()) {
                     val msg = ClawApplication.instance.getString(R.string.agent_task_cancel)
                     callback.onComplete(iterations, msg, totalTokens, actualModelName)
@@ -715,6 +725,11 @@ class HermesAgentService : AgentService {
      */
     
     private fun postTurnLearn(sessionId: String, userTask: String, answer: String, usedTools: List<String> = emptyList()) {
+        // Do not start a hidden second E4B inference after a local task.
+        if (config.provider == LlmProvider.LOCAL) {
+            XLog.i(TAG, "postTurnLearn skipped for local task")
+            return
+        }
         try {
             HermesLearning.learnFromTurn(userTask, answer, usedTools)
             XLog.i(TAG, "postTurnLearn session=$sessionId tools=${usedTools.size}")

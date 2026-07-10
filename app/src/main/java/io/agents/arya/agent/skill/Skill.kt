@@ -22,6 +22,8 @@ data class Skill(
     val parameters: List<SkillParameter> = emptyList(),
     val triggerPatterns: List<String> = emptyList(),
     val fallbackGoal: String = "",
+    /** Disable when generic fallback would repeat a bounded workflow or wake an unavailable local model. */
+    val allowAgentFallback: Boolean = true,
     /** If true, this skill appears in the Task UI for users to initiate.
      *  If false, it's only used internally by the LLM agent (e.g. dismiss_popup, go_back). */
     val userFacing: Boolean = false

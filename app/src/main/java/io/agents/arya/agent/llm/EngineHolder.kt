@@ -26,6 +26,7 @@ object EngineHolder {
     private var engine: Engine? = null
     private var currentModelPath: String? = null
     private var currentBackendLabel: String? = null
+    private var currentMaxNumTokens: Int? = null
 
     private fun backendLabel(backend: Backend): String =
         if (backend is Backend.CPU) "CPU" else if (backend is Backend.GPU) "GPU" else backend.javaClass.simpleName
@@ -40,10 +41,16 @@ object EngineHolder {
      */
     @Synchronized
     @JvmOverloads
-    fun getOrCreate(modelPath: String, cacheDir: String, backend: Backend = Backend.CPU()): Engine {
+    fun getOrCreate(
+        modelPath: String,
+        cacheDir: String,
+        backend: Backend = Backend.CPU(),
+        maxNumTokens: Int = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.NONE),
+    ): Engine {
         val existing = engine
         val requestedBackendLabel = backendLabel(backend)
-        if (existing != null && currentModelPath == modelPath && currentBackendLabel == requestedBackendLabel) {
+        if (existing != null && currentModelPath == modelPath &&
+            currentBackendLabel == requestedBackendLabel && currentMaxNumTokens == maxNumTokens) {
             XLog.d(TAG, "getOrCreate: reusing engine for $modelPath (${currentBackendLabel ?: "unknown"})")
             return existing
         }
@@ -61,6 +68,7 @@ object EngineHolder {
             }
             engine = null
             currentModelPath = null
+            currentMaxNumTokens = null
         }
 
         XLog.i(TAG, "getOrCreate: creating new engine for $modelPath with $requestedBackendLabel")
@@ -68,7 +76,7 @@ object EngineHolder {
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
                 backend = backend,
-                maxNumTokens = 8192,
+                maxNumTokens = maxNumTokens,
                 cacheDir = cacheDir
             )
             if (backend is Backend.GPU) {
@@ -82,7 +90,8 @@ object EngineHolder {
             engine = newEngine
             currentModelPath = modelPath
             currentBackendLabel = requestedBackendLabel
-            XLog.i(TAG, "getOrCreate: engine ready for $modelPath (${currentBackendLabel})")
+            currentMaxNumTokens = maxNumTokens
+            XLog.i(TAG, "getOrCreate: engine ready for $modelPath (${currentBackendLabel}, context=$maxNumTokens)")
             newEngine
         } catch (e: Exception) {
             if (backend is Backend.GPU) {
@@ -111,6 +120,7 @@ object EngineHolder {
         engine = null
         currentModelPath = null
         currentBackendLabel = null
+        currentMaxNumTokens = null
         XLog.i(TAG, "close: done")
     }
 

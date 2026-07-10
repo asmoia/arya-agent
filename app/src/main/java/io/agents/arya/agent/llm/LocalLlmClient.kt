@@ -52,6 +52,7 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
                 context = context,
                 modelPath = modelPath,
                 preferCpu = gpuFailed,
+                maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.TASK),
             ).engine
             if (engine !== shared) {
                 XLog.i(TAG, "ensureEngine: obtained shared engine for $modelPath")
@@ -63,9 +64,12 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
                 throw e
             }
 
+            if (LocalRuntimePolicy.isE4b(modelPath)) {
+                throw IllegalStateException("Gemma 4 E4B GPU/NPU backend failed. Arya refuses CPU task fallback because it cannot meet phone-agent latency.", e)
+            }
             XLog.w(TAG, "ensureEngine: GPU engine init failed, retrying on CPU: ${e.message}")
             gpuFailed = true
-            val cpuShared = LocalModelRuntime.forceCpuEngine(context, modelPath).engine
+            val cpuShared = LocalModelRuntime.forceCpuEngine(context, modelPath, LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.TASK)).engine
             if (engine !== cpuShared) {
                 XLog.i(TAG, "ensureEngine: obtained shared CPU engine for $modelPath")
                 engine = cpuShared
@@ -132,6 +136,8 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
             modelPath = config.baseUrl,
             conversationConfig = convConfig,
             preferCpu = gpuFailed,
+            owner = LocalInferenceOwner.TASK,
+            maxNumTokens = LocalRuntimePolicy.maxNumTokens(config.baseUrl, LocalInferenceOwner.TASK),
         )
         engine = lease.engine
         conversation = lease.conversation
@@ -176,6 +182,8 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
         )
 
         var lastResponse: Any? = null
+        val taskHint = messages.filterIsInstance<UserMessage>().firstOrNull()?.singleText()
+        LocalInferenceCoordinator.markBusy(LocalInferenceOwner.TASK)
 
         for (msg in newMessages) {
             when (msg) {
@@ -203,9 +211,9 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
                 }
                 is AiMessage -> { /* already in conversation state */ }
                 is ToolExecutionResultMessage -> {
-                    // Truncate tool results to prevent token overflow + reduce crash risk
-                    val truncatedResult = msg.text().take(400)
-                    val toolResultText = "[Tool ${msg.toolName()} result]: $truncatedResult"
+                    // Preserve relevant actionable UI nodes instead of the first 400 raw characters.
+                    val reducedResult = ScreenContextReducer.reduceToolResult(msg.text(), taskHint)
+                    val toolResultText = "[Tool ${msg.toolName()} result]: $reducedResult"
                     val conv = conversation ?: throw RuntimeException("LiteRT-LM conversation not initialized — engine may have failed to load the model")
                     XLog.d(TAG, "chat: sendMessage toolResult (${toolResultText.take(80)}...) sendCount=$sendCount")
                     try {
@@ -227,6 +235,7 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
         }
 
         processedMessageCount = messages.size
+        LocalInferenceCoordinator.markReady(LocalInferenceOwner.TASK, LocalModelRuntime.currentBackendLabel(config.baseUrl))
         XLog.i(TAG, "chatInternal: EXIT in ${System.currentTimeMillis() - t0}ms")
         return parseResponse(lastResponse)
     }
@@ -541,6 +550,7 @@ class LocalLlmClient(private val config: AgentConfig) : LlmClient {
         conversation = null
         engine = null
         processedMessageCount = 0
+        LocalInferenceCoordinator.release(LocalInferenceOwner.TASK)
         XLog.i(TAG, "close() — done")
     }
 

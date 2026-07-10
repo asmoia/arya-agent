@@ -8,6 +8,9 @@ import io.agents.arya.agent.AgentConfig
 import io.agents.arya.agent.AgentService
 import io.agents.arya.agent.AgentServiceFactory
 import io.agents.arya.agent.PipelineRouter
+import io.agents.arya.agent.LlmProvider
+import io.agents.arya.agent.llm.LocalInferenceCoordinator
+import io.agents.arya.agent.llm.LocalInferenceOwner
 import io.agents.arya.agent.skill.SkillExecutor
 import io.agents.arya.agent.skill.SkillRegistry
 import io.agents.arya.channel.Channel
@@ -255,6 +258,14 @@ class TaskOrchestrator(
                                 FloatingCircleManager.setSuccessState()
                                 ForegroundService.resetToIdle(ClawApplication.instance)
                                 onTaskFinished()
+                            } else if (!skill.allowAgentFallback) {
+                                XLog.w(TAG, "Skill ${skill.id} failed with fallback disabled: ${skillResult.message}")
+                                ChannelManager.sendMessage(channel, "✗ ${skillResult.message}", messageID)
+                                taskEventCallback?.invoke(TaskEvent.Failed(skillResult.message))
+                                releaseTask()
+                                FloatingCircleManager.setErrorState()
+                                ForegroundService.resetToIdle(ClawApplication.instance)
+                                onTaskFinished()
                             } else {
                                 val fallbackGoal = skill.fallbackGoal
                                     .let { g -> route.params.entries.fold(g) { acc, (k, v) -> acc.replace("{$k}", v) } }
@@ -285,6 +296,9 @@ class TaskOrchestrator(
                 agentService.updateConfig(config)
             }
         } catch (e: Exception) {
+            if (agentConfigProvider().provider == LlmProvider.LOCAL) {
+                LocalInferenceCoordinator.release(LocalInferenceOwner.TASK)
+            }
             XLog.e(TAG, "Failed to prepare AgentService", e)
             releaseTask()
             ForegroundService.resetToIdle(ClawApplication.instance)
