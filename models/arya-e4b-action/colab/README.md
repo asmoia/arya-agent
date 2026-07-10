@@ -90,3 +90,10 @@ frozen text forward with hooks, records the inner `Linear4bit` projection
 modules actually executed, and attaches LoRA only to those paths. The autograd
 preflight diagnostic now prints configured, executed and trainable target names
 before stopping.
+
+## Direct vs wrapped Gemma4 `Linear4bit` targets
+
+Gemma4 text projections may be direct `Linear4bit` modules such as `q_proj`,
+while multimodal clipped wrappers expose `q_proj.linear`. The notebook now
+considers both shapes and chooses only modules hit by a frozen text forward.
+This prevents LoRA from attaching only to inactive multimodal branches.
