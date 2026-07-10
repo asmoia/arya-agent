@@ -82,3 +82,11 @@ It also prints executed LoRA module names and trainable adapter names before
 failing, so an unsupported/non-executed target is diagnosed before Trainer.
 Restart the runtime and use the updated notebook; if the preflight still fails,
 send the printed diagnostic dictionary, not a later Trainer error.
+
+## LoRA parameters exist but receive no gradient
+
+The updated notebook does not select E4B projections by suffix alone. It runs a
+frozen text forward with hooks, records the inner `Linear4bit` projection
+modules actually executed, and attaches LoRA only to those paths. The autograd
+preflight diagnostic now prints configured, executed and trainable target names
+before stopping.
