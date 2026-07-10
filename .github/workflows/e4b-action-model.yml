@@ -40,6 +40,12 @@ jobs:
           python3 scripts/validate_arya_e4b_action_dataset.py \
             models/arya-e4b-action/dataset/generated/arya_action_bootstrap_v0.1.jsonl \
             --manifest models/arya-e4b-action/artifacts/bootstrap-manifest.json
+          python3 scripts/validate_arya_e4b_action_dataset.py \
+            models/arya-e4b-action/dataset/reviewed/arya_action_train_v2_1000_unique.jsonl \
+            --manifest models/arya-e4b-action/artifacts/reviewed-train-manifest.json
+          python3 scripts/validate_arya_e4b_action_dataset.py \
+            models/arya-e4b-action/dataset/heldout/arya_action_eval_v2_300_unique.jsonl \
+            --manifest models/arya-e4b-action/artifacts/heldout-eval-manifest.json
       - name: Upload validated dataset manifests
         uses: actions/upload-artifact@v4
         with:

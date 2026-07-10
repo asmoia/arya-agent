@@ -106,3 +106,17 @@ Drive is optional. The notebook now saves the adapter first under
 `DOWNLOAD_ADAPTER_ZIP=True` to download it, or use the Colab Files sidebar.
 Set `SAVE_TO_DRIVE=True` only if Drive mounting works in that browser/session.
 A Drive mount failure must not cause retraining.
+
+## Starting the first non-smoke adapter run
+
+After the smoke path is stable and you have manually sampled the corpus, set:
+
+```python
+SMOKE_ONLY = False
+USE_REVIEWED_CORPUS = True
+MAX_STEPS = 200
+```
+
+The notebook then uses `dataset/reviewed/arya_action_train_v2_1000_unique.jsonl`.
+Do not use the 116-row bootstrap corpus for a real run. Start from a saved
+checkpoint if a free Colab session ends.
