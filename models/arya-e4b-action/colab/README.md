@@ -49,3 +49,11 @@ the Colab runtime and use the updated notebook. E4B wraps quantized projections
 in a custom module; the notebook now discovers and targets the supported inner
 `*.linear` `Linear4bit` modules, such as `q_proj.linear`, instead of targeting
 the wrapper `q_proj` itself.
+
+## TRL `dataset_text_field` error
+
+The notebook no longer uses `trl.SFTTrainer`. Colab can resolve a newer TRL
+version whose constructor removed or relocated `dataset_text_field`. The updated
+notebook tokenizes the corpus and uses stable `transformers.Trainer` plus
+`DataCollatorForLanguageModeling` for the smoke run. Restart the runtime or
+replace the entire training cell with the updated version before retrying.
