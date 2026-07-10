@@ -57,3 +57,19 @@ version whose constructor removed or relocated `dataset_text_field`. The updated
 notebook tokenizes the corpus and uses stable `transformers.Trainer` plus
 `DataCollatorForLanguageModeling` for the smoke run. Restart the runtime or
 replace the entire training cell with the updated version before retrying.
+
+## `No inf checks were recorded for this optimizer`
+
+This means Trainer started without usable adapter gradients, often after a
+custom wrapper/gradient-checkpointing interaction. The updated notebook now:
+
+- verifies selected `Linear4bit` LoRA targets;
+- runs one real forward/backward autograd preflight before `Trainer`;
+- asserts at least one `lora_*` gradient exists;
+- disables Trainer AMP/GradScaler and gradient checkpointing for the initial
+  one-step smoke run;
+- uses one accumulation step in smoke mode.
+
+Restart the Colab runtime and use the updated notebook. If the autograd
+preflight fails, copy the printed `first_trainable` names and the preflight
+error—do not continue to `trainer.train()`.
