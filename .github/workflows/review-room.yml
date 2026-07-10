@@ -1,0 +1,103 @@
+name: Temporary Arya Review Room
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: "Room lifetime in minutes (maximum 30)"
+        required: true
+        default: "30"
+        type: string
+
+jobs:
+  host:
+    name: Flask review room via TryCloudflare
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flask
+        run: python -m pip install --disable-pip-version-check -r review-room/requirements.txt
+
+      - name: Host room for requested duration
+        shell: bash
+        env:
+          REQUESTED_DURATION: ${{ inputs.duration_minutes }}
+        run: |
+          set -euo pipefail
+          duration="${REQUESTED_DURATION:-30}"
+          if ! [[ "$duration" =~ ^[0-9]+$ ]] || [ "$duration" -lt 1 ] || [ "$duration" -gt 30 ]; then
+            echo "duration_minutes must be an integer from 1 to 30" >&2
+            exit 1
+          fi
+
+          runtime_dir="$RUNNER_TEMP/arya-review-room"
+          mkdir -p "$runtime_dir"
+          export REVIEW_ROOM_DIR="$runtime_dir"
+          export REVIEW_ROOM_DURATION_SECONDS="$((duration * 60))"
+
+          python review-room/app.py > "$runtime_dir/flask.log" 2>&1 &
+          flask_pid=$!
+
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8765/health > "$runtime_dir/local-health.json"; then
+              break
+            fi
+            sleep 0.25
+          done
+          curl -fsS http://127.0.0.1:8765/health > "$runtime_dir/local-health.json"
+
+          curl -fsSL --retry 3 --connect-timeout 20 \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -o "$runtime_dir/cloudflared"
+          chmod +x "$runtime_dir/cloudflared"
+
+          timeout "$((duration * 60 + 30))" "$runtime_dir/cloudflared" tunnel \
+            --url http://127.0.0.1:8765 --no-autoupdate > "$runtime_dir/cloudflared.log" 2>&1 &
+          tunnel_pid=$!
+
+          room_url=""
+          for _ in $(seq 1 120); do
+            room_url="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$runtime_dir/cloudflared.log" | head -1 || true)"
+            [ -n "$room_url" ] && break
+            sleep 0.5
+          done
+          if [ -z "$room_url" ]; then
+            cat "$runtime_dir/cloudflared.log" >&2 || true
+            exit 1
+          fi
+
+          echo "ROOM_URL=$room_url" | tee "$runtime_dir/room-url.txt"
+          echo "## Arya Review Room" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**URL:** $room_url" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Lifetime:** $duration minutes" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Bash guide:** $room_url/bash" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Arya review room URL::$room_url"
+
+          # Keep the Action runner, Flask process and tunnel alive for the full room lifetime.
+          sleep "$((duration * 60))"
+
+          kill "$flask_pid" "$tunnel_pid" 2>/dev/null || true
+
+      - name: Upload room transcript and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arya-review-room-transcript
+          path: |
+            ${{ runner.temp }}/arya-review-room/room.sqlite3
+            ${{ runner.temp }}/arya-review-room/flask.log
+            ${{ runner.temp }}/arya-review-room/cloudflared.log
+            ${{ runner.temp }}/arya-review-room/room-url.txt
+          if-no-files-found: ignore
+          retention-days: 7
