@@ -273,20 +273,24 @@ class TaskOrchestrator(
             }
         }
 
-        if (!::agentService.isInitialized) {
-            XLog.e(TAG, "AgentService not initialized, attempting to initialize")
-            try {
-                val config = agentConfigProvider()
+        // Agent creation/config refresh is deliberately lazy: all direct routes
+        // above have already returned, so a fast task never pays model startup.
+        try {
+            val config = agentConfigProvider()
+            if (!::agentService.isInitialized) {
+                XLog.i(TAG, "AgentService not initialized; initializing for agent-loop task")
                 agentService = AgentServiceFactory.create(config)
                 agentService.initialize(config)
-            } catch (e: Exception) {
-                XLog.e(TAG, "Failed to initialize AgentService", e)
-                releaseTask()
-                ForegroundService.resetToIdle(ClawApplication.instance)
-                taskEventCallback?.invoke(TaskEvent.Failed("AI service not ready"))
-                ChannelManager.sendMessage(channel, ClawApplication.instance.getString(R.string.channel_msg_service_not_ready), messageID)
-                return
+            } else {
+                agentService.updateConfig(config)
             }
+        } catch (e: Exception) {
+            XLog.e(TAG, "Failed to prepare AgentService", e)
+            releaseTask()
+            ForegroundService.resetToIdle(ClawApplication.instance)
+            taskEventCallback?.invoke(TaskEvent.Failed("AI service not ready"))
+            ChannelManager.sendMessage(channel, ClawApplication.instance.getString(R.string.channel_msg_service_not_ready), messageID)
+            return
         }
 
         // Per-round message buffer for channel messaging

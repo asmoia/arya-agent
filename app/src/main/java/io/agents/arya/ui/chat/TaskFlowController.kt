@@ -172,7 +172,11 @@ class TaskFlowController(
         uiState.isAwaitingReply.value = false
         uiState.isTaskRunning.value = false
 
-        if (!KVUtils.hasLlmConfig()) {
+        val initialRoute = pipelineRouter.route(text)
+        val needsLlm = initialRoute is PipelineRouter.Route.AgentLoop ||
+            initialRoute is PipelineRouter.Route.Chat ||
+            initialRoute is PipelineRouter.Route.PrimeThenAgent
+        if (needsLlm && !KVUtils.hasLlmConfig()) {
             Toast.makeText(activity, "Configure LLM in Settings first", Toast.LENGTH_LONG).show()
             onTaskTerminal?.invoke(TaskEvent.Failed("Configure LLM in Settings first."))
             return
@@ -182,11 +186,8 @@ class TaskFlowController(
         // Direct tools and deterministic skills launch their own target app. Do
         // not prelaunch it here as well: duplicate Telegram/Chrome launches add
         // visible delay and can reset the exact screen a fast route needs.
-        val needsAgentBootstrap = when (pipelineRouter.route(text)) {
-            is PipelineRouter.Route.AgentLoop,
-            is PipelineRouter.Route.Chat -> true
-            else -> false
-        }
+        val needsAgentBootstrap = initialRoute is PipelineRouter.Route.AgentLoop ||
+            initialRoute is PipelineRouter.Route.Chat
         addUser(text)
         // Both flags true from the first second so Stop (✕) is always available.
         uiState.isAwaitingReply.value = true

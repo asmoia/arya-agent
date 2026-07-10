@@ -57,20 +57,11 @@ class AppViewModel : ViewModel() {
     ) {
         onBeforeTask?.invoke()
         taskOrchestrator.taskEventCallback = onEvent
-        // Soft-update config (must not reload LiteRT every task — that alone can take minutes).
-        if (!updateAgentConfig()) {
-            // Try init once if never ready
-            try {
-                initAgent()
-            } catch (e: Exception) {
-                onEvent(TaskEvent.Failed("AI service not ready: ${e.message}"))
-                return
-            }
-            if (!updateAgentConfig()) {
-                onEvent(TaskEvent.Failed("AI service not ready"))
-                return
-            }
-        }
+        // Route before creating or updating the LLM. Direct intents, browser
+        // search, deterministic skills and message tools must work instantly and
+        // should not wake a multi-GB local engine just to discover their route.
+        // TaskOrchestrator initializes/soft-updates the agent only if execution
+        // actually falls through to the agent loop.
         taskOrchestrator.startNewTask(Channel.LOCAL, task, taskId, agentPromptOverride = agentPromptOverride)
     }
 
