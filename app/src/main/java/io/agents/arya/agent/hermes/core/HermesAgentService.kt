@@ -362,7 +362,10 @@ class HermesAgentService : AgentService {
         val recentActions = LinkedList<String>()
         var essayForceUsed = false
 
-        HermesAppKeeper.onTaskStart("شروع task…")
+        // Keep-alive ownership was acquired once after the pure-chat guard.
+        // From here on, only update its status; a second start would leak depth
+        // because executeTask() has one terminal onTaskEnd().
+        HermesAppKeeper.onTaskProgress("شروع task…")
         emitStatus(callback, policy, 0, "شروع · ${policy.resolvedMode.name} · ${HermesAppKeeper.memoryHintFa()}")
 
 

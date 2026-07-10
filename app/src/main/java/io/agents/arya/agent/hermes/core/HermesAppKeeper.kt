@@ -56,15 +56,35 @@ object HermesAppKeeper : ComponentCallbacks2 {
         }
     }
 
+    /** Pure release rule, kept visible to JVM tests without Android service setup. */
+    internal fun nextDepthAfterEnd(current: Int): Int? =
+        if (current <= 0) null else current - 1
+
+    /**
+     * Ends one previously acquired task lease. An end without a start is a
+     * no-op: clamping only a local return value used to leave [taskDepth] at
+     * -1 after a pure-chat fast path, so the next real task failed to become
+     * the foreground owner.
+     */
     fun onTaskEnd() {
-        val n = taskDepth.decrementAndGet().coerceAtLeast(0)
-        XLog.i(TAG, "onTaskEnd depth=$n")
-        if (n == 0) {
-            try {
-                ForegroundService.resetToIdle(ClawApplication.instance)
-            } catch (e: Exception) {
-                XLog.w(TAG, "FG reset failed: ${e.message}")
+        while (true) {
+            val current = taskDepth.get()
+            val next = nextDepthAfterEnd(current)
+            if (next == null) {
+                XLog.w(TAG, "onTaskEnd ignored without an active task lease (depth=$current)")
+                return
             }
+            if (!taskDepth.compareAndSet(current, next)) continue
+
+            XLog.i(TAG, "onTaskEnd depth=$next")
+            if (next == 0) {
+                try {
+                    ForegroundService.resetToIdle(ClawApplication.instance)
+                } catch (e: Exception) {
+                    XLog.w(TAG, "FG reset failed: ${e.message}")
+                }
+            }
+            return
         }
     }
 
