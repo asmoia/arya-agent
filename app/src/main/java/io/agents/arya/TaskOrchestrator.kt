@@ -8,6 +8,7 @@ import io.agents.arya.agent.AgentConfig
 import io.agents.arya.agent.AgentService
 import io.agents.arya.agent.AgentServiceFactory
 import io.agents.arya.agent.PipelineRouter
+import io.agents.arya.agent.PlanExecutor
 import io.agents.arya.agent.LlmProvider
 import io.agents.arya.agent.llm.LocalInferenceCoordinator
 import io.agents.arya.agent.llm.LocalInferenceOwner

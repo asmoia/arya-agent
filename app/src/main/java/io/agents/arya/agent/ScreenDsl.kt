@@ -60,7 +60,7 @@ object ScreenDslParser {
                 flags.contains("tap") -> "action"
                 else -> "text"
             }, flags, match.groupValues[4].toInt(), match.groupValues[5].toInt(), score)
-        }.sortedByDescending { it.score }.take(18)
+        }.sortedByDescending { it.score }.take(18).toList()
         return ScreenDsl(nodes, nodes.any { "edit" in it.flags }, nodes.any { "scroll" in it.flags })
     }
 }

@@ -38,7 +38,7 @@ object TaskPerfTrace {
 
     fun mark(id: String?, name: String, detail: String = "") {
         val trace = id?.let(active::get) ?: return
-        trace.events.add(TaskTraceEvent(name, System.currentTimeMillis() - trace.startedAt, detail.take(180))
+        trace.events.add(TaskTraceEvent(name, System.currentTimeMillis() - trace.startedAt, detail.take(180)))
     }
 
     fun finish(id: String?, outcome: String) {
