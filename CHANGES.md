@@ -2,6 +2,14 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.4.4 — Adaptive E4B memory budget
+
+- E4B دیگر با حدود ۵ تا ۶GB RAM آزاد به‌صورت قطعی reject نمی‌شود؛ آریا خودکار بین پروفایل‌های `Full`، `Balanced` و `Compact` انتخاب می‌کند.
+- حالت Balanced context را به 1024 و حالت Compact به 768 کاهش می‌دهد؛ CPU fallback برای E4B همچنان ممنوع است.
+- hard safety floor تنها زیر 4.8GB RAM آزاد load را متوقف می‌کند.
+- status UI و Debug Report حالت budget، context مؤثر، RAM آزاد، hard floor و target کامل را نشان می‌دهند.
+- تست policy برای 5.1GB compact، 6GB balanced، hard floor و full profile اضافه شد.
+
 ## v0.4.3 — Keep-alive lifecycle hotfix
 
 - رفع underflow در `HermesAppKeeper`: پایان task بدون lease فعال دیگر شمارندهٔ foreground را منفی نمی‌کند.
