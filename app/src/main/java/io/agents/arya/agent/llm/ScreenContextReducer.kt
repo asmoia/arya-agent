@@ -24,8 +24,9 @@ object ScreenContextReducer {
             if (" tap" in lower || " edit" in lower || " scroll" in lower) score += 35
             if ("play" in lower || "search" in lower || "send" in lower || "saved" in lower || "پخش" in line || "جستجو" in line || "ذخیره" in line || "ارسال" in line) score += 45
             score += tokens.count { lower.contains(it) } * 20
-            if (score == 0 && index > 40) null else Candidate(index, score, line.take(180))
-        }.sortedWith(compareByDescending<Candidate> { it.score }.thenBy { it.index }).take(18).sortedBy { it.index }
+            if (score == 0 && index > 40) return@mapIndexedNotNull null
+            Candidate(index, score, line.take(180))
+        }.sortedWith(compareByDescending<Candidate> { it.score }.thenBy { it.index }).take(18).sortedBy { it.index }.toList()
         if (nodes.isEmpty()) return screen.take(maxChars)
         return buildString { appendLine("[Relevant visible UI nodes]"); nodes.forEach { appendLine(it.text) } }.take(maxChars)
     }
