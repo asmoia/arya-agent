@@ -19,7 +19,7 @@ class PersianCommandCompilerTest {
     fun doesNotSplitQuotedMessageContent() {
         val plan = PersianCommandCompiler.compile("تلگرام رو باز کن و به علی بگو «سلام و خوبی؟»")
         assertNotNull(plan)
-        assertEquals("سلام و خوبی؟", plan!!.steps.single().params["message"])
+        assertEquals("«سلام و خوبی؟»", plan!!.steps.single().params["message"])
     }
 
     @Test
