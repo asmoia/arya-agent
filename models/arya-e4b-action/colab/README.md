@@ -29,3 +29,15 @@ https://colab.research.google.com/github/asmoia/arya-agent/blob/main/models/arya
 ## No E2B path
 
 This notebook is E4B-only. It does not download, train or route through E2B.
+
+## OOM during PEFT preparation
+
+If Colab reports an OOM from `prepare_model_for_kbit_training`, restart the
+runtime and pull the updated notebook. The notebook intentionally avoids that
+helper for E4B because some PEFT versions cast large non-4bit tensors to fp32.
+It freezes base weights manually, enables input gradients/checkpointing, and
+uses conservative free-GPU defaults (`SEQ_LEN=256`, `LORA_R=4`).
+
+If loading the base model itself OOMs after a runtime restart, the assigned GPU
+is too small for that checkpoint/session combination. Stop there and use a
+larger GPU; do not repeatedly retry or replace the E4B program with E2B.
