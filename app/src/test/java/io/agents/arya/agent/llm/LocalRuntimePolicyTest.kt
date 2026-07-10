@@ -9,22 +9,51 @@ class LocalRuntimePolicyTest {
     private val e4b = "/models/gemma-4-E4B-it.litertlm"
 
     @Test
-    fun e4bRejectsTheLowFreeRamStateSeenBeforeConversationCreation() {
-        val reason = LocalRuntimePolicy.admissionReason(
+    fun e4bUsesCompactProfileInsteadOfRejectingFiveGbFreeRam() {
+        val budget = LocalRuntimePolicy.budgetForAvailable(
             modelPath = e4b,
             owner = LocalInferenceOwner.CHAT,
             availableMb = 5_105L,
         )
 
-        assertNotNull(reason)
-        check(reason!!.contains("needs 6.5GB free RAM"))
+        assertEquals(LocalRuntimePolicy.E4bMemoryMode.COMPACT, budget.mode)
+        assertEquals(768, budget.maxNumTokens)
+        assertNull(budget.admissionReason)
     }
 
     @Test
-    fun e4bUsesReducedInteractiveConversationBudget() {
-        assertEquals(1_536, LocalRuntimePolicy.maxNumTokens(e4b, LocalInferenceOwner.CHAT))
-        assertEquals(1_536, LocalRuntimePolicy.maxNumTokens(e4b, LocalInferenceOwner.TASK))
-        assertEquals(768, LocalRuntimePolicy.maxNumTokens(e4b, LocalInferenceOwner.BACKGROUND))
+    fun e4bUsesBalancedProfileAtSixGbFreeRam() {
+        val budget = LocalRuntimePolicy.budgetForAvailable(
+            modelPath = e4b,
+            owner = LocalInferenceOwner.TASK,
+            availableMb = 6_000L,
+        )
+
+        assertEquals(LocalRuntimePolicy.E4bMemoryMode.BALANCED, budget.mode)
+        assertEquals(1_024, budget.maxNumTokens)
+        assertNull(budget.admissionReason)
+    }
+
+    @Test
+    fun e4bBlocksOnlyBelowHardSafetyFloor() {
+        val budget = LocalRuntimePolicy.budgetForAvailable(
+            modelPath = e4b,
+            owner = LocalInferenceOwner.CHAT,
+            availableMb = 4_700L,
+        )
+
+        assertEquals(LocalRuntimePolicy.E4bMemoryMode.BLOCKED, budget.mode)
+        assertEquals(0, budget.maxNumTokens)
+        assertNotNull(budget.admissionReason)
+        check(budget.admissionReason!!.contains("4.8GB free RAM"))
+    }
+
+    @Test
+    fun e4bUsesFullProfileWhenMemoryIsHealthy() {
+        assertEquals(
+            LocalRuntimePolicy.E4bMemoryMode.FULL,
+            LocalRuntimePolicy.budgetForAvailable(e4b, LocalInferenceOwner.TASK, 7_000L).mode,
+        )
     }
 
     @Test

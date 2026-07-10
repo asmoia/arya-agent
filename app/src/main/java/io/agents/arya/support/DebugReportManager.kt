@@ -99,11 +99,16 @@ object DebugReportManager {
             appendLine("- Last local runtime failure: ${localInference.lastFailure ?: "(none)"}")
             config.local.modelPath.takeIf { it.isNotBlank() }?.let { path ->
                 LocalRuntimePolicy.requiredFreeMb(path, LocalInferenceOwner.CHAT)?.let { required ->
-                    appendLine("- E4B chat admission requirement: ${required / 1000.0} GB available")
+                    appendLine("- E4B hard safety floor: ${required / 1000.0} GB available")
                 }
-                LocalRuntimePolicy.requiredFreeMb(path, LocalInferenceOwner.TASK)?.let { required ->
-                    appendLine("- E4B task admission requirement: ${required / 1000.0} GB available")
+                LocalRuntimePolicy.preferredFreeMb(path, LocalInferenceOwner.CHAT)?.let { preferred ->
+                    appendLine("- E4B full chat target: ${preferred / 1000.0} GB available")
                 }
+                LocalRuntimePolicy.preferredFreeMb(path, LocalInferenceOwner.TASK)?.let { preferred ->
+                    appendLine("- E4B full task target: ${preferred / 1000.0} GB available")
+                }
+                val chatBudget = LocalRuntimePolicy.memoryBudget(context, path, LocalInferenceOwner.CHAT)
+                appendLine("- E4B current chat budget: ${chatBudget.mode.label}, context=${chatBudget.maxNumTokens}, available=${chatBudget.availableMb} MB")
             }
             val openClPaths = detectOpenClLibraryPaths()
             appendLine("- OpenCL libraries found: ${if (openClPaths.isEmpty()) "(none) — GPU path will not work" else openClPaths.joinToString(", ")}")

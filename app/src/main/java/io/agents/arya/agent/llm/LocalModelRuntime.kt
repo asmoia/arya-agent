@@ -101,12 +101,19 @@ object LocalModelRuntime {
         try {
             repeat(maxRetries) { attempt ->
                 LocalRuntimePolicy.checkAdmission(context, modelPath, owner)?.let { throw IllegalStateException(it) }
+                val effectiveMaxNumTokens = LocalRuntimePolicy.effectiveMaxNumTokens(
+                    context = context,
+                    modelPath = modelPath,
+                    owner = owner,
+                    requestedMaxNumTokens = maxNumTokens,
+                )
+                val budget = LocalRuntimePolicy.memoryBudget(context, modelPath, owner)
                 try {
                     val lease = acquireSharedEngine(
                         context = context,
                         modelPath = modelPath,
                         preferCpu = preferCpu,
-                        maxNumTokens = maxNumTokens,
+                        maxNumTokens = effectiveMaxNumTokens,
                         allowCpuFallback = !LocalRuntimePolicy.isE4b(modelPath),
                     )
                     val conversation = lease.engine.createConversation(conversationConfig)
@@ -114,7 +121,8 @@ object LocalModelRuntime {
                     XLog.i(
                         TAG,
                         "Conversation ready owner=${owner.name} backend=${lease.backendLabel} " +
-                            "context=$maxNumTokens attempt=${attempt + 1}",
+                            "context=$effectiveMaxNumTokens memoryMode=${budget.mode.label} " +
+                            "available=${budget.availableMb}MB attempt=${attempt + 1}",
                     )
                     return LocalConversationLease(lease.engine, conversation, lease.backendLabel)
                 } catch (e: Exception) {

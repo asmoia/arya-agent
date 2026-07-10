@@ -628,7 +628,11 @@ class ChatSessionController(
         val modelInfo = LocalModelManager.AVAILABLE_MODELS.find { modelPath.endsWith(it.fileName) }
         val modelName = modelInfo?.displayName ?: modelPath.substringAfterLast('/').substringBeforeLast('.')
         val backendLabel = LocalModelRuntime.currentBackendLabel(modelPath) ?: "On-device"
-        uiState.modelStatus.value = "● $modelName · $backendLabel"
+        val budgetLabel = LocalRuntimePolicy.memoryBudget(activity, modelPath, LocalInferenceOwner.CHAT)
+            .takeIf { LocalRuntimePolicy.isE4b(modelPath) && it.mode != LocalRuntimePolicy.E4bMemoryMode.FULL }
+            ?.let { " · ${it.mode.label}" }
+            .orEmpty()
+        uiState.modelStatus.value = "● $modelName · $backendLabel$budgetLabel"
     }
 
     fun syncUiToActiveModel() {
