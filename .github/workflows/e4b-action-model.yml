@@ -28,16 +28,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate Action IR seed corpus
+      - name: Build deterministic bootstrap corpus
+        run: |
+          python3 scripts/generate_arya_e4b_bootstrap_corpus.py \
+            --output models/arya-e4b-action/dataset/generated/arya_action_bootstrap_v0.1.jsonl
+      - name: Validate Action IR corpora
         run: |
           python3 scripts/validate_arya_e4b_action_dataset.py \
             models/arya-e4b-action/dataset/seed.fa-en.jsonl \
             --manifest models/arya-e4b-action/artifacts/seed-manifest.json
-      - name: Upload validated dataset manifest
+          python3 scripts/validate_arya_e4b_action_dataset.py \
+            models/arya-e4b-action/dataset/generated/arya_action_bootstrap_v0.1.jsonl \
+            --manifest models/arya-e4b-action/artifacts/bootstrap-manifest.json
+      - name: Upload validated dataset manifests
         uses: actions/upload-artifact@v4
         with:
-          name: arya-e4b-action-seed-manifest
-          path: models/arya-e4b-action/artifacts/seed-manifest.json
+          name: arya-e4b-action-dataset-manifests
+          path: models/arya-e4b-action/artifacts/*.json
           retention-days: 30
 
   training-preflight:
