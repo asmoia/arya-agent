@@ -2,6 +2,14 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.4.3 — Keep-alive lifecycle hotfix
+
+- رفع underflow در `HermesAppKeeper`: پایان task بدون lease فعال دیگر شمارندهٔ foreground را منفی نمی‌کند.
+- حذف start دوم keep-alive در مسیر Hermes؛ task غیر-pure اکنون یک start و یک پایان lifecycle دارد.
+- regression test برای pure-chat پشت‌سرهم و سپس phone task اضافه شد.
+- تصمیم‌ها و backlog بازبینی معماری در `docs/ARYA_REVIEW_SESSION_20260710.md` ثبت شدند.
+- CI GitHub برای hotfix lifecycle اجرا و سبز شد؛ build محلی اجرا نشد.
+
 ## v0.4.2 — E4B local runtime coordination
 
 - `LocalInferenceCoordinator` مالکیت conversation مدل Local را بین Chat، Task و background work سریال می‌کند.
