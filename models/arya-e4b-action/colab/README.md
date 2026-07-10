@@ -73,3 +73,12 @@ custom wrapper/gradient-checkpointing interaction. The updated notebook now:
 Restart the Colab runtime and use the updated notebook. If the autograd
 preflight fails, copy the printed `first_trainable` names and the preflight
 error—do not continue to `trainer.train()`.
+
+## `Loss has no gradient path` during autograd preflight
+
+The notebook now calls `enable_input_require_grads()` after PEFT wraps E4B,
+even in smoke mode. This is required for some k-bit Gemma E4B wrapper paths.
+It also prints executed LoRA module names and trainable adapter names before
+failing, so an unsupported/non-executed target is diagnosed before Trainer.
+Restart the runtime and use the updated notebook; if the preflight still fails,
+send the printed diagnostic dictionary, not a later Trainer error.
