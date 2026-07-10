@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -83,6 +83,31 @@ jobs:
           echo "**Lifetime:** $duration minutes" >> "$GITHUB_STEP_SUMMARY"
           echo "**Bash guide:** $room_url/bash" >> "$GITHUB_STEP_SUMMARY"
           echo "::notice title=Arya review room URL::$room_url"
+
+          # Publish the URL immediately on a status-only branch. This makes the
+          # live URL retrievable while the long-running job is still active.
+          git config user.name "arya-review-room-action"
+          git config user.email "arya-review-room-action@users.noreply.github.com"
+          if git ls-remote --exit-code origin refs/heads/review-room-status; then
+            git fetch origin review-room-status
+            git checkout -B review-room-status origin/review-room-status
+          else
+            git checkout -b review-room-status
+          fi
+          mkdir -p review-room
+          cat > review-room/live-room.json <<EOF
+          {
+            "url": "$room_url",
+            "bash_guide": "$room_url/bash",
+            "duration_minutes": $duration,
+            "started_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "run_id": "${GITHUB_RUN_ID}"
+          }
+          EOF
+          git add review-room/live-room.json
+          git commit -m "chore: publish temporary review room URL" || true
+          git push origin HEAD:review-room-status --force
+          git checkout main
 
           # Keep the Action runner, Flask process and tunnel alive for the full room lifetime.
           sleep "$((duration * 60))"
