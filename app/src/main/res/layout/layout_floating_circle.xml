@@ -47,7 +47,7 @@
 
     </androidx.cardview.widget.CardView>
 
-    <!-- 等待任务状态（默认） — PokeClaw 圖標代替 "AI" 文字 -->
+    <!-- 等待任务状态（默认） — Arya 圖標代替 "AI" 文字 -->
     <androidx.cardview.widget.CardView
         android:id="@+id/cardIdle"
         android:layout_width="match_parent"
@@ -62,7 +62,7 @@
             android:layout_height="32dp"
             android:layout_gravity="center"
             android:contentDescription="@string/cd_floating_idle"
-            android:src="@drawable/pokeclaw_icon_small"
+            android:src="@drawable/arya_icon_small"
             android:scaleType="centerCrop" />
 
     </androidx.cardview.widget.CardView>
