@@ -1,0 +1,60 @@
+name: E4B Action Adapter Data Pipeline
+
+on:
+  push:
+    paths:
+      - 'models/arya-e4b-action/**'
+      - 'scripts/validate_arya_e4b_action_dataset.py'
+      - '.github/workflows/e4b-action-model.yml'
+  pull_request:
+    paths:
+      - 'models/arya-e4b-action/**'
+      - 'scripts/validate_arya_e4b_action_dataset.py'
+      - '.github/workflows/e4b-action-model.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'validate or training-preflight'
+        required: true
+        default: 'validate'
+        type: choice
+        options: [validate, training-preflight]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-action-ir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Action IR seed corpus
+        run: |
+          python3 scripts/validate_arya_e4b_action_dataset.py \
+            models/arya-e4b-action/dataset/seed.fa-en.jsonl \
+            --manifest models/arya-e4b-action/artifacts/seed-manifest.json
+      - name: Upload validated dataset manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: arya-e4b-action-seed-manifest
+          path: models/arya-e4b-action/artifacts/seed-manifest.json
+          retention-days: 30
+
+  training-preflight:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'training-preflight'
+    needs: validate-action-ir
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Explain E4B GPU training boundary
+        run: |
+          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          ## Arya E4B Action Adapter — training preflight
+
+          Dataset/schema validation completed on GitHub hosted CPU.
+
+          A Gemma 4 E4B QLoRA run requires a real GPU runner and base-model access.
+          This workflow intentionally does not pretend to train a 4B model on a
+          GitHub hosted CPU runner. Use a self-hosted GPU or an explicit GPU
+          provider workflow after the seed corpus and evaluation gates are approved.
+          EOF
