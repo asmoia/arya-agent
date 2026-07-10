@@ -61,18 +61,38 @@ jobs:
             -o "$runtime_dir/cloudflared"
           chmod +x "$runtime_dir/cloudflared"
 
-          timeout "$((duration * 60 + 30))" "$runtime_dir/cloudflared" tunnel \
-            --url http://127.0.0.1:8765 --no-autoupdate > "$runtime_dir/cloudflared.log" 2>&1 &
-          tunnel_pid=$!
-
+          # Quick Tunnels sometimes return a transient 5xx while allocating a
+          # random hostname. Retry a fresh cloudflared process instead of
+          # declaring the whole room unavailable on the first response.
           room_url=""
-          for _ in $(seq 1 120); do
-            room_url="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$runtime_dir/cloudflared.log" | head -1 || true)"
-            [ -n "$room_url" ] && break
-            sleep 0.5
+          tunnel_pid=""
+          for attempt in $(seq 1 5); do
+            attempt_log="$runtime_dir/cloudflared-$attempt.log"
+            timeout "$((duration * 60 + 30))" "$runtime_dir/cloudflared" tunnel \
+              --url http://127.0.0.1:8765 --no-autoupdate > "$attempt_log" 2>&1 &
+            candidate_pid=$!
+
+            for _ in $(seq 1 120); do
+              room_url="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$attempt_log" | head -1 || true)"
+              [ -n "$room_url" ] && break
+              if ! kill -0 "$candidate_pid" 2>/dev/null; then
+                break
+              fi
+              sleep 0.5
+            done
+
+            if [ -n "$room_url" ]; then
+              tunnel_pid="$candidate_pid"
+              cp "$attempt_log" "$runtime_dir/cloudflared.log"
+              break
+            fi
+            cat "$attempt_log" >&2 || true
+            kill "$candidate_pid" 2>/dev/null || true
+            sleep "$attempt"
           done
+
           if [ -z "$room_url" ]; then
-            cat "$runtime_dir/cloudflared.log" >&2 || true
+            echo "TryCloudflare did not allocate a URL after five attempts." >&2
             exit 1
           fi
 
