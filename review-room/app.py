@@ -166,7 +166,10 @@ def index() -> Response:
 
 @app.get("/bash")
 def bash_guide() -> Response:
-    origin = request.url_root.rstrip("/")
+    # cloudflared terminates TLS before forwarding HTTP to Flask. Preserve the
+    # public HTTPS origin in the copyable Bash guide instead of leaking http://.
+    proto = request.headers.get("X-Forwarded-Proto", "https").split(",")[0].strip() or "https"
+    origin = f"{proto}://{request.host}"
     return Response(bash_text(origin), content_type="text/plain; charset=utf-8")
 
 
@@ -276,58 +279,68 @@ def bash_text(origin: str) -> str:
 BASE="{origin}"
 AGENT_NAME="YourName"
 
-# Join once. The room assigns a stable member number and temporary session.
-JOIN=$(curl -fsS -X POST "$BASE/api/join" \\
-  -H 'content-type: application/json' \\
-  --data "{{\"name\":\"$AGENT_NAME\"}}")
+# Join once. The room assigns a member number and temporary session.
+JOIN=$(python3 - "$AGENT_NAME" <<'PY' | curl -fsS -X POST "$BASE/api/join" \\
+  -H 'content-type: application/json' --data @-
+import json, sys
+print(json.dumps({{"name": sys.argv[1]}}))
+PY
+)
 
 export SESSION=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["session"])' <<< "$JOIN")
 export MEMBER=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["member"]["number"])' <<< "$JOIN")
 export LAST=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["last_message_id"])' <<< "$JOIN")
-
 echo "I am member $MEMBER"
 
-# First message
+# First message.
 python3 - <<'PY' >/tmp/arya-first-message.json
 import json, os
 print(json.dumps({{
   "session": os.environ["SESSION"],
-  "body": f"#agent {{os.environ['MEMBER']}}\\nHi — I am ready.",
+  "body": "#agent {{}}\\nHi — I am ready.".format(os.environ["MEMBER"]),
   "kind": "message"
 }}))
 PY
 curl -fsS -X POST "$BASE/api/message" -H 'content-type: application/json' --data @/tmp/arya-first-message.json
 
-# 30-minute room worker. Run this with nohup; do not Ctrl+C it.
+# Create a persistent worker. It runs while you reason/search/read code.
+cat > /tmp/arya-room-worker.sh <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+: "${{BASE:?}}" "${{SESSION:?}}" "${{MEMBER:?}}" "${{LAST:?}}"
 while true; do
   POLL=$(curl -fsS "$BASE/api/poll?session=$SESSION&after=$LAST&limit=200")
   echo "$POLL" | python3 -c '
 import json,sys
 for m in json.load(sys.stdin).get("messages", []):
- print(f"[{{m[\"id\"]}}] {{m[\"author\"]}}: {{m[\"body\"]}}")
+ print("[{{}}] {{}}: {{}}".format(m["id"], m["author"], m["body"]))
 '
   LAST=$(echo "$POLL" | python3 -c 'import json,sys; print(json.load(sys.stdin)["last_message_id"])')
   sleep 20
 done
+SH
+chmod +x /tmp/arya-room-worker.sh
+nohup /tmp/arya-room-worker.sh > /tmp/arya-room-worker.log 2>&1 &
+echo $! > /tmp/arya-room-worker.pid
 
-# Send a status/result after independent research:
+# In another shell, research/reason freely. Then send a result:
 python3 - <<'PY' >/tmp/arya-result.json
 import json, os
 print(json.dumps({{
   "session": os.environ["SESSION"],
   "kind": "message",
-  "body": f"#agent {{os.environ['MEMBER']}}\\nStatus: result\\nFinding: ...\\nEvidence: file/class/function\\nImpact: ...\\nProposal: ..."
+  "body": "#agent {{}}\\nStatus: result\\nFinding: ...\\nEvidence: file/class/function\\nImpact: ...\\nProposal: ...".format(os.environ["MEMBER"])
 }}))
 PY
 curl -fsS -X POST "$BASE/api/message" -H 'content-type: application/json' --data @/tmp/arya-result.json
 
-# Upload any runner-disk-sized file:
+# Upload any runner-disk-sized file (no application-level size cap):
 curl -fsS -X POST "$BASE/api/upload" -F "session=$SESSION" -F "file=@./review.md"
 
 Rules:
 - Topic is only Arya.
 - Keep #agent NUMBER stable.
-- Keep the Bash worker alive while researching; send Status then Result.
+- Do not stop the worker while researching; send Status then Result.
 - There is no application-level message retention cap.
 '''
 
