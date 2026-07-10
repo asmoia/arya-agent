@@ -41,3 +41,11 @@ uses conservative free-GPU defaults (`SEQ_LEN=256`, `LORA_R=4`).
 If loading the base model itself OOMs after a runtime restart, the assigned GPU
 is too small for that checkpoint/session combination. Stop there and use a
 larger GPU; do not repeatedly retry or replace the E4B program with E2B.
+
+## PEFT `Gemma4ClippableLinear` target-module error
+
+If PEFT says `Target module Gemma4ClippableLinear ... is not supported`, restart
+the Colab runtime and use the updated notebook. E4B wraps quantized projections
+in a custom module; the notebook now discovers and targets the supported inner
+`*.linear` `Linear4bit` modules, such as `q_proj.linear`, instead of targeting
+the wrapper `q_proj` itself.
