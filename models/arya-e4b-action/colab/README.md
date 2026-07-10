@@ -97,3 +97,12 @@ Gemma4 text projections may be direct `Linear4bit` modules such as `q_proj`,
 while multimodal clipped wrappers expose `q_proj.linear`. The notebook now
 considers both shapes and chooses only modules hit by a frozen text forward.
 This prevents LoRA from attaching only to inactive multimodal branches.
+
+## Google Drive mount failed
+
+Drive is optional. The notebook now saves the adapter first under
+`/content/arya_e4b_action/adapter`, writes a manifest there, and creates
+`/content/arya_e4b_action/arya_e4b_action_adapter.zip`. Set
+`DOWNLOAD_ADAPTER_ZIP=True` to download it, or use the Colab Files sidebar.
+Set `SAVE_TO_DRIVE=True` only if Drive mounting works in that browser/session.
+A Drive mount failure must not cause retraining.
