@@ -11,6 +11,7 @@ import io.agents.arya.BuildConfig
 import io.agents.arya.agent.llm.LocalBackendHealth
 import io.agents.arya.agent.llm.LocalModelManager
 import io.agents.arya.agent.llm.ModelConfigRepository
+import io.agents.arya.agent.TaskPerfTrace
 import io.agents.arya.service.AutoReplyManager
 import io.agents.arya.utils.AppLogStore
 import io.agents.arya.utils.KVUtils
@@ -131,6 +132,17 @@ object DebugReportManager {
             appendLine("Auto-reply")
             appendLine("- Enabled: ${if (autoReplyManager.isEnabled) "Yes" else "No"}")
             appendLine("- Targets: ${monitorTargets.ifBlank { "(none)" }}")
+            appendLine()
+            appendLine("Recent task performance traces")
+            val traces = TaskPerfTrace.recent().takeLast(8)
+            if (traces.isEmpty()) {
+                appendLine("- (none)")
+            } else {
+                traces.forEach { trace ->
+                    val firstTool = trace.events.firstOrNull { it.name == "tool_requested" }?.elapsedMs
+                    appendLine("- ${trace.route} outcome=${trace.outcome} firstTool=${firstTool ?: "-"}ms events=${trace.events.size}")
+                }
+            }
             appendLine()
             appendLine("Artifacts")
             appendLine("- App rolling logs present: $appLogs")

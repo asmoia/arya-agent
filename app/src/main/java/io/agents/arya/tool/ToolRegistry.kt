@@ -27,6 +27,7 @@ object ToolRegistry {
             DeviceType.TV -> registerTvTools()
             DeviceType.MOBILE -> registerMobileTools()
         }
+        io.agents.arya.agent.langchain.LangChain4jToolBridge.invalidateCache()
     }
 
     private fun registerCommonTools() {
@@ -38,6 +39,7 @@ object ToolRegistry {
         register(GetInstalledAppsTool())
         register(TakeScreenshotTool())
         register(WaitTool())
+        register(WaitForUiTool())
         register(RepeatActionsTool())
         register(ClipboardTool())
         register(SendFileTool())
@@ -87,6 +89,7 @@ object ToolRegistry {
 
     fun register(tool: BaseTool) {
         tools[tool.getName()] = tool
+        io.agents.arya.agent.langchain.LangChain4jToolBridge.invalidateCache()
     }
 
     fun getTool(name: String): BaseTool? = tools[name]

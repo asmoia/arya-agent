@@ -20,6 +20,7 @@ import io.agents.arya.agent.DirectDeviceDataGuard
 import io.agents.arya.agent.PipelineRouter
 import io.agents.arya.agent.TaskPromptEnvelope
 import io.agents.arya.agent.TaskAcknowledgement
+import io.agents.arya.agent.TaskPerfTrace
 import io.agents.arya.agent.llm.ModelConfigRepository
 import io.agents.arya.agent.llm.LocalInferenceCoordinator
 import io.agents.arya.agent.llm.LocalInferenceOwner
@@ -63,6 +64,7 @@ class TaskFlowController(
 
     private var sendTaskRetryCount = 0
     private var lastMonitorStatusNote: String? = null
+    private var activeTraceId: String? = null
     private val pipelineRouter = PipelineRouter(activity)
 
     fun sendTask(text: String) {
@@ -209,11 +211,9 @@ class TaskFlowController(
         }
 
         val agentPromptOverride = buildAgentPromptOverride(text)
-        // Direct tools and deterministic skills launch their own target app. Do
-        // not prelaunch it here as well: duplicate Telegram/Chrome launches add
-        // visible delay and can reset the exact screen a fast route needs.
-        val needsAgentBootstrap = initialRoute is PipelineRouter.Route.AgentLoop ||
-            initialRoute is PipelineRouter.Route.Chat
+        // HermesBootstrapActions is the single owner of agent-loop bootstrap.
+        // TaskFlowController only acknowledges and dispatches; it must not open
+        // the same app a second time and reset the initial UI state.
         addUser(text)
         // Both flags true from the first second so Stop (✕) is always available.
         uiState.isAwaitingReply.value = true
@@ -223,38 +223,20 @@ class TaskFlowController(
         addSystem("⚡ ${TaskAcknowledgement.forTask(text, initialRoute)}")
 
         val taskId = "task_${System.currentTimeMillis()}"
+        activeTraceId = taskId
+        TaskPerfTrace.start(taskId, initialRoute::class.simpleName ?: "unknown", text)
+        TaskPerfTrace.mark(taskId, "acknowledged")
 
         executor.submit {
-            // Pre-launch only full agent-loop tasks. Deterministic routes already
-            // own their launch/navigation sequence and must not be reset here.
-            if (needsAgentBootstrap) {
-                try {
-                    val boot = io.agents.arya.agent.hermes.core.HermesBootstrapActions.plan(text)
-                    if (boot != null) {
-                        for (step in boot.steps) {
-                            if (step.tool != "open_app") continue
-                            activity.runOnUiThread {
-                                addSystem("⏳ ${step.labelFa}")
-                            }
-                            val hint = step.params["package_name"]?.toString() ?: continue
-                            val r = io.agents.arya.agent.hermes.core.HermesDirectOpen.open(activity, hint)
-                            XLog.i(TAG, "prelaunch $hint success=${r.isSuccess} ${r.error}")
-                            activity.runOnUiThread {
-                                if (r.isSuccess) addSystem("✓ ${r.data}")
-                                else addSystem("✗ باز نشد: ${r.error}")
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    XLog.w(TAG, "prelaunch failed: ${e.message}")
-                }
-            }
+            // Bootstrap ownership is intentionally inside HermesAgentService.
+            // Direct routes own their own app launch; this UI layer only dispatches.
 
             // Direct tools and deterministic skills do not need E4B; avoid a chat unload/reload race.
             if (needsLlm) chatSessionController.prepareForTaskStart()
 
             activity.runOnUiThread {
                 try {
+                    TaskPerfTrace.mark(taskId, "task_dispatched")
                     appViewModel.startTask(text, taskId, agentPromptOverride = agentPromptOverride) { event ->
                         activity.runOnUiThread { handleTaskEvent(event) }
                     }
@@ -359,17 +341,23 @@ class TaskFlowController(
         try {
             when (event) {
                 is TaskEvent.Completed -> {
+                    TaskPerfTrace.finish(activeTraceId, "completed")
+                    activeTraceId = null
                     replaceTypingIndicator(event.answer, event.modelName)
                     onTaskTerminal?.invoke(event)
                     cleanupAfterTask()
                     checkAutoReplyConfirmation()
                 }
                 is TaskEvent.Failed -> {
+                    TaskPerfTrace.finish(activeTraceId, "failed:${event.error.take(80)}")
+                    activeTraceId = null
                     replaceTypingIndicator(event.error)
                     onTaskTerminal?.invoke(event)
                     cleanupAfterTask()
                 }
                 is TaskEvent.Cancelled -> {
+                    TaskPerfTrace.finish(activeTraceId, "cancelled")
+                    activeTraceId = null
                     removeTypingIndicator()
                     onTaskTerminal?.invoke(event)
                     cleanupAfterTask()
@@ -380,6 +368,7 @@ class TaskFlowController(
                     cleanupAfterTask()
                 }
                 is TaskEvent.ToolAction -> {
+                    TaskPerfTrace.mark(activeTraceId, "tool_requested", event.toolName)
                     uiState.isAwaitingReply.value = false
                     uiState.isTaskRunning.value = true
                     if (!event.toolName.contains("Finish", ignoreCase = true)) {
@@ -406,6 +395,7 @@ class TaskFlowController(
                     uiState.isTaskRunning.value = true
                 }
                 is TaskEvent.Status -> {
+                    TaskPerfTrace.mark(activeTraceId, "status", event.message)
                     uiState.isAwaitingReply.value = false
                     uiState.isTaskRunning.value = true
                     // Replace last status system line if consecutive, else add

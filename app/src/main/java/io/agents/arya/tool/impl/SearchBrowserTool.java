@@ -11,6 +11,7 @@ import io.agents.arya.tool.BaseTool;
 import io.agents.arya.tool.ToolParameter;
 import io.agents.arya.tool.ToolRegistry;
 import io.agents.arya.tool.ToolResult;
+import io.agents.arya.tool.UiWait;
 import io.agents.arya.utils.UiActionMatchUtils;
 import io.agents.arya.utils.XLog;
 
@@ -83,7 +84,9 @@ public class SearchBrowserTool extends BaseTool {
             if (field == null) {
                 AccessibilityNodeInfo action = UiActionMatchUtils.findBestSearchAction(root);
                 if (action != null && service.clickNode(action)) {
-                    sleep(SETTLE_MS);
+                    UiWait.until(1_200L, 80L, () ->
+                            UiActionMatchUtils.findBestSearchField(service.getRootInActiveWindow()) != null
+                    );
                     root = service.getRootInActiveWindow();
                     field = UiActionMatchUtils.findBestSearchField(root);
                 }
@@ -105,13 +108,17 @@ public class SearchBrowserTool extends BaseTool {
             if (!typed.isSuccess()) {
                 return ToolResult.error("Could not type the search query: " + typed.getError());
             }
+            String beforeSubmit = service.getScreenTree();
             ToolResult submitted = ToolRegistry.getInstance().executeTool(
                     "system_key", Collections.<String, Object>singletonMap("key", "enter")
             );
             if (!submitted.isSuccess()) {
                 return ToolResult.error("Query was typed, but could not submit search: " + submitted.getError());
             }
-            sleep(700L);
+            UiWait.until(1_500L, 100L, () -> {
+                String current = service.getScreenTree();
+                return current != null && !current.equals(beforeSubmit);
+            });
 
             String screen = service.getScreenTree();
             String suffix = screen == null || screen.trim().isEmpty()
@@ -128,18 +135,13 @@ public class SearchBrowserTool extends BaseTool {
     }
 
     private boolean waitForBrowser(ClawAccessibilityService service, long timeoutMs) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + timeoutMs;
-        while (System.currentTimeMillis() < deadline) {
+        return UiWait.until(timeoutMs, 80L, () -> {
             AccessibilityNodeInfo root = service.getRootInActiveWindow();
             String pkg = root != null && root.getPackageName() != null
                     ? root.getPackageName().toString().toLowerCase(Locale.ROOT)
                     : "";
-            if (pkg.contains("chrome") || pkg.contains("browser") || pkg.contains("sbrowser")) {
-                return true;
-            }
-            sleep(160L);
-        }
-        return false;
+            return pkg.contains("chrome") || pkg.contains("browser") || pkg.contains("sbrowser");
+        });
     }
 
     private void sleep(long durationMs) throws InterruptedException {

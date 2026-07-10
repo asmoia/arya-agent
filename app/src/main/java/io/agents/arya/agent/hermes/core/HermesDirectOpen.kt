@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import io.agents.arya.ClawApplication
+import io.agents.arya.agent.AppCardRegistry
+import io.agents.arya.agent.PersianNormalizer
 import io.agents.arya.tool.ToolResult
 import io.agents.arya.tool.impl.OpenAppTool
 import io.agents.arya.utils.XLog
@@ -95,7 +97,9 @@ object HermesDirectOpen {
     }
 
     private fun candidatesFor(hint: String): List<String> {
-        val h = hint.lowercase().trim()
+        val cardPackages = AppCardRegistry.packagesFor(hint)
+        if (cardPackages.isNotEmpty()) return cardPackages
+        val h = PersianNormalizer.normalize(hint)
         return when {
             h.contains("telegram x") || h.contains("telegramx") || h.contains("challegram") || h.contains("تلگرام ایکس") ->
                 listOf("org.thunderdog.challegram") + TELEGRAM_PKGS.filterNot { it == "org.thunderdog.challegram" }

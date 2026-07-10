@@ -25,6 +25,9 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Bridges our custom tool abstraction to LangChain4j's tool system.
@@ -33,6 +36,12 @@ import java.util.Map;
 public class LangChain4jToolBridge {
 
     private static final Gson GSON = new Gson();
+    private static final ConcurrentHashMap<String, List<ToolSpecification>> SPEC_CACHE = new ConcurrentHashMap<>();
+
+    /** Clears cached schemas after ToolRegistry changes. */
+    public static void invalidateCache() {
+        SPEC_CACHE.clear();
+    }
 
     /**
      * Builds LangChain4j ToolSpecification list from all registered tools.
@@ -48,14 +57,24 @@ public class LangChain4jToolBridge {
      * conservative subset for local UI work reduces latency without changing
      * what the registry is allowed to execute.
      */
-    public static List<ToolSpecification> buildToolSpecifications(java.util.Set<String> allowedToolNames) {
+    public static List<ToolSpecification> buildToolSpecifications(Set<String> allowedToolNames) {
+        final String cacheKey;
+        if (allowedToolNames == null) {
+            cacheKey = "all";
+        } else {
+            cacheKey = String.join("|", new TreeSet<>(allowedToolNames));
+        }
+        List<ToolSpecification> cached = SPEC_CACHE.get(cacheKey);
+        if (cached != null) {
+            return new ArrayList<>(cached);
+        }
+
         List<ToolSpecification> specs = new ArrayList<>();
         for (BaseTool tool : ToolRegistry.getInstance().getAllTools()) {
-            if (allowedToolNames != null && !allowedToolNames.contains(tool.getName())) {
-                continue;
-            }
+            if (allowedToolNames != null && !allowedToolNames.contains(tool.getName())) continue;
             specs.add(toSpecification(tool));
         }
+        SPEC_CACHE.put(cacheKey, new ArrayList<>(specs));
         return specs;
     }
 

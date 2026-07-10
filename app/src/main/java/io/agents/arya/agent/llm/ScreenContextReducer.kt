@@ -1,6 +1,8 @@
 // Copyright 2026 Arya Agent. Licensed under the Apache License, Version 2.0.
 package io.agents.arya.agent.llm
 
+import io.agents.arya.agent.ScreenDslParser
+
 /** Keeps relevant actionable UI nodes instead of rawResult.take(400). */
 object ScreenContextReducer {
     private const val MAX_CHARS = 1_600
@@ -15,6 +17,8 @@ object ScreenContextReducer {
     }
     fun reduceScreen(screen: String, taskHint: String?, maxChars: Int = MAX_CHARS): String {
         if (screen.length <= maxChars) return screen
+        val dsl = ScreenDslParser.parse(screen, taskHint)
+        if (dsl.nodes.isNotEmpty()) return dsl.toPrompt().take(maxChars)
         val tokens = taskHint.orEmpty().lowercase().split(Regex("[^\\p{L}\\p{Nd}]+")).filter { it.length >= 2 }.take(12)
         data class Candidate(val index: Int, val score: Int, val text: String)
         val nodes = screen.lineSequence().mapIndexedNotNull { index, raw ->

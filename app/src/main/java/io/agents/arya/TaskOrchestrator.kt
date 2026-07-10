@@ -168,6 +168,29 @@ class TaskOrchestrator(
                 onTaskFinished()
                 return
             }
+            is PipelineRouter.Route.CompiledPlan -> {
+                XLog.i(TAG, "Pipeline compiled plan: ${route.plan.steps.size} steps")
+                Thread({
+                    val result = PlanExecutor().execute(route.plan) { step, total, description ->
+                        taskEventCallback?.invoke(TaskEvent.Progress(step, "$step/$total · $description"))
+                        ForegroundService.updateTaskStatus(ClawApplication.instance, description)
+                    }
+                    if (result.success) {
+                        ChannelManager.sendMessage(channel, "✓ ${result.summary}", messageID)
+                        taskEventCallback?.invoke(TaskEvent.Completed(result.summary))
+                        releaseTask()
+                        FloatingCircleManager.setSuccessState()
+                    } else {
+                        ChannelManager.sendMessage(channel, "✗ ${result.summary}", messageID)
+                        taskEventCallback?.invoke(TaskEvent.Failed(result.summary))
+                        releaseTask()
+                        FloatingCircleManager.setErrorState()
+                    }
+                    ForegroundService.resetToIdle(ClawApplication.instance)
+                    onTaskFinished()
+                }, "compiled-plan").start()
+                return
+            }
             is PipelineRouter.Route.DirectTool -> {
                 XLog.i(TAG, "Pipeline Tier 1: DirectTool — ${route.toolName}")
                 Thread({

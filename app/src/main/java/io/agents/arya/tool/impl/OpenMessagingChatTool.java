@@ -9,6 +9,7 @@ import io.agents.arya.service.ClawAccessibilityService;
 import io.agents.arya.tool.BaseTool;
 import io.agents.arya.tool.ToolParameter;
 import io.agents.arya.tool.ToolResult;
+import io.agents.arya.tool.UiWait;
 import io.agents.arya.utils.ContactListUiUtils;
 import io.agents.arya.utils.ContactMatchUtils;
 import io.agents.arya.utils.XLog;
@@ -78,11 +79,15 @@ public class OpenMessagingChatTool extends BaseTool {
             }
             LinkedHashSet<String> aliases = ContactMatchUtils.buildNormalizedAliases(contact);
             LinkedHashSet<String> digitAliases = ContactMatchUtils.buildDigitAliases(contact);
+            String beforeLookup = service.getScreenTree();
             if (!ContactListUiUtils.searchOrScrollAndFindAndClick(
                     service, contact, aliases, digitAliases, 3, SETTLE_MS)) {
                 return ToolResult.error("Could not find '" + contact + "' in " + app);
             }
-            Thread.sleep(SETTLE_MS);
+            UiWait.until(1_500L, 80L, () -> {
+                String current = service.getScreenTree();
+                return current != null && !current.equals(beforeLookup);
+            });
 
             String screen = service.getScreenTree();
             String compact = screen == null ? "" : screen.trim().replaceAll("\\s+", " ");
@@ -102,21 +107,16 @@ public class OpenMessagingChatTool extends BaseTool {
 
     private boolean waitForActivePackage(ClawAccessibilityService service, String expected, long timeoutMs)
             throws InterruptedException {
-        long deadline = System.currentTimeMillis() + timeoutMs;
         String expectedLower = expected.toLowerCase(Locale.ROOT);
-        while (System.currentTimeMillis() < deadline) {
+        return UiWait.until(timeoutMs, 80L, () -> {
             AccessibilityNodeInfo root = service.getRootInActiveWindow();
             String current = root != null && root.getPackageName() != null
                     ? root.getPackageName().toString().toLowerCase(Locale.ROOT)
                     : "";
-            if (current.equals(expectedLower)
+            return current.equals(expectedLower)
                     || (expectedLower.contains("telegram") && current.contains("telegram"))
-                    || (expectedLower.contains("telegram") && current.contains("challegram"))) {
-                return true;
-            }
-            Thread.sleep(180L);
-        }
-        return false;
+                    || (expectedLower.contains("telegram") && current.contains("challegram"));
+        });
     }
 
 }

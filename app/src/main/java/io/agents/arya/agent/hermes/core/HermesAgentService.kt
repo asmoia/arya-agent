@@ -25,6 +25,7 @@ import io.agents.arya.agent.TaskBudget
 import io.agents.arya.agent.TaskPromptEnvelope
 import io.agents.arya.agent.TokenMonitor
 import io.agents.arya.agent.TelegramSavedMediaMatcher
+import io.agents.arya.agent.PersianNormalizer
 import io.agents.arya.agent.hermes.memory.HermesMemoryStore
 import io.agents.arya.agent.hermes.session.HermesSessionStore
 import io.agents.arya.agent.hermes.skills.HermesSkillStore
@@ -754,41 +755,42 @@ class HermesAgentService : AgentService {
             return LangChain4jToolBridge.buildToolSpecifications()
         }
 
-        val lower = task.lowercase()
-        val names = linkedSetOf(
-            "get_screen_info", "find_node_info", "open_app", "get_installed_apps",
-            "find_and_tap", "tap_node", "tap", "long_press", "swipe",
-            "scroll_to_find", "input_text", "system_key", "wait", "finish"
-        )
-        when {
-            TelegramSavedMediaMatcher.matches(task) -> {
-                names += "play_telegram_saved_media"
-            }
-            lower.contains("notification") || task.contains("اعلان") || task.contains("نوتیف") -> {
-                names += "get_notifications"
-            }
-            lower.contains("clipboard") || task.contains("کلیپ") -> {
-                names += "clipboard"
-            }
+        val lower = PersianNormalizer.normalize(task)
+        // Phase/domain profiles deliberately expose only 3-8 schemas to E4B.
+        // The registry remains the execution authority; this is prompt breadth,
+        // not an authorization mechanism.
+        val names = when {
+            TelegramSavedMediaMatcher.matches(task) -> linkedSetOf(
+                "play_telegram_saved_media", "open_app", "get_screen_info", "finish"
+            )
+            lower.contains("notification") || lower.contains("اعلان") || lower.contains("نوتیف") -> linkedSetOf(
+                "get_notifications", "get_screen_info", "finish"
+            )
+            lower.contains("clipboard") || lower.contains("کلیپ") -> linkedSetOf(
+                "clipboard", "finish"
+            )
             lower.contains("battery") || lower.contains("wifi") || lower.contains("bluetooth") ||
-                lower.contains("storage") || task.contains("باتری") || task.contains("وای") ||
-                task.contains("بلوتوث") || task.contains("حافظه") -> {
-                names += "get_device_info"
-            }
-            lower.contains("call ") || task.contains("تماس") -> {
-                names += "make_call"
-            }
-            lower.contains("send ") || lower.contains("message") || task.contains("پیام") -> {
-                names += "send_message"
-                names += "open_messaging_chat"
-            }
+                lower.contains("storage") || lower.contains("باتری") || lower.contains("وای") ||
+                lower.contains("بلوتوث") || lower.contains("حافظه") -> linkedSetOf(
+                "get_device_info", "finish"
+            )
+            lower.contains("browser") || lower.contains("chrome") || lower.contains("google") ||
+                lower.contains("مرورگر") || lower.contains("کروم") || lower.contains("گوگل") -> linkedSetOf(
+                "search_browser", "open_app", "get_screen_info", "input_text", "system_key", "wait_for_ui", "finish"
+            )
+            lower.contains("send ") || lower.contains("message") || lower.contains("پیام") -> linkedSetOf(
+                "open_messaging_chat", "send_message", "input_text", "find_and_tap", "get_screen_info", "wait_for_ui", "finish"
+            )
+            lower.contains("call ") || lower.contains("تماس") -> linkedSetOf(
+                "make_call", "open_app", "finish"
+            )
+            else -> linkedSetOf(
+                "open_app", "get_screen_info", "find_and_tap", "tap_node",
+                "input_text", "swipe", "system_key", "finish"
+            )
         }
-        if (lower.contains("browser") || lower.contains("chrome") || lower.contains("google") ||
-            task.contains("مرورگر") || task.contains("کروم") || task.contains("گوگل")) {
-            names += "search_browser"
-        }
-        if (task.contains("هواوی") || lower.contains("emui")) names += "emui_settings"
-        if (task.contains("شمسی") || lower.contains("shamsi")) names += "shamsi_calendar"
+        if (lower.contains("هواوی") || lower.contains("emui")) names += "emui_settings"
+        if (lower.contains("شمسی") || lower.contains("shamsi")) names += "shamsi_calendar"
 
         val selected = LangChain4jToolBridge.buildToolSpecifications(names)
         XLog.i(TAG, "Local tool profile: ${selected.size}/${names.size} schemas for '${task.take(60)}'")

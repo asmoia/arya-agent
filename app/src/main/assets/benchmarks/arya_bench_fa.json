@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "notes": "Initial local benchmark corpus. Each case records expected route and LLM budget.",
+  "cases": [
+    {"id":"open_telegram","text":"تلگرام رو باز کن","route":"direct_or_compiled","max_llm_calls":0},
+    {"id":"battery","text":"باتریم چنده؟","route":"direct_tool","max_llm_calls":0},
+    {"id":"notifications","text":"اعلان های جدیدم رو بخون","route":"direct_tool","max_llm_calls":0},
+    {"id":"browser_search","text":"در گوگل قیمت دلار رو سرچ کن","route":"direct_tool","max_llm_calls":0},
+    {"id":"telegram_message","text":"تلگرام رو باز کن و به علی بگو دیر میام","route":"compiled_plan","max_llm_calls":0},
+    {"id":"visible_chat_summary","text":"پیام های جدید کانال خبر فوری در تلگرام رو خلاصه کن","route":"prime_then_agent","max_llm_calls":1},
+    {"id":"unknown_ui","text":"داخل برنامه باز شده گزینه مناسب برای فعال کردن حالت شب رو پیدا کن","route":"agent_loop","max_llm_calls":3}
+  ]
+}

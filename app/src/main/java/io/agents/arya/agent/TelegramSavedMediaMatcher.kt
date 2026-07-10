@@ -13,23 +13,14 @@ package io.agents.arya.agent
 object TelegramSavedMediaMatcher {
 
     fun matches(task: String): Boolean {
-        val normalized = task.lowercase()
-        val telegram = normalized.contains("telegram") || task.contains("تلگرام")
-        val saved = normalized.contains("saved message") ||
-            normalized.contains("saved messages") ||
-            normalized.contains("saved") ||
-            task.contains("سیو") ||
-            task.contains("ذخیره")
-        val playback = normalized.contains("play") ||
-            normalized.contains("music") ||
-            normalized.contains("song") ||
-            normalized.contains("audio") ||
-            normalized.contains("voice") ||
-            task.contains("پلی") ||
-            task.contains("پخش") ||
-            task.contains("آهنگ") ||
-            task.contains("موسیقی") ||
-            task.contains("ویس")
+        val normalized = PersianNormalizer.normalize(task)
+        val telegram = normalized.contains("telegram") || normalized.contains("تلگرام")
+        val saved = normalized.contains("saved message") || normalized.contains("saved messages") ||
+            normalized.contains("saved") || normalized.contains("سیو") || normalized.contains("ذخیره")
+        val playback = normalized.contains("play") || normalized.contains("music") ||
+            normalized.contains("song") || normalized.contains("audio") || normalized.contains("voice") ||
+            normalized.contains("پلی") || normalized.contains("پخش") || normalized.contains("آهنگ") ||
+            normalized.contains("موسیقی") || normalized.contains("ویس")
         return telegram && saved && playback
     }
 }

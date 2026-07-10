@@ -64,10 +64,11 @@ object FastTaskMatchers {
     )
 
     fun match(task: String): ToolMatch? {
-        matchPersianSend(task)?.let { return it }
-        matchBrowserSearch(task)?.let { return it }
-        matchSimplePersianControl(task)?.let { return it }
-        matchSimplePersianOpenApp(task)?.let { return it }
+        val normalized = PersianNormalizer.normalize(task)
+        matchPersianSend(normalized)?.let { return it }
+        matchBrowserSearch(normalized)?.let { return it }
+        matchSimplePersianControl(normalized)?.let { return it }
+        matchSimplePersianOpenApp(normalized)?.let { return it }
         return null
     }
 
@@ -103,7 +104,8 @@ object FastTaskMatchers {
 
     /** A named Telegram group/channel can be opened deterministically before one bounded summary turn. */
     fun matchChatAnalysis(task: String): ChatAnalysisMatch? {
-        val match = persianChatAnalysis.matchEntire(task) ?: englishChatAnalysis.matchEntire(task) ?: return null
+        val normalized = PersianNormalizer.normalize(task)
+        val match = persianChatAnalysis.matchEntire(normalized) ?: englishChatAnalysis.matchEntire(normalized) ?: return null
         val chat = match.groupValues[1].trim()
         val appRaw = match.groupValues[2]
         if (chat.isBlank() || chat.length > 100) return null
