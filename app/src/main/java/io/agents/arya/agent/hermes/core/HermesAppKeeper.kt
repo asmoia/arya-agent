@@ -71,7 +71,7 @@ object HermesAppKeeper : ComponentCallbacks2 {
             val current = taskDepth.get()
             val next = nextDepthAfterEnd(current)
             if (next == null) {
-                XLog.w(TAG, "onTaskEnd ignored without an active task lease (depth=$current)")
+                XLog.d(TAG, "onTaskEnd ignored without an active task lease (depth=$current)")
                 return
             }
             if (!taskDepth.compareAndSet(current, next)) continue
