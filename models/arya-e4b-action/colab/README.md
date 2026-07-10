@@ -12,8 +12,7 @@ https://colab.research.google.com/github/asmoia/arya-agent/blob/main/models/arya
 2. Select **Runtime → Change runtime type → GPU**.
 3. Accept the license/terms for the trainable E4B Transformers checkpoint.
 4. Add `HF_TOKEN` in **Colab Secrets**.
-5. Set `MODEL_ID` to that trainable checkpoint. The Android `.litertlm` file is
-   not a fine-tuning base.
+5. The notebook defaults to `google/gemma-4-E4B-it`. Keep it unless you intentionally choose another trainable E4B checkpoint. The Android `.litertlm` file is not a fine-tuning base.
 6. Leave `SMOKE_ONLY=True` for the first run.
 7. Run the cells in order.
 8. Inspect GPU VRAM and training output.
