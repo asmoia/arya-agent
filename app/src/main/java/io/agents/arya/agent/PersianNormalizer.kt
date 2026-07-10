@@ -20,7 +20,8 @@ object PersianNormalizer {
             .replace('ك', 'ک')
             .replace('\u200c', ' ')
             .replace(Regex("[ًٌٍَُِّْ]"), "")
-            .replace(Regex("[،؛]"), " ")
+            // Keep punctuation intact: it can be part of a message body. Matchers
+            // already accept Persian/English separators where command grammar needs it.
             .replace(Regex("\\s+"), " ")
             .trim()
             .lowercase()
