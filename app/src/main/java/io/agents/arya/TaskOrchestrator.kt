@@ -320,7 +320,7 @@ class TaskOrchestrator(
         // Agent creation/config refresh is deliberately lazy: all direct routes
         // above have already returned, so a fast task never pays model startup.
         val requestedConfig = agentConfigProvider()
-        if (requestedConfig.provider == LlmProvider.LOCAL &&
+        if (requestedConfig.provider.isLocal &&
             LocalModelManager.isRetiredHeavyLocalModel(requestedConfig.baseUrl)
         ) {
             val message = "Large local models are disabled in Fast Local mode. Use a deterministic command or configure optional Cloud AI."
@@ -343,7 +343,7 @@ class TaskOrchestrator(
                 agentService.updateConfig(config)
             }
         } catch (e: Exception) {
-            if (agentConfigProvider().provider == LlmProvider.LOCAL) {
+            if (agentConfigProvider().provider.isLocal) {
                 LocalInferenceCoordinator.release(LocalInferenceOwner.TASK)
             }
             XLog.e(TAG, "Failed to prepare AgentService", e)
@@ -554,7 +554,7 @@ class TaskOrchestrator(
      */
     private fun localAgentFallbackBlockReason(): String? {
         val config = agentConfigProvider()
-        if (config.provider != LlmProvider.LOCAL) return null
+        if (!config.provider.isLocal) return null
         if (config.baseUrl.isBlank()) return "No local model is configured for fallback."
         return LocalRuntimePolicy.checkAdmission(
             ClawApplication.instance,

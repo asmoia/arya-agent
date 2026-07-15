@@ -140,6 +140,25 @@ object LocalRuntimePolicy {
         return path.contains("e4b") || path.contains("4b-it") || path.contains("gemma-4-4b")
     }
 
+    /** BitNet / GGUF models served by the llama.cpp backend. */
+    fun isBitNet(modelPath: String): Boolean {
+        val path = modelPath.lowercase()
+        return path.contains("bitnet") || path.contains("gguf") ||
+            path.contains("bonsai") || path.contains("ternary")
+    }
+
+    /** BitNet 2B needs ~1.2 GB for model weights + ~0.5 GB runtime = ~1.7 GB total */
+    private const val BITNET_HARD_MIN_FREE_MB = 2_000L
+    private const val BITNET_FULL_FREE_MB = 3_000L
+
+    /** Override maxNumTokens for BitNet — larger context is affordable. */
+    fun maxNumTokensBitNet(owner: LocalInferenceOwner): Int = when (owner) {
+        LocalInferenceOwner.TASK -> 2_048
+        LocalInferenceOwner.CHAT -> 4_096
+        LocalInferenceOwner.BACKGROUND -> 1_024
+        LocalInferenceOwner.NONE -> 2_048
+    }
+
     private fun availableMemoryMb(context: Context): Long {
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return Long.MAX_VALUE
         val info = ActivityManager.MemoryInfo().also(manager::getMemoryInfo)

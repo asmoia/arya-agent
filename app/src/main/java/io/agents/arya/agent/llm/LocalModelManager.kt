@@ -75,18 +75,31 @@ object LocalModelManager {
     }
 
     /**
-     * Arya no longer ships or auto-downloads a large local model. E4B/E2B made
-     * startup and common phone actions slower than the deterministic Fast Local
-     * path. Custom models remain an explicit advanced setting, but are never
-     * auto-selected or downloaded.
+     * Arya ships BitNet b1.58 2B4T as the recommended on-device model.
+     * E4B/E2B are retired — BitNet is far smaller (~1.2 GB) and faster
+     * on ARM CPUs thanks to ternary weight kernels.
      */
-    val AVAILABLE_MODELS: List<ModelInfo> = emptyList()
+    val AVAILABLE_MODELS: List<ModelInfo> = listOf(
+        ModelInfo(
+            id = "bitnet-b158-2b4t-q4km",
+            displayName = "BitNet 2B (1.58-bit, Q4_K_M)",
+            url = "https://huggingface.co/microsoft/BitNet-b1.58-2B-4T-GGUF/resolve/main/BitNet-b1.58-2B-4T-q4_k_m.gguf",
+            fileName = "BitNet-b1.58-2B-4T-q4_k_m.gguf",
+            sizeBytes = 1_044_481_216L,  // ~1.0 GB
+            minRamGb = 4,
+        ),
+    )
 
-    fun recommendedModel(context: Context): ModelInfo? = null
+    fun recommendedModel(context: Context): ModelInfo? {
+        val deviceRamGb = getDeviceRamGb(context)
+        return AVAILABLE_MODELS.firstOrNull { it.minRamGb <= deviceRamGb }
+    }
 
     /** Blocks retired large Gemma selections left in old app preferences. */
     fun isRetiredHeavyLocalModel(modelPath: String?): Boolean {
         val path = modelPath.orEmpty().lowercase()
+        // BitNet/GGUF models are never retired — they are the new default
+        if (path.contains("bitnet") || path.contains("gguf")) return false
         return path.contains("gemma-4-e4b") || path.contains("gemma4-e4b") ||
             path.contains("gemma-4-e2b") || path.contains("gemma4-e2b") ||
             path.contains("e4b-it") || path.contains("e2b-it")

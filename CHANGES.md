@@ -2,6 +2,20 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v0.5.0 — BitNet on-device inference
+
+- **مدل BitNet b1.58 2B4T** به‌عنوان مدل محلی پیش‌فرض اضافه شد.
+  - وزن‌های ۱.۵۸-بیت (ternary {-1, 0, +1}) — ~۱ گیگابایت حجم
+  - اینفرنس با llama.cpp (JNI) — بدون وابستگی به LiteRT-LM برای این مدل
+  - سازگار با هر مدل GGUF (Qwen, Phi, Bonsai, …)
+- **BitNetLlmClient** جدید: کلاینت LLM مبتنی بر llama.cpp با پشتیبانی streaming و ابزارفراخوانی
+- **BitNetNative**: پل JNI بین Kotlin و llama.cpp
+- معماری LlmProvider ارتقا یافت: `OPENAI | ANTHROPIC | LOCAL | BITNET`
+- LocalModelManager دوباره فعال شد با کاتالوگ BitNet + دانلود از HuggingFace
+- LocalRuntimePolicy: آستانه RAM برای BitNet (~۲ GB آزاد) بسیار پایین‌تر از E4B
+- پرامپت ChatML برای مدل‌های کوچک بهینه شد
+- پشتیبانی ABI: arm64-v8a, x86_64
+
 ## v0.4.5 — Fast Local default
 
 - Gemma E4B/E2B auto-download، auto-select و runtime use بازنشسته شدند.

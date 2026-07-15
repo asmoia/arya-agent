@@ -321,7 +321,7 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
         // A local LiteRT retry replays the same costly native generation. Keep
         // network retries for cloud providers, but surface local failures rather
         // than turning one failure into minutes of apparent thinking.
-        val attempts = if (config.provider == LlmProvider.LOCAL) 1 else MAX_API_RETRIES
+        val attempts = if (config.provider.isLocal) 1 else MAX_API_RETRIES
         for (attempt in 0 until attempts) {
             if (cancelled.get()) throw RuntimeException(ClawApplication.instance.getString(R.string.agent_task_cancelled))
             try {
@@ -505,7 +505,7 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
         val rawUserRequest = parsedPrompt.currentRequest
 
         // Build System Prompt — use optimized prompt for local LLM
-        val basePrompt = if (config.provider == LlmProvider.LOCAL) {
+        val basePrompt = if (config.provider.isLocal) {
             LOCAL_TASK_PROMPT
         } else {
             config.systemPrompt
@@ -516,7 +516,7 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
         val directDeviceDataGuard = DirectDeviceDataGuard.fromTask(rawUserRequest)
 
         // For local LLM, inject matching playbook into system prompt
-        val playbookSection = if (config.provider == LlmProvider.LOCAL) {
+        val playbookSection = if (config.provider.isLocal) {
             val matched = PlaybookManager.match(rawUserRequest)
             if (matched != null) {
                 XLog.i(TAG, "Playbook matched: ${matched.id} for '$rawUserRequest'")
@@ -592,7 +592,7 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
         var iterations = 0
         var totalTokens = 0
         var actualModelName: String? = null  // Track the real model name from API response
-        val maxIterations = if (config.provider == LlmProvider.LOCAL) minOf(config.maxIterations, 8) else config.maxIterations
+        val maxIterations = if (config.provider.isLocal) minOf(config.maxIterations, 8) else config.maxIterations
         val loopHistory = LinkedList<RoundFingerprint>()
         var lastScreenHash = 0
         var previousScreenTexts: Set<String> = emptySet()
@@ -907,7 +907,7 @@ Any UI: open_app → get_screen_info → find_and_tap/input_text/swipe → finis
             taskFuture?.cancel(true)
         } catch (_: Exception) {
         }
-        if (config.provider == LlmProvider.LOCAL && ::llmClient.isInitialized) {
+        if (config.provider.isLocal && ::llmClient.isInitialized) {
             try {
                 llmClient.close()
                 XLog.i(TAG, "cancel: closed local LlmClient to stop generation")

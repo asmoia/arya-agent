@@ -149,7 +149,7 @@ class HermesAgentService : AgentService {
                 }
             } finally {
                 // Keep the Engine warm but release the only LiteRT conversation for Chat.
-                if (::llmClient.isInitialized && config.provider == LlmProvider.LOCAL) {
+                if (::llmClient.isInitialized && config.provider.isLocal) {
                     try { llmClient.close() } catch (e: Exception) { XLog.w(TAG, "task conversation close failed: ${e.message}") }
                 }
                 try {
@@ -247,13 +247,13 @@ class HermesAgentService : AgentService {
             append(directDeviceDataGuard.buildPromptSection())
         }
 
-        val mcpSection = if (config.provider == LlmProvider.LOCAL) {
+        val mcpSection = if (config.provider.isLocal) {
             ""
         } else try {
             io.agents.arya.agent.hermes.mcp.HermesMcpClient.buildPromptSection()
         } catch (_: Exception) { "" }
         // Local models: shorter base prompt = faster TTFT and fewer refusals.
-        val baseIdentity = if (config.provider == LlmProvider.LOCAL) {
+        val baseIdentity = if (config.provider.isLocal) {
             HermesPromptBuilder.ARYA_LOCAL_TASK_IDENTITY
         } else {
             HermesPromptBuilder.ARYA_HERMES_IDENTITY
@@ -262,10 +262,10 @@ class HermesAgentService : AgentService {
             basePrompt = baseIdentity,
             userTask = rawUserRequest,
             // Local E4B: skip memory vault dump (slow + huge). Skills only if matched.
-            includeMemory = config.provider != LlmProvider.LOCAL,
+            includeMemory = !config.provider.isLocal,
             includeSkills = true,
             extraSections = extraGuards + mcpSection,
-            compactTools = config.provider == LlmProvider.LOCAL,
+            compactTools = config.provider.isLocal,
         )
 
         val messages = mutableListOf<ChatMessage>()
@@ -292,7 +292,7 @@ class HermesAgentService : AgentService {
                 val screenTool = ToolRegistry.getInstance().getTool("get_screen_info")
                 val screenResult = screenTool?.execute(emptyMap())
                 if (screenResult != null && screenResult.isSuccess && !screenResult.data.isNullOrBlank()) {
-                    val compactScreen = if (config.provider == LlmProvider.LOCAL) ScreenContextReducer.reduceScreen(screenResult.data!!, rawUserRequest) else screenResult.data!!
+                    val compactScreen = if (config.provider.isLocal) ScreenContextReducer.reduceScreen(screenResult.data!!, rawUserRequest) else screenResult.data!!
                     XLog.i(TAG, "pre-warm screen attached (${compactScreen.length} chars)")
                     "$promptForModel\n\nCurrent screen:\n$compactScreen"
                 } else promptForModel
@@ -331,13 +331,13 @@ class HermesAgentService : AgentService {
         var actualModelName: String? = null
         val policy = HermesRuntimePolicy.resolve(
             userTask = rawUserRequest,
-            providerIsLocal = config.provider == LlmProvider.LOCAL
+            providerIsLocal = config.provider.isLocal
         )
-        val maxIterations = if (config.provider == LlmProvider.LOCAL) policy.maxIterations else minOf(config.maxIterations, policy.maxIterations + 4)
+        val maxIterations = if (config.provider.isLocal) policy.maxIterations else minOf(config.maxIterations, policy.maxIterations + 4)
         // A model that is technically making progress but takes many minutes is
         // still a failed phone-assistant experience. Keep Local mode bounded as
         // a whole task, not only per inference turn.
-        val localTaskDeadlineAt = if (config.provider == LlmProvider.LOCAL) {
+        val localTaskDeadlineAt = if (config.provider.isLocal) {
             System.currentTimeMillis() + when (policy.resolvedMode) {
                 HermesThinkingMode.INSTANT -> 120_000L
                 HermesThinkingMode.THINKING -> 180_000L
@@ -730,7 +730,7 @@ class HermesAgentService : AgentService {
     
     private fun postTurnLearn(sessionId: String, userTask: String, answer: String, usedTools: List<String> = emptyList()) {
         // Do not start a hidden second E4B inference after a local task.
-        if (config.provider == LlmProvider.LOCAL) {
+        if (config.provider.isLocal) {
             XLog.i(TAG, "postTurnLearn skipped for local task")
             return
         }
@@ -754,7 +754,7 @@ class HermesAgentService : AgentService {
      * authority; this only limits what the model is invited to choose this turn.
      */
     private fun selectToolSpecs(task: String): List<dev.langchain4j.agent.tool.ToolSpecification> {
-        if (config.provider != LlmProvider.LOCAL) {
+        if (!config.provider.isLocal) {
             return LangChain4jToolBridge.buildToolSpecifications()
         }
 
@@ -806,7 +806,7 @@ class HermesAgentService : AgentService {
         iteration: Int,
         taskDeadlineAt: Long,
     ): LlmResponse {
-        val configuredTimeoutMs = if (config.provider == LlmProvider.LOCAL) {
+        val configuredTimeoutMs = if (config.provider.isLocal) {
             LOCAL_TURN_TIMEOUT_MS
         } else {
             CLOUD_TURN_TIMEOUT_MS
@@ -839,7 +839,7 @@ class HermesAgentService : AgentService {
             inferenceExecutor.shutdownNow()
             inferenceExecutor = newInferenceExecutor()
             throw RuntimeException(
-                "${if (config.provider == LlmProvider.LOCAL) "مدل محلی" else "مدل ابری"} " +
+                "${if (config.provider.isLocal) "مدل محلی" else "مدل ابری"} " +
                     "در ${timeoutMs / 1000} ثانیه پاسخ نداد؛ task متوقف شد. " +
                     "برای سرعت بیشتر مدل سبک‌تر یا حالت Instant را انتخاب کن.",
                 timeout
@@ -860,7 +860,7 @@ class HermesAgentService : AgentService {
         // Retrying a remote transient failure can help. Retrying a local engine
         // failure usually repeats the same expensive native generation and was a
         // major source of multi-minute "thinking" states, so fail it fast.
-        val attempts = if (config.provider == LlmProvider.LOCAL) 1 else 3
+        val attempts = if (config.provider.isLocal) 1 else 3
         repeat(attempts) { attempt ->
             if (cancelled.get()) throw RuntimeException("cancelled")
             try {

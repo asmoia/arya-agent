@@ -54,10 +54,10 @@ android {
         applicationId = "io.agents.arya"
         minSdk = 28
         targetSdk = 36
-        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 47)
-        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "0.4.5")
+        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 50)
+        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "0.5.0")
         buildConfigField("String", "VERSION_INFO", getVersionGit())
-        buildConfigField("String", "APP_ORIGIN", "\"آریا · Hermes core | github.com/asmoia/arya-agent\"")
+        buildConfigField("String", "APP_ORIGIN", "\"آریا · BitNet + Hermes | github.com/asmoia/arya-agent\"")
         buildConfigField("String", "BUILD_FINGERPRINT", "\"${getBuildFingerprint()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -93,6 +93,27 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+    }
+
+    // ---- BitNet / llama.cpp native build ----
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+    defaultConfig {
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DCMAKE_BUILD_TYPE=Release",
+                )
+            }
+        }
     }
 
     packaging {

@@ -3,7 +3,10 @@
 
 package io.agents.arya.agent
 
-enum class LlmProvider { OPENAI, ANTHROPIC, LOCAL }
+enum class LlmProvider { OPENAI, ANTHROPIC, LOCAL, BITNET }
+
+/** Both LOCAL (LiteRT-LM) and BITNET (llama.cpp) are on-device providers. */
+val LlmProvider.isLocal: Boolean get() = this == LlmProvider.LOCAL || this == LlmProvider.BITNET
 
 data class AgentConfig(
     val apiKey: String,

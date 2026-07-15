@@ -59,6 +59,8 @@ data class ResolvedModelConfig(
             .applyGlobalPrompt(AgentConfig.DEFAULT_SYSTEM_PROMPT)
         val hermesEnabled = KVUtils.isHermesEmbeddedEnabled()
         return if (activeMode == ActiveModelMode.LOCAL) {
+            // Detect BitNet GGUF models — they use the llama.cpp backend, not LiteRT-LM
+            val isBitNet = LocalRuntimePolicy.isBitNet(local.modelPath)
             AgentConfig(
                 apiKey = "",
                 baseUrl = local.modelPath,
@@ -66,7 +68,7 @@ data class ResolvedModelConfig(
                 systemPrompt = finalSystemPrompt,
                 maxIterations = maxIterations,
                 temperature = temperature,
-                provider = LlmProvider.LOCAL,
+                provider = if (isBitNet) LlmProvider.BITNET else LlmProvider.LOCAL,
                 streaming = streaming,
                 hermesEnabled = hermesEnabled
             )
