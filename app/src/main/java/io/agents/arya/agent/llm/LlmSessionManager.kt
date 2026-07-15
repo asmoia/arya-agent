@@ -151,16 +151,48 @@ object LlmSessionManager {
                 return null
             }
 
-            val context = io.agents.arya.ClawApplication.instance
-            LocalModelRuntime.runSingleShot(
-                context = context,
-                modelPath = modelPath,
-                systemPrompt = systemPrompt,
-                prompt = prompt,
-                temperature = temperature,
-            ).text
+            // Route GGUF/BitNet models through llama.cpp, not LiteRT-LM
+            if (LocalRuntimePolicy.isBitNet(modelPath)) {
+                singleShotBitNet(modelPath, systemPrompt, prompt, temperature)
+            } else {
+                val context = io.agents.arya.ClawApplication.instance
+                LocalModelRuntime.runSingleShot(
+                    context = context,
+                    modelPath = modelPath,
+                    systemPrompt = systemPrompt,
+                    prompt = prompt,
+                    temperature = temperature,
+                ).text
+            }
         } catch (e: Exception) {
             XLog.w(TAG, "singleShotLocal failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Single-shot GGUF model call using BitNetLlmClient (llama.cpp backend).
+     */
+    private fun singleShotBitNet(modelPath: String, systemPrompt: String, prompt: String, temperature: Double): String? {
+        return try {
+            val config = io.agents.arya.agent.AgentConfig(
+                apiKey = "local",
+                baseUrl = modelPath,
+                modelName = modelPath.substringAfterLast('/').substringBeforeLast('.'),
+                systemPrompt = systemPrompt,
+                temperature = temperature,
+                provider = io.agents.arya.agent.LlmProvider.BITNET,
+            )
+            val client = BitNetLlmClient(config)
+            client.use { c ->
+                val messages = listOf<ChatMessage>(
+                    SystemMessage.from(systemPrompt),
+                    UserMessage.from(prompt),
+                )
+                c.chat(messages, emptyList()).text
+            }
+        } catch (e: Exception) {
+            XLog.w(TAG, "singleShotBitNet failed: ${e.message}")
             null
         }
     }

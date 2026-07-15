@@ -11,7 +11,11 @@ import dev.langchain4j.data.message.AiMessage
 import dev.langchain4j.data.message.SystemMessage
 import dev.langchain4j.data.message.UserMessage
 import io.agents.arya.agent.ModelPricing
+import io.agents.arya.agent.AgentConfig
+import io.agents.arya.agent.LlmProvider
+import io.agents.arya.agent.llm.BitNetLlmClient
 import io.agents.arya.agent.llm.LlmClient
+import io.agents.arya.agent.llm.LlmResponse
 import io.agents.arya.agent.llm.LlmSessionManager
 import io.agents.arya.agent.llm.LocalModelManager
 import io.agents.arya.agent.llm.LocalModelRuntime
@@ -21,6 +25,7 @@ import io.agents.arya.agent.llm.LocalBackendHealth
 import io.agents.arya.agent.llm.LocalInferenceOwner
 import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.agent.llm.ModelConfigRepository
+import io.agents.arya.agent.llm.StreamingListener
 import io.agents.arya.utils.XLog
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
@@ -60,6 +65,10 @@ class ChatSessionController(
     private var conversation: Conversation? = null
     private var isModelReady = false
 
+    // GGUF/BitNet (llama.cpp) local chat
+    private var bitnetClient: BitNetLlmClient? = null
+    private val localChatHistory = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
+
     private var cloudClient: LlmClient? = null
     private var cloudModelName: String? = null
     private val cloudHistory = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
@@ -67,6 +76,10 @@ class ChatSessionController(
     private var suppressNextCloudSwitchMessage: Boolean = false
 
     fun isModelReady(): Boolean = isModelReady
+
+    /** True when the active local model is a GGUF file served by llama.cpp. */
+    private fun isBitNetModel(modelPath: String?): Boolean =
+        !modelPath.isNullOrBlank() && LocalRuntimePolicy.isBitNet(modelPath)
 
     fun loadModelIfReady(
         conversationId: String? = null,
@@ -130,13 +143,16 @@ class ChatSessionController(
             setButtonsEnabled(false)
             return
         }
-        XLog.d(TAG, "loadModelIfReady: stored=$modelPath loaded=$loadedModelPath engine=${engine != null}")
+        XLog.d(TAG, "loadModelIfReady: stored=$modelPath loaded=$loadedModelPath engine=${engine != null} bitnet=${bitnetClient != null}")
 
-        if (modelPath.isNotEmpty() && engine != null && modelPath != loadedModelPath) {
+        if (modelPath.isNotEmpty() && (engine != null || bitnetClient != null) && modelPath != loadedModelPath) {
             XLog.d(TAG, "loadModelIfReady: model changed ($loadedModelPath -> $modelPath), closing conversation")
             val oldConv = conversation
+            val oldBitnet = bitnetClient
             engine = null
             conversation = null
+            bitnetClient = null
+            localChatHistory.clear()
             isModelReady = false
             loadedModelPath = null
             executor.submit {
@@ -144,9 +160,13 @@ class ChatSessionController(
                     oldConv?.close()
                 } catch (e: Exception) {
                     XLog.w(TAG, "loadModelIfReady: conv close error", e)
-                } finally {
-                    LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
                 }
+                try {
+                    oldBitnet?.close()
+                } catch (e: Exception) {
+                    XLog.w(TAG, "loadModelIfReady: bitnet close error", e)
+                }
+                LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
                 postToMain { loadModelIfReady() }
             }
             return
@@ -233,7 +253,13 @@ class ChatSessionController(
 
         // A single load entry-point prevents onResume + syncUiToActiveModel from
         // issuing two createConversation calls for the one-session LiteRT Engine.
-        if (currentModelPath != loadedModelPath || !isModelReady || conversation == null) {
+        // For GGUF/BitNet models, bitnetClient replaces the LiteRT conversation.
+        val needsReload = if (isBitNetModel(currentModelPath)) {
+            currentModelPath != loadedModelPath || !isModelReady || bitnetClient == null
+        } else {
+            currentModelPath != loadedModelPath || !isModelReady || conversation == null
+        }
+        if (needsReload) {
             loadModelIfReady(conversationId, visibleMessages)
         } else {
             updateLocalModelStatus(currentModelPath)
@@ -298,33 +324,54 @@ class ChatSessionController(
                         onPersistConversation()
                     }
                 } else {
-                    val currentConversation = conversation
-                    if (currentConversation == null || !isModelReady) {
-                        throw IllegalStateException("Local model is still loading. Try again in a moment.")
-                    }
-                    LocalInferenceCoordinator.markBusy(LocalInferenceOwner.CHAT)
-                    val response = try {
-                        currentConversation.sendMessage(text)
-                    } finally {
-                        LocalInferenceCoordinator.markReady(
-                            LocalInferenceOwner.CHAT,
-                            LocalModelRuntime.currentBackendLabel(loadedModelPath),
-                        )
-                    }
-                    val responseText = response?.toString() ?: "(no response)"
-                    val inputTokensEst = text.length / 4 + 1
-                    val outputTokensEst = responseText.length / 4 + 1
-                    val modelPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
-                    val localModelTag = localModelTag(modelPath)
-                    postToMain {
-                        replaceTypingIndicator(responseText, localModelTag)
-                        uiState.isAwaitingReply.value = false
-                        uiState.sessionTokens.value += inputTokensEst + outputTokensEst
-                        onPersistConversation()
+                    // Local model — route to BitNetLlmClient (GGUF) or LiteRT Conversation
+                    if (bitnetClient != null) {
+                        // ---- GGUF / BitNet path ----
+                        localChatHistory.add(UserMessage.from(text))
+                        val llmResponse = bitnetClient!!.chat(localChatHistory, emptyList())
+                        val responseText = llmResponse.text ?: "(no response)"
+                        localChatHistory.add(AiMessage.from(responseText))
+                        val inputTokensEst = text.length / 4 + 1
+                        val outputTokensEst = responseText.length / 4 + 1
+                        val modelPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
+                        val localModelTag = localModelTag(modelPath)
+                        postToMain {
+                            replaceTypingIndicator(responseText, localModelTag)
+                            uiState.isAwaitingReply.value = false
+                            uiState.sessionTokens.value += inputTokensEst + outputTokensEst
+                            onPersistConversation()
+                        }
+                    } else {
+                        // ---- LiteRT-LM path ----
+                        val currentConversation = conversation
+                        if (currentConversation == null || !isModelReady) {
+                            throw IllegalStateException("Local model is still loading. Try again in a moment.")
+                        }
+                        LocalInferenceCoordinator.markBusy(LocalInferenceOwner.CHAT)
+                        val response = try {
+                            currentConversation.sendMessage(text)
+                        } finally {
+                            LocalInferenceCoordinator.markReady(
+                                LocalInferenceOwner.CHAT,
+                                LocalModelRuntime.currentBackendLabel(loadedModelPath),
+                            )
+                        }
+                        val responseText = response?.toString() ?: "(no response)"
+                        val inputTokensEst = text.length / 4 + 1
+                        val outputTokensEst = responseText.length / 4 + 1
+                        val modelPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
+                        val localModelTag = localModelTag(modelPath)
+                        postToMain {
+                            replaceTypingIndicator(responseText, localModelTag)
+                            uiState.isAwaitingReply.value = false
+                            uiState.sessionTokens.value += inputTokensEst + outputTokensEst
+                            onPersistConversation()
+                        }
                     }
                 }
             } catch (e: Exception) {
                 val localPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
+                // GPU fallback only applies to LiteRT-LM models (not GGUF/BitNet which is CPU-only)
                 if (conversation != null &&
                     !LocalRuntimePolicy.isE4b(localPath) &&
                     LocalModelRuntime.isGpuBackendFailure(e)
@@ -415,16 +462,24 @@ class ChatSessionController(
             closeLocalConversation()
             val modelPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
             if (modelPath.isNotEmpty()) {
-                val lease = LocalModelRuntime.openConversation(
-                    context = activity,
-                    modelPath = modelPath,
-                    conversationConfig = buildConversationConfig(),
-                    owner = LocalInferenceOwner.CHAT,
-                    maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
-                )
-                engine = lease.engine
-                conversation = lease.conversation
-                isModelReady = true
+                if (isBitNetModel(modelPath)) {
+                    // GGUF: just reset chat history
+                    localChatHistory.clear()
+                    localChatHistory.add(SystemMessage.from(BASE_SYSTEM_PROMPT))
+                    isModelReady = true
+                } else {
+                    // LiteRT: create new conversation
+                    val lease = LocalModelRuntime.openConversation(
+                        context = activity,
+                        modelPath = modelPath,
+                        conversationConfig = buildConversationConfig(),
+                        owner = LocalInferenceOwner.CHAT,
+                        maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
+                    )
+                    engine = lease.engine
+                    conversation = lease.conversation
+                    isModelReady = true
+                }
             }
             postToMain {
                 addSystem("New conversation started.")
@@ -438,22 +493,41 @@ class ChatSessionController(
             rebuildCloudHistoryFromVisibleMessages()
             return
         }
-        if (engine != null) {
+        val modelPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
+        if (isBitNetModel(modelPath)) {
+            // GGUF: rebuild chat history from visible messages
+            localChatHistory.clear()
+            val recentMsgs = messages.takeLast(5)
+            val systemPrompt = ConversationCompactor.buildRestoredSystemPrompt(activity, conversationId, recentMsgs)
+            localChatHistory.add(SystemMessage.from(systemPrompt ?: BASE_SYSTEM_PROMPT))
+            messages.forEach { msg ->
+                when (msg.role) {
+                    ChatMessage.Role.USER -> localChatHistory.add(UserMessage.from(msg.content))
+                    ChatMessage.Role.ASSISTANT -> localChatHistory.add(AiMessage.from(msg.content))
+                    else -> Unit
+                }
+            }
+            isModelReady = true
+            postToMain {
+                setButtonsEnabled(true)
+                addSystem("Conversation restored.")
+            }
+        } else if (engine != null) {
             executor.submit {
                 try {
                     closeLocalConversation()
                     val recentMsgs = messages.takeLast(5)
                     val systemPrompt = ConversationCompactor.buildRestoredSystemPrompt(activity, conversationId, recentMsgs)
-                    val modelPath = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
+                    val mp = ModelConfigRepository.snapshot().local.modelPath.ifEmpty { loadedModelPath.orEmpty() }
                     val lease = LocalModelRuntime.openConversation(
                         context = activity,
-                        modelPath = modelPath,
+                        modelPath = mp,
                         conversationConfig = ConversationConfig(
                             systemInstruction = Contents.of(systemPrompt),
                             samplerConfig = SamplerConfig(topK = 64, topP = 0.95, temperature = 0.7)
                         ),
                         owner = LocalInferenceOwner.CHAT,
-                        maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
+                        maxNumTokens = LocalRuntimePolicy.maxNumTokens(mp, LocalInferenceOwner.CHAT),
                     )
                     engine = lease.engine
                     conversation = lease.conversation
@@ -479,26 +553,12 @@ class ChatSessionController(
             XLog.i(TAG, "loadModel: acquiring shared runtime for $modelPath")
             closeLocalConversation()
 
-            val lease = LocalModelRuntime.openConversation(
-                context = activity,
-                modelPath = modelPath,
-                conversationConfig = buildConversationConfig(restoredSystemPrompt),
-                owner = LocalInferenceOwner.CHAT,
-                maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
-            )
-            engine = lease.engine
-            XLog.i(TAG, "loadModel: engine ready (${lease.backendLabel})")
-            conversation = lease.conversation
-
-            isModelReady = true
-            loadedModelPath = modelPath
-            postToMain {
-                if (!isLocalUiStillExpected(modelPath, generation)) {
-                    XLog.i(TAG, "Ignoring stale local UI update for $modelPath (generation=$generation)")
-                    return@postToMain
-                }
-                updateLocalModelStatus(modelPath)
-                setButtonsEnabled(true)
+            if (isBitNetModel(modelPath)) {
+                // ---- GGUF / BitNet path: use llama.cpp via BitNetLlmClient ----
+                loadBitNetModel(modelPath, generation, restoredSystemPrompt)
+            } else {
+                // ---- LiteRT-LM path: use Engine + Conversation ----
+                loadLiteRtModel(modelPath, generation, restoredSystemPrompt)
             }
         } catch (e: Exception) {
             LocalInferenceCoordinator.markFailed(LocalInferenceOwner.CHAT, e)
@@ -530,10 +590,110 @@ class ChatSessionController(
         }
     }
 
+    /**
+     * Load a GGUF model using BitNetLlmClient (llama.cpp backend).
+     * This path is used for Qwen, BitNet, and any .gguf model files.
+     */
+    private fun loadBitNetModel(
+        modelPath: String,
+        generation: Long,
+        restoredSystemPrompt: String? = null,
+    ) {
+        XLog.i(TAG, "loadBitNetModel: loading GGUF model from $modelPath")
+
+        // Verify the file exists before trying to load
+        val modelFile = java.io.File(modelPath)
+        if (!modelFile.exists()) {
+            throw IllegalStateException("GGUF model file not found: $modelPath")
+        }
+        if (modelFile.length() < 1_048_576) {
+            throw IllegalStateException("GGUF model file too small (${modelFile.length()} bytes), likely corrupted: $modelPath")
+        }
+
+        // Check RAM admission
+        LocalRuntimePolicy.checkBitNetAdmission(activity, modelPath, LocalInferenceOwner.CHAT)?.let {
+            throw IllegalStateException(it)
+        }
+
+        val config = AgentConfig(
+            apiKey = "local",
+            baseUrl = modelPath,
+            modelName = modelPath.substringAfterLast('/').substringBeforeLast('.'),
+            systemPrompt = restoredSystemPrompt ?: BASE_SYSTEM_PROMPT,
+            maxIterations = 60,
+            temperature = 0.7,
+            provider = LlmProvider.BITNET,
+        )
+
+        val client = BitNetLlmClient(config)
+        // Trigger model load by calling ensureModel (via a lightweight call)
+        // BitNetLlmClient lazily loads on first chat(), but we want to verify it works now
+        val testHandle = io.agents.arya.agent.llm.BitNetNative.loadModel(modelPath, nCtx = 2048, nThreads = 0)
+        if (testHandle <= 0) {
+            throw IllegalStateException("Failed to load GGUF model: $modelPath (handle=$testHandle). Ensure the file is a valid GGUF model.")
+        }
+        // Free the test handle — BitNetLlmClient will load its own
+        io.agents.arya.agent.llm.BitNetNative.freeModel(testHandle)
+
+        bitnetClient = client
+        localChatHistory.clear()
+        localChatHistory.add(SystemMessage.from(restoredSystemPrompt ?: BASE_SYSTEM_PROMPT))
+
+        isModelReady = true
+        loadedModelPath = modelPath
+        XLog.i(TAG, "loadBitNetModel: GGUF model ready: $modelPath")
+
+        postToMain {
+            if (!isLocalUiStillExpected(modelPath, generation)) {
+                XLog.i(TAG, "Ignoring stale local UI update for $modelPath (generation=$generation)")
+                return@postToMain
+            }
+            updateLocalModelStatus(modelPath)
+            setButtonsEnabled(true)
+        }
+    }
+
+    /**
+     * Load a model using LiteRT-LM (Engine + Conversation).
+     * This path is used for the old Gemma E4B models (.task files).
+     */
+    private fun loadLiteRtModel(
+        modelPath: String,
+        generation: Long,
+        restoredSystemPrompt: String? = null,
+    ) {
+        val lease = LocalModelRuntime.openConversation(
+            context = activity,
+            modelPath = modelPath,
+            conversationConfig = buildConversationConfig(restoredSystemPrompt),
+            owner = LocalInferenceOwner.CHAT,
+            maxNumTokens = LocalRuntimePolicy.maxNumTokens(modelPath, LocalInferenceOwner.CHAT),
+        )
+        engine = lease.engine
+        XLog.i(TAG, "loadLiteRtModel: engine ready (${lease.backendLabel})")
+        conversation = lease.conversation
+
+        isModelReady = true
+        loadedModelPath = modelPath
+        postToMain {
+            if (!isLocalUiStillExpected(modelPath, generation)) {
+                XLog.i(TAG, "Ignoring stale local UI update for $modelPath (generation=$generation)")
+                return@postToMain
+            }
+            updateLocalModelStatus(modelPath)
+            setButtonsEnabled(true)
+        }
+    }
+
     private fun retryLocalChatOnCpu(modelPath: String, text: String): String {
         require(modelPath.isNotEmpty()) { "Local model path missing for CPU retry" }
         require(!LocalRuntimePolicy.isE4b(modelPath)) {
             "Gemma 4 E4B CPU fallback is disabled for interactive use."
+        }
+        // GGUF/BitNet models are already CPU-only via llama.cpp — no GPU fallback needed
+        if (isBitNetModel(modelPath)) {
+            XLog.w(TAG, "retryLocalChatOnCpu: GGUF model is already CPU-only, cannot retry")
+            throw IllegalStateException("GGUF model inference failed (CPU-only)")
         }
         closeLocalConversation()
         LocalModelRuntime.forceCpuEngine(
@@ -629,7 +789,11 @@ class ChatSessionController(
         }
         val modelInfo = LocalModelManager.AVAILABLE_MODELS.find { modelPath.endsWith(it.fileName) }
         val modelName = modelInfo?.displayName ?: modelPath.substringAfterLast('/').substringBeforeLast('.')
-        val backendLabel = LocalModelRuntime.currentBackendLabel(modelPath) ?: "On-device"
+        val backendLabel = if (isBitNetModel(modelPath)) {
+            "llama.cpp"
+        } else {
+            LocalModelRuntime.currentBackendLabel(modelPath) ?: "On-device"
+        }
         val budgetLabel = LocalRuntimePolicy.memoryBudget(activity, modelPath, LocalInferenceOwner.CHAT)
             .takeIf { LocalRuntimePolicy.isE4b(modelPath) && it.mode != LocalRuntimePolicy.E4bMemoryMode.FULL }
             ?.let { " · ${it.mode.label}" }
@@ -646,7 +810,8 @@ class ChatSessionController(
                 setButtonsEnabled(false)
                 return
             }
-            if (loadedModelPath == modelPath && isModelReady && cloudClient == null) {
+            if (loadedModelPath == modelPath && isModelReady && cloudClient == null &&
+                (bitnetClient != null || conversation != null)) {
                 updateLocalModelStatus(modelPath)
                 setButtonsEnabled(true)
                 return
@@ -661,7 +826,7 @@ class ChatSessionController(
             setButtonsEnabled(false)
             return
         }
-        if (conversation != null) {
+        if (conversation != null || bitnetClient != null) {
             closeLocalConversation()
             isModelReady = false
         }
@@ -683,7 +848,11 @@ class ChatSessionController(
 
     private fun localModelTag(modelPath: String): String {
         val baseName = modelPath.takeIf { it.isNotEmpty() }?.let { File(it).nameWithoutExtension } ?: "Local"
-        val backendLabel = LocalModelRuntime.currentBackendLabel(modelPath)
+        val backendLabel = if (isBitNetModel(modelPath)) {
+            "llama.cpp"
+        } else {
+            LocalModelRuntime.currentBackendLabel(modelPath)
+        }
         return if (backendLabel.isNullOrBlank() || backendLabel.equals("GPU", ignoreCase = true)) {
             baseName
         } else {
@@ -693,15 +862,26 @@ class ChatSessionController(
 
     /** Close Arya's native chat session and surrender its single-session lease. */
     private fun closeLocalConversation(releaseLease: Boolean = true) {
+        // Close LiteRT conversation
         val current = conversation
         conversation = null
         try {
             current?.close()
         } catch (e: Exception) {
             XLog.w(TAG, "closeLocalConversation: close error", e)
-        } finally {
-            if (releaseLease) LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
         }
+
+        // Close BitNet/llama.cpp client
+        val currentBitnet = bitnetClient
+        bitnetClient = null
+        try {
+            currentBitnet?.close()
+        } catch (e: Exception) {
+            XLog.w(TAG, "closeLocalConversation: bitnet close error", e)
+        }
+        localChatHistory.clear()
+
+        if (releaseLease) LocalInferenceCoordinator.release(LocalInferenceOwner.CHAT)
     }
 
     private fun setButtonsEnabled(enabled: Boolean) {
