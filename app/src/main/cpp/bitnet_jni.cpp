@@ -456,7 +456,7 @@ Java_io_agents_arya_agent_llm_BitNetNative_nativeEosToken(JNIEnv *, jobject, jlo
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_agents_arya_agent_llm_BitNetNative_nativeKvCacheUsedCells(JNIEnv *, jobject, jlong handle) {
-    auto * mc = handle_to_ctx(handle);
-    if (!mc || !mc->ctx) return -1;
-    return static_cast<jint>(llama_get_kv_cache_used_cells(mc->ctx));
+    // KV cache cell count API varies across llama.cpp versions.
+    // Return -1 (not available) to avoid compile errors on different tags.
+    return -1;
 }
