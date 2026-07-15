@@ -1,61 +1,51 @@
-# Releasing Arya (آریا)
+# Releasing Arya
 
-Package: `io.agents.arya`  
-Repo: https://github.com/asmoia/arya-agent
+## Signed Release Builds
 
-## Why signing matters
+Arya uses a release keystore stored as GitHub Actions secrets. When all four secrets are present, the `release.yml` workflow produces a **signed release APK** that can be installed over previous versions without uninstalling.
 
-Android only allows **in-place upgrade** (no uninstall) when the new APK is signed with the **same certificate** as the installed one.
+### Required GitHub Secrets
 
-- Debug APKs from CI use the debug key → fine for testing, **not** a long-term upgrade path across machines.
-- Production path: one stable **release keystore** stored in GitHub Secrets.
+| Secret | Description |
+|--------|-------------|
+| `ANDROID_KEYSTORE_B64` | Base64-encoded `.keystore` file |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | Key alias inside the keystore |
+| `ANDROID_KEY_PASSWORD` | Key password (usually same as keystore password) |
 
-## Required GitHub Secrets (Settings → Secrets and variables → Actions)
-
-| Secret | Content |
-|---|---|
-| `ANDROID_KEYSTORE_B64` | `base64 -w 0 arya-release.keystore` |
-| `ANDROID_KEYSTORE_PASSWORD` | keystore password |
-| `ANDROID_KEY_ALIAS` | key alias |
-| `ANDROID_KEY_PASSWORD` | key password |
-
-Generate once:
+### How to Generate a New Keystore
 
 ```bash
-keytool -genkeypair -v -keystore arya-release.keystore -alias arya-release \
-  -keyalg RSA -keysize 2048 -validity 10000
-base64 -w 0 arya-release.keystore
+keytool -genkeypair -v \
+  -keystore arya-release.keystore \
+  -alias arya \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000 \
+  -storepass 'YOUR_PASSWORD' \
+  -keypass 'YOUR_PASSWORD' \
+  -dname "CN=Arya Agent, OU=AI, O=asmoia, L=Istanbul, C=TR"
+
+base64 -w0 arya-release.keystore > arya-release.keystore.b64
 ```
 
-Keep the keystore offline forever. Losing it = users must uninstall to switch keys.
+Then set the four GitHub secrets via repo Settings → Secrets → Actions.
 
-## Publish a release
-
-1. Bump `versionCode` / `versionName` in `app/build.gradle.kts`
-2. Update `CHANGES.md`
-3. Commit + push `main`
-4. Tag and push:
+### Creating a Release
 
 ```bash
-git tag -a v0.2.0 -m "v0.2.0"
-git push origin v0.2.0
+# Bump version in app/build.gradle.kts (versionCode + versionName)
+git commit -am "release: v0.6.1"
+git tag v0.6.1
+git push origin main --tags
 ```
 
-5. Workflow `.github/workflows/release.yml`:
-   - **With secrets** → signed release APK on GitHub Releases
-   - **Without secrets** → debug APK as **prerelease** (still uploaded so Releases are never empty)
+The `release.yml` workflow will:
+1. Detect signing secrets → build signed release APK
+2. If secrets missing → fall back to debug unsigned APK (prerelease)
 
-## Local models across upgrades
+### Important
 
-Models under `Android/data/io.agents.arya/files/models/` survive APK updates.  
-Only **Clear Data** / uninstall removes them. Prefer Hermes Export before destructive resets.
-
-## Update checker
-
-App polls `https://api.github.com/repos/asmoia/arya-agent/releases/latest` once per day.
-
-
-## Keystore format check
-
-`ANDROID_KEYSTORE_B64` must decode to a real **JKS** or **PKCS12** keystore (from `keytool -genkeypair`).
-Random base64 blobs will upload as secrets but **signing will fail** at `assembleRelease`.
+- **Never lose the keystore file!** If lost, you cannot publish updates that install over the old app.
+- **Never commit the keystore to git.** It's in `.gitignore`.
+- The CI workflow writes `local.properties` at build time — the keystore only exists in the CI runner's temp directory.

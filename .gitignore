@@ -26,3 +26,5 @@ thoughts/
 SECRETS_SAVE_OFFLINE.txt
 arya-release.keystore
 *.keystore
+arya-release.keystore
+arya-release.keystore.b64
