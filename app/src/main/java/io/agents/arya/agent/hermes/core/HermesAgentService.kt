@@ -186,42 +186,19 @@ class HermesAgentService : AgentService {
             return
         }
 
-        // === IMMEDIATE BOOTSTRAP (before prompt build / session / LLM) ===
-        // User pain: minutes of silence, Telegram never opens. Do open_app NOW.
-        HermesAppKeeper.onTaskStart("شروع…")
-        callback.onStatus("شروع فوری · بدون انتظار مدل")
-        val earlyBoot = HermesBootstrapActions.plan(rawUserRequest)
-        val earlyBootResults = mutableListOf<Pair<HermesBootstrapActions.Step, ToolResult>>()
-        if (earlyBoot != null) {
-            XLog.i(TAG, "EARLY bootstrap plan=${earlyBoot.reason}")
-            for ((idx, step) in earlyBoot.steps.withIndex()) {
-                if (cancelled.get()) break
-                callback.onStatus(step.labelFa)
-                callback.onLoopStart(idx + 1)
-                callback.onToolCall(idx + 1, step.tool, step.tool, com.google.gson.Gson().toJson(step.params))
-                val result = try {
-                    HermesBootstrapActions.execute(step)
-                } catch (e: Exception) {
-                    ToolResult.error(e.message ?: "bootstrap failed")
-                }
-                earlyBootResults += step to result
-                callback.onToolResult(idx + 1, step.tool, step.tool, step.params.toString(), result)
-                XLog.i(TAG, "EARLY bootstrap ${step.tool} success=${result.isSuccess} err=${result.error}")
-                // Only hard-fail open_app; find_and_tap probes are optional.
-                if (!result.isSuccess && HermesBootstrapActions.isHardStep(step)) break
-                if (step.tool == "open_app" && result.isSuccess) {
-                    try { Thread.sleep(350) } catch (_: Exception) {}
-                }
-            }
-            val opened = earlyBootResults.any { it.first.tool == "open_app" && it.second.isSuccess }
-            if (opened) callback.onStatus("اپ باز شد · ادامه…")
-            else if (earlyBootResults.isNotEmpty()) {
-                callback.onStatus("باز کردن اپ ناموفق — ادامه با مدل")
-                val err = earlyBootResults.firstOrNull { !it.second.isSuccess }?.second?.error
-                callback.onContent(1, "Bootstrap: $err")
-            }
+        // === DEFERRED BOOTSTRAP: plan but do NOT execute ===
+        // Old behavior: open Telegram immediately → user stuck on Telegram screen
+        // while model thinks for 15-30 seconds. New: let the model think first,
+        // and the bootstrap plan is injected as a "pre-approved first action" so
+        // the model doesn't waste a round deciding to open the app — it just does it
+        // as part of its first tool call, AFTER it has planned what to do.
+        HermesAppKeeper.onTaskStart("فکر کردن…")
+        val deferredBoot = HermesBootstrapActions.plan(rawUserRequest)
+        if (deferredBoot != null) {
+            XLog.i(TAG, "DEFERRED bootstrap plan=${deferredBoot.reason} (not executed yet)")
+            callback.onStatus("برنامه‌ریزی… · ${deferredBoot.steps.firstOrNull()?.labelFa ?: ""}")
         } else {
-            callback.onStatus("بدون bootstrap · شروع مدل…")
+            callback.onStatus("شروع · بدون بوت‌استرپ")
         }
 
 
@@ -287,8 +264,9 @@ class HermesAgentService : AgentService {
         }
 
         val looksLikeTask = looksLikeTask(rawUserRequest)
-        val alreadyHaveScreen = earlyBootResults.any { it.first.tool == "get_screen_info" && it.second.isSuccess }
-        val enrichedPrompt = if (looksLikeTask && !alreadyHaveScreen) {
+        // With deferred bootstrap, we haven't executed any bootstrap steps yet.
+        // Attach current screen only if it's a task (model will decide to open the app).
+        val enrichedPrompt = if (looksLikeTask) {
             try {
                 val screenTool = ToolRegistry.getInstance().getTool("get_screen_info")
                 val screenResult = screenTool?.execute(emptyMap())
@@ -304,27 +282,26 @@ class HermesAgentService : AgentService {
             promptForModel
         }
         messages.add(UserMessage.from(enrichedPrompt))
-        for ((step, result) in earlyBootResults) {
-            val summary = if (result.isSuccess) (result.data ?: "ok").take(1200) else "ERROR: ${result.error}"
-            messages.add(UserMessage.from("[Bootstrap] tool=${step.tool} → $summary"))
-        }
-        if (earlyBootResults.isNotEmpty()) {
-            val bootScreen = earlyBootResults.lastOrNull { it.first.tool == "get_screen_info" && it.second.isSuccess }?.second?.data
-            val nextHint = bootstrapNextHint(rawUserRequest, bootScreen)
-            messages.add(
-                UserMessage.from(
-                    buildString {
-                        appendLine("[System] App already opened + screen read. Do NOT open_app again.")
-                        appendLine("Call ONE tool now toward the goal (find_and_tap/input_text/swipe/get_screen_info).")
-                        appendLine("Prefer find_and_tap with max_scrolls=1 or 2 only when needed.")
-                        if (nextHint.isNotBlank()) {
-                            appendLine("Suggested next:")
-                            appendLine(nextHint)
+        // Inject deferred bootstrap as a system hint — the model should call open_app
+        // as its first tool (not waste a round deciding to open the app).
+        if (deferredBoot != null) {
+            val firstStep = deferredBoot.steps.firstOrNull()
+            if (firstStep != null) {
+                val nextHint = bootstrapNextHint(rawUserRequest, null)
+                messages.add(
+                    UserMessage.from(
+                        buildString {
+                            appendLine("[System] The user's task needs ${deferredBoot.reason}. Start by calling open_app NOW, then get_screen_info.")
+                            appendLine("First tool call: ${firstStep.tool} with params: ${com.google.gson.Gson().toJson(firstStep.params)}")
+                            if (nextHint.isNotBlank()) {
+                                appendLine("After screen read, suggested next:")
+                                appendLine(nextHint)
+                            }
+                            append("Goal: ${rawUserRequest.take(140)}")
                         }
-                        append("Goal: ${rawUserRequest.take(140)}")
-                    }
+                    )
                 )
-            )
+            }
         }
 
         var iterations = 0
@@ -356,9 +333,7 @@ class HermesAgentService : AgentService {
         var softLimitWarned = false
         var finalAnswer: String? = null
         val usedToolsThisTask = mutableListOf<String>()
-        for ((step, _) in earlyBootResults) {
-            usedToolsThisTask += step.tool
-        }
+        // No pre-executed bootstrap tools (deferred)
 
         val recentActions = LinkedList<String>()
         var essayForceUsed = false

@@ -1,5 +1,6 @@
 // Copyright 2026 Arya Agent. Licensed under the Apache License, Version 2.0.
-// Fast open only — no scroll spam. Navigation continues via guided agent steps.
+// Deferred bootstrap: plan the first action but DON'T execute immediately.
+// Let the model think first, then open the app only when ready to act.
 
 package io.agents.arya.agent.hermes.core
 
@@ -8,8 +9,18 @@ import io.agents.arya.tool.ToolResult
 import io.agents.arya.utils.XLog
 
 /**
- * Minimal bootstrap: open known apps + one screen read.
- * NEVER runs find_and_tap/scroll here (that caused useless double-scroll then hang).
+ * Deferred bootstrap: returns a plan of what SHOULD happen first (open app + screen read)
+ * but does NOT execute it. The Hermes loop will incorporate the bootstrap steps
+ * as the model's first actions, so the app opens only when the model is ready.
+ *
+ * Why? The old "immediate bootstrap" opened Telegram/WhatsApp before the model
+ * had time to think, leaving the user stuck on a foreign app screen for 15-30
+ * seconds while the model processed its first inference round. Now:
+ *
+ * 1. User sends "send message to Ali in Telegram"
+ * 2. Model thinks → decides what to do (who, what message)
+ * 3. Model calls open_app → Telegram opens → model immediately acts
+ * 4. User sees Telegram for minimal time (only while action is happening)
  */
 object HermesBootstrapActions {
 
@@ -19,6 +30,10 @@ object HermesBootstrapActions {
 
     data class Plan(val steps: List<Step>, val reason: String)
 
+    /**
+     * Plan what should happen for this task, but do NOT execute.
+     * Returns null for tasks that don't need app opening.
+     */
     fun plan(userTask: String): Plan? {
         val t = userTask.lowercase()
         val fa = userTask
@@ -73,6 +88,7 @@ object HermesBootstrapActions {
         return null
     }
 
+    /** Execute a bootstrap step (called by HermesAgentService when the model requests it). */
     fun execute(step: Step): ToolResult {
         XLog.i(TAG, "bootstrap ${step.tool} ${step.params}")
         return when (step.tool) {
@@ -83,7 +99,6 @@ object HermesBootstrapActions {
                 HermesDirectOpen.open(hint)
             }
             else -> {
-                // get_screen_info: short fail if no a11y — don't hang
                 ToolRegistry.getInstance().executeTool(step.tool, step.params)
             }
         }
