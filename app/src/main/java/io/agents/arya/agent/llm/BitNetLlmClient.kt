@@ -44,8 +44,9 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
         modelHandle = handle
         modelPath = path
         val info = BitNetNative.getModelInfo(handle)
+        val loadTimeMs = (info?.get("load_time_ms") as? Number)?.toLong() ?: 0L
         info?.let { XLog.i(TAG, "Model: ${it["model_size_mb"]}MB, ${it["n_params_b"]}B params, ${it["n_threads"]} threads, load=${it["load_time_ms"]}ms") }
-        InferenceTelemetryCollector.recordModelLoad(path, (it["load_time_ms"] as? Number)?.toLong() ?: 0L, info)
+        InferenceTelemetryCollector.recordModelLoad(path, loadTimeMs, info)
         return handle
     }
 
