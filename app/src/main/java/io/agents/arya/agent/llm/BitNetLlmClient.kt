@@ -14,16 +14,19 @@ import io.agents.arya.agent.AgentConfig
 import io.agents.arya.utils.XLog
 
 /**
- * LlmClient implementation using llama.cpp / bitnet.cpp via [BitNetNative] JNI.
+ * LlmClient implementation using llama.cpp via [BitNetNative] JNI.
  *
- * Supports any GGUF model including BitNet i2_s when the native library is
- * built with bitnet.cpp kernels.  Falls back gracefully when the .so is absent.
+ * Key design decisions for small on-device models (1-3B):
  *
- * Architecture differences from [LocalLlmClient] (LiteRT-LM):
- * - Stateless prompt assembly: we rebuild the full prompt each call (like
- *   OpenAI/Anthropic clients) rather than relying on a stateful Conversation.
- * - Tool calls are parsed from the raw model output using regex patterns.
- * - Model handle is cached across calls within the same task; released on [close].
+ * 1. **Compact prompt format** — ChatML (compatible with Qwen, Phi, etc.)
+ * 2. **Simple tool calling convention** — JSON block in output, not XML tags.
+ *    Small models struggle with XML. A simple {"name":"x","arguments":{}}
+ *    is far more reliable.
+ * 3. **Strict tool-only responses** — when tools are available, the model
+ *    MUST call a tool or say it doesn't know. No free-form essays.
+ * 4. **Robust parsing** — handles malformed JSON, extra text, markdown
+ *    fences, and partial tool calls gracefully.
+ * 5. **Stateless** — full prompt rebuilt each call, no session state issues.
  */
 class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
 
@@ -35,10 +38,13 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
 
     private fun ensureModel(): Long {
         if (modelHandle > 0) return modelHandle
+        if (!BitNetNative.isAvailable()) {
+            throw IllegalStateException("BitNet native library not available: ${BitNetNative.lastLoadError()}")
+        }
         val path = config.baseUrl
-        if (path.isBlank()) throw IllegalStateException("BitNet model path is empty")
+        if (path.isBlank()) throw IllegalStateException("GGUF model path is empty")
         val handle = BitNetNative.loadModel(path, nCtx = 2048, nThreads = 0)
-        if (handle <= 0) throw IllegalStateException("Failed to load BitNet model: $path")
+        if (handle <= 0) throw IllegalStateException("Failed to load GGUF model: $path (handle=$handle)")
         modelHandle = handle
         modelPath = path
         XLog.i(TAG, "Model loaded: $path handle=$handle")
@@ -50,7 +56,7 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
     override fun chat(messages: List<ChatMessage>, toolSpecs: List<ToolSpecification>): LlmResponse {
         val handle = ensureModel()
         val prompt = buildPrompt(messages, toolSpecs)
-        XLog.d(TAG, "chat: prompt length=${prompt.length} tools=${toolSpecs.size}")
+        XLog.d(TAG, "chat: prompt=${prompt.length} chars, tools=${toolSpecs.size}")
 
         val rawOutput = BitNetNative.completion(
             handle = handle,
@@ -61,10 +67,11 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
             topK = 20,
             repeatPenalty = 1.1f,
             stopSequences = GSON.toJson(STOP_SEQUENCES),
-        ) ?: throw IllegalStateException("BitNet completion returned null")
+        ) ?: throw IllegalStateException("GGUF completion returned null")
 
-        XLog.d(TAG, "chat: output length=${rawOutput.length}")
-        return parseResponse(rawOutput)
+        XLog.d(TAG, "chat: output=${rawOutput.length} chars")
+        XLog.d(TAG, "chat: raw=${rawOutput.take(300)}")
+        return parseResponse(rawOutput, toolSpecs)
     }
 
     override fun chatStreaming(
@@ -72,8 +79,6 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
         toolSpecs: List<ToolSpecification>,
         listener: StreamingListener,
     ): LlmResponse {
-        // BitNet native streaming is not yet wired through JNI.
-        // Fall back to blocking completion + emit all at once.
         val response = chat(messages, toolSpecs)
         val text = response.text
         if (text != null) {
@@ -90,42 +95,46 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
         }
     }
 
-    // ---- Prompt formatting ----
+    // ---- Prompt formatting (ChatML) ----
 
     /**
-     * Build a ChatML-style prompt from the message list.
+     * Build a ChatML prompt optimized for small on-device models.
      *
-     * ChatML is widely understood by small models and works with Qwen, BitNet,
-     * Phi, and many others. If the model has a different chat template, this
-     * method can be extended.
+     * Key optimizations over a generic prompt:
+     * - Tool names and descriptions only (no full JSON schema — too verbose)
+     * - Explicit instruction: "output ONLY a JSON block to call a tool"
+     * - Example tool call in the system prompt so the model has a template
+     * - Short, direct language
      */
     private fun buildPrompt(messages: List<ChatMessage>, toolSpecs: List<ToolSpecification>): String {
         val sb = StringBuilder()
 
         // System message
         val systemMsg = messages.filterIsInstance<SystemMessage>().firstOrNull()?.text()
-            ?: config.systemPrompt.ifEmpty { DEFAULT_BITNET_SYSTEM_PROMPT }
+            ?: config.systemPrompt.ifEmpty { DEFAULT_SYSTEM_PROMPT }
+
         sb.append("<|im_start|>system\n")
         sb.append(systemMsg)
 
-        // Append tool declarations if present
+        // Tool declarations — compact format for small models
         if (toolSpecs.isNotEmpty()) {
-            sb.append("\n\n## Available Tools\n")
+            sb.append("\n\n--- TOOLS ---\n")
+            sb.append("You MUST use tools to interact with the phone. To call a tool, output EXACTLY this format:\n")
+            sb.append("{\"name\": \"tool_name\", \"arguments\": {\"param\": \"value\"}}\n")
+            sb.append("Do NOT add extra text before or after the JSON.\n")
+            sb.append("If you don't need any tool, just reply with text.\n\n")
+            sb.append("Available tools:\n")
             for (spec in toolSpecs) {
-                sb.append("- **${spec.name()}**: ${spec.description() ?: ""}\n")
                 val params = spec.parameters()
-                if (params != null) {
-                    val props = params.properties()
-                    if (props != null && props.isNotEmpty()) {
-                        sb.append("  Parameters: ")
-                        sb.append(props.entries.joinToString(", ") { (name, schema) ->
-                            "${name}: ${schema.description() ?: "string"}"
-                        })
-                        sb.append("\n")
-                    }
-                }
+                val paramList = params?.properties()?.entries?.joinToString(", ") { (name, schema) ->
+                    name
+                } ?: ""
+                sb.append("- ${spec.name()}")
+                if (paramList.isNotBlank()) sb.append("($paramList)")
+                val desc = spec.description()
+                if (!desc.isNullOrBlank()) sb.append(": $desc")
+                sb.append("\n")
             }
-            sb.append("\nTo call a tool, output a JSON block: {\"name\": \"tool_name\", \"arguments\": {...}}\n")
         }
 
         sb.append("<|im_end|>\n")
@@ -133,23 +142,28 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
         // Chat history
         for (msg in messages) {
             when (msg) {
-                is SystemMessage -> { /* already handled */ }
+                is SystemMessage -> { /* handled above */ }
                 is UserMessage -> {
                     sb.append("<|im_start|>user\n${msg.singleText()}<|im_end|>\n")
                 }
                 is AiMessage -> {
+                    sb.append("<|im_start|>assistant\n")
                     val text = msg.text()
                     if (!text.isNullOrBlank()) {
-                        sb.append("<|im_start|>assistant\n$text<|im_end|>\n")
+                        sb.append(text)
                     }
                     msg.toolExecutionRequests()?.firstOrNull()?.let { req ->
-                        sb.append("<|im_start|>assistant\n")
                         sb.append("{\"name\": \"${req.name()}\", \"arguments\": ${req.arguments()}}")
-                        sb.append("<|im_end|>\n")
                     }
+                    sb.append("<|im_end|>\n")
                 }
                 is ToolExecutionResultMessage -> {
-                    sb.append("<|im_start|>tool\n[Tool ${msg.toolName()} result]: ${msg.text()}<|im_end|>\n")
+                    val reduced = if (msg.text().length > 500) {
+                        msg.text().take(500) + "..."
+                    } else {
+                        msg.text()
+                    }
+                    sb.append("<|im_start|>user\n[Result of ${msg.toolName()}]: $reduced<|im_end|>\n")
                 }
             }
         }
@@ -161,12 +175,29 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
 
     // ---- Response parsing ----
 
-    private fun parseResponse(rawOutput: String): LlmResponse {
+    /**
+     * Parse the model output into an LlmResponse.
+     *
+     * Strategy:
+     * 1. Try to find a JSON tool call in the output
+     * 2. Validate the tool name against the available tool specs
+     * 3. If no valid tool call found, treat as plain text
+     *
+     * This is much more robust than the old approach because:
+     * - It validates tool names against actual available tools
+     * - It handles partial/malformed JSON gracefully
+     * - It strips markdown fences, extra text, etc.
+     */
+    private fun parseResponse(rawOutput: String, toolSpecs: List<ToolSpecification>): LlmResponse {
         val trimmed = rawOutput.trim()
 
-        // Try to extract a tool call from the output
-        val toolCall = extractToolCall(trimmed)
+        // Build a set of valid tool names for validation
+        val validToolNames = toolSpecs.map { it.name() }.toSet()
+
+        // Try to extract and validate a tool call
+        val toolCall = extractAndValidateToolCall(trimmed, validToolNames)
         if (toolCall != null) {
+            XLog.i(TAG, "Tool call: ${toolCall.name()} args=${toolCall.arguments().take(100)}")
             return LlmResponse(
                 text = null,
                 toolExecutionRequests = listOf(toolCall),
@@ -174,6 +205,7 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
         }
 
         // Plain text response
+        XLog.d(TAG, "Text response: ${trimmed.take(100)}")
         return LlmResponse(
             text = trimmed,
             toolExecutionRequests = emptyList(),
@@ -181,32 +213,59 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
     }
 
     /**
-     * Attempt to extract a tool call from the model output.
-     * Supports multiple formats:
-     * 1. <tool_call>{...}</tool_call>
-     * 2. ```tool_call\n{...}\n```
-     * 3. Bare JSON: {"name": "...", "arguments": {...}}
-     * 4. function_call: {...}
+     * Extract a tool call from model output, with multiple fallback patterns.
+     * Only returns a ToolExecutionRequest if the tool name is in [validToolNames].
      */
-    private fun extractToolCall(output: String): ToolExecutionRequest? {
+    private fun extractAndValidateToolCall(output: String, validToolNames: Set<String>): ToolExecutionRequest? {
+        // Try all patterns in order of specificity
+        val candidates = mutableListOf<Pair<String, String>>() // (source, json)
+
         // Pattern 1: <tool_call>...</tool_call>
-        TOOL_CALL_TAG_PATTERN.find(output)?.let { match ->
-            return parseToolCallJson(match.groupValues[1].trim())
+        TOOL_CALL_TAG.find(output)?.let { match ->
+            candidates.add("tag" to match.groupValues[1].trim())
         }
 
-        // Pattern 2: ```tool_call ... ```
-        TOOL_CALL_BLOCK_PATTERN.find(output)?.let { match ->
-            return parseToolCallJson(match.groupValues[1].trim())
+        // Pattern 2: ```tool_call\n...\n```  or  ```json\n...\n```
+        TOOL_CALL_BLOCK.find(output)?.let { match ->
+            candidates.add("block" to match.groupValues[1].trim())
         }
 
-        // Pattern 3: Bare JSON object with "name" key
-        JSON_OBJECT_PATTERN.find(output)?.let { match ->
-            return parseToolCallJson(match.groupValues[0])
+        // Pattern 3: Bare JSON with "name" key — find the outermost { }
+        // This is the most common pattern from small models
+        for (match in JSON_WITH_NAME.findAll(output)) {
+            candidates.add("json" to match.value)
         }
 
-        // Pattern 4: function_call: {...}
-        FUNCTION_CALL_PREFIX_PATTERN.find(output)?.let { match ->
-            return parseToolCallJson(match.groupValues[1].trim())
+        // Pattern 4: function_call: or tool_call: prefix
+        FUNC_CALL_PREFIX.find(output)?.let { match ->
+            candidates.add("prefix" to match.groupValues[1].trim())
+        }
+
+        // Try to parse each candidate
+        for ((source, json) in candidates) {
+            val request = parseToolCallJson(json)
+            if (request != null && request.name() in validToolNames) {
+                XLog.d(TAG, "Tool call found via $source pattern: ${request.name()}")
+                return request
+            }
+            if (request != null) {
+                XLog.w(TAG, "Tool call '${request.name()}' not in valid tools: $validToolNames (source=$source)")
+            }
+        }
+
+        // Last resort: try to find a tool name directly mentioned in the output
+        // Sometimes small models output: "I will call open_app" or "Calling: tap_node"
+        for (toolName in validToolNames) {
+            // Look for patterns like "call open_app" or "use open_app" or "execute open_app"
+            val directPattern = Regex("""(?:call|use|execute|invoke|run)\s+$toolName""", RegexOption.IGNORE_CASE)
+            if (directPattern.containsMatchIn(output)) {
+                XLog.d(TAG, "Direct tool mention found: $toolName")
+                return ToolExecutionRequest.builder()
+                    .id("bitnet_${System.currentTimeMillis()}")
+                    .name(toolName)
+                    .arguments("{}")
+                    .build()
+            }
         }
 
         return null
@@ -215,9 +274,15 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
     private fun parseToolCallJson(json: String): ToolExecutionRequest? {
         return try {
             val trimmed = json.trim()
-            val map = GSON.fromJson(trimmed, Map::class.java) as? Map<*, *> ?: return null
+            // Auto-close missing braces
+            var fixedJson = trimmed
+            val openBraces = fixedJson.count { it == '{' }
+            val closeBraces = fixedJson.count { it == '}' }
+            repeat(openBraces - closeBraces) { fixedJson += "}" }
+
+            val map = GSON.fromJson(fixedJson, Map::class.java) as? Map<*, *> ?: return null
             val name = map["name"]?.toString() ?: return null
-            val args = map["arguments"]
+            val args = map["arguments"] ?: map["args"] ?: map["params"]
             val argsJson = when (args) {
                 is Map<*, *> -> GSON.toJson(args)
                 is String -> args
@@ -230,7 +295,7 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
                 .arguments(argsJson)
                 .build()
         } catch (e: Exception) {
-            XLog.w(TAG, "Failed to parse tool call JSON: $json", e)
+            XLog.w(TAG, "Failed to parse tool call JSON: ${json.take(100)}", e)
             null
         }
     }
@@ -240,18 +305,34 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
 
         private val STOP_SEQUENCES = listOf("<|im_end|>", "</tool_call>", "<|end|>", "<|eot_id|>")
 
-        private val TOOL_CALL_TAG_PATTERN = Regex("""<tool_call>(.*?)</tool_call>""", RegexOption.DOT_MATCHES_ALL)
-        private val TOOL_CALL_BLOCK_PATTERN = Regex("""```tool_call\s*\n(.*?)\n\s*```""", RegexOption.DOT_MATCHES_ALL)
-        private val JSON_OBJECT_PATTERN = Regex("""\{"name"\s*:\s*"[^"]+""[^}]*\}""", RegexOption.DOT_MATCHES_ALL)
-        private val FUNCTION_CALL_PREFIX_PATTERN = Regex("""(?:function_call|tool_call)\s*:\s*(\{.*?\})""", RegexOption.DOT_MATCHES_ALL)
+        // Pattern 1: <tool_call>{...}</tool_call>
+        private val TOOL_CALL_TAG = Regex("""<tool_call>(.*?)</tool_call>""", RegexOption.DOT_MATCHES_ALL)
 
-        private const val DEFAULT_BITNET_SYSTEM_PROMPT = """You are Arya, a helpful AI assistant running on an Android phone. You can have conversations, answer questions, and control the user's phone using tools.
+        // Pattern 2: ```tool_call\n...\n```  or  ```json\n{...}\n```
+        private val TOOL_CALL_BLOCK = Regex("""```(?:tool_call|json)\s*\n(.*?)\n\s*```""", RegexOption.DOT_MATCHES_ALL)
 
-When the user asks you to do something on their phone, use the available tools.
-When the user is just chatting or asking a question, reply directly with text.
+        // Pattern 3: Bare JSON with "name" key — balanced brace search
+        private val JSON_WITH_NAME = Regex("""\{[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*\}""", RegexOption.DOT_MATCHES_ALL)
 
-To call a tool, output a JSON block like: {"name": "tool_name", "arguments": {"param": "value"}}
+        // Pattern 4: function_call: or tool_call: prefix
+        private val FUNC_CALL_PREFIX = Regex("""(?:function_call|tool_call|call)\s*:\s*(\{.*?\})""", RegexOption.DOT_MATCHES_ALL)
 
-Available tools include: open_app, tap, input_text, system_key, get_screen_info, get_device_info, send_message, get_notifications, clipboard, finish"""
+        private const val DEFAULT_SYSTEM_PROMPT = """You are Arya, a phone assistant. You help users control their Android phone.
+
+RULES:
+- To control the phone, you MUST call a tool. Output ONLY: {"name": "tool_name", "arguments": {"key": "value"}}
+- For normal questions, just answer with text.
+- ONE tool per response. Then wait for the result.
+- Do NOT guess tool results. Do NOT make up screen contents.
+
+Tool examples:
+- Open an app: {"name": "open_app", "arguments": {"app_name": "WhatsApp"}}
+- Tap something: {"name": "tap_node", "arguments": {"node_id": "n3"}}
+- Type text: {"name": "input_text", "arguments": {"text": "hello"}}
+- Go back: {"name": "system_key", "arguments": {"key": "back"}}
+- Read screen: {"name": "get_screen_info", "arguments": {}}
+- Send message: {"name": "send_message", "arguments": {"contact": "Ali", "message": "salam"}}
+- Check battery: {"name": "get_device_info", "arguments": {"category": "battery"}}
+- Task done: {"name": "finish", "arguments": {"summary": "Task completed"}}"""
     }
 }

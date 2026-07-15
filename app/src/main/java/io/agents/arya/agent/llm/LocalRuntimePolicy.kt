@@ -40,10 +40,10 @@ object LocalRuntimePolicy {
     // 1536 is the full interactive profile. Adaptive budget() may lower this
     // before Engine creation; non-E4B models retain their existing policy.
     fun maxNumTokens(modelPath: String, owner: LocalInferenceOwner): Int = when (owner) {
-        LocalInferenceOwner.TASK -> if (isE4b(modelPath)) 1_536 else 3_072
+        LocalInferenceOwner.TASK -> if (isE4b(modelPath)) 1_536 else 2_048
         LocalInferenceOwner.CHAT -> if (isE4b(modelPath)) 1_536 else 4_096
         LocalInferenceOwner.BACKGROUND -> if (isE4b(modelPath)) 768 else 1_024
-        LocalInferenceOwner.NONE -> if (isE4b(modelPath)) 1_536 else 3_072
+        LocalInferenceOwner.NONE -> if (isE4b(modelPath)) 1_536 else 2_048
     }
 
     /** Minimum free RAM that permits an adaptive E4B attempt, not the full profile. */
@@ -104,6 +104,8 @@ object LocalRuntimePolicy {
     ): String? = budgetForAvailable(modelPath, owner, availableMb).admissionReason
 
     fun checkAdmission(context: Context, modelPath: String, owner: LocalInferenceOwner): String? {
+        // Check GGUF/BitNet admission first (lighter requirements)
+        checkBitNetAdmission(context, modelPath, owner)?.let { return it }
         return memoryBudget(context, modelPath, owner).admissionReason
     }
 
@@ -143,20 +145,32 @@ object LocalRuntimePolicy {
     /** BitNet / GGUF models served by the llama.cpp backend. */
     fun isBitNet(modelPath: String): Boolean {
         val path = modelPath.lowercase()
-        return path.contains("bitnet") || path.contains("gguf") ||
-            path.contains("bonsai") || path.contains("ternary")
+        return path.contains("bitnet") || path.endsWith(".gguf") ||
+            path.contains("bonsai") || path.contains("ternary") ||
+            path.contains("qwen") || path.contains("gguf")
     }
 
-    /** BitNet 2B needs ~1.2 GB for model weights + ~0.5 GB runtime = ~1.7 GB total */
-    private const val BITNET_HARD_MIN_FREE_MB = 2_000L
-    private const val BITNET_FULL_FREE_MB = 3_000L
+    /** GGUF models need ~1.5-3 GB depending on size; Qwen 1.5B Q4_K_M ≈ 1.5 GB total */
+    private const val BITNET_HARD_MIN_FREE_MB = 1_500L
+    private const val BITNET_FULL_FREE_MB = 2_500L
 
-    /** Override maxNumTokens for BitNet — larger context is affordable. */
+    /** Override maxNumTokens for GGUF models */
     fun maxNumTokensBitNet(owner: LocalInferenceOwner): Int = when (owner) {
         LocalInferenceOwner.TASK -> 2_048
         LocalInferenceOwner.CHAT -> 4_096
         LocalInferenceOwner.BACKGROUND -> 1_024
         LocalInferenceOwner.NONE -> 2_048
+    }
+
+    /** Admission check for GGUF/BitNet models — much lighter than E4B */
+    fun checkBitNetAdmission(context: Context, modelPath: String, owner: LocalInferenceOwner): String? {
+        if (!isBitNet(modelPath)) return null
+        val availableMb = availableMemoryMb(context)
+        if (availableMb < BITNET_HARD_MIN_FREE_MB) {
+            return "GGUF model needs at least ${formatGb(BITNET_HARD_MIN_FREE_MB)}GB free RAM " +
+                "(currently ${formatGb(availableMb)}GB). Close heavy apps and retry."
+        }
+        return null
     }
 
     private fun availableMemoryMb(context: Context): Long {

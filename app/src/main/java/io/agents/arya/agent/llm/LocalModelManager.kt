@@ -75,18 +75,28 @@ object LocalModelManager {
     }
 
     /**
-     * Arya ships BitNet b1.58 2B4T as the recommended on-device model.
-     * E4B/E2B are retired — BitNet is far smaller (~1.2 GB) and faster
-     * on ARM CPUs thanks to ternary weight kernels.
+     * Arya ships Qwen2.5-1.5B-Instruct as the recommended on-device model.
+     * It supports ChatML natively, has great multilingual coverage (including
+     * Persian), and at Q4_K_M is only ~940 MB — far smaller than E4B's 3.6 GB.
+     * BitNet GGUF (i2_s) is also supported but requires bitnet.cpp kernels.
+     * Any GGUF model works as a custom local model.
      */
     val AVAILABLE_MODELS: List<ModelInfo> = listOf(
         ModelInfo(
-            id = "bitnet-b158-2b4t-q4km",
-            displayName = "BitNet 2B (1.58-bit, Q4_K_M)",
-            url = "https://huggingface.co/microsoft/BitNet-b1.58-2B-4T-GGUF/resolve/main/BitNet-b1.58-2B-4T-q4_k_m.gguf",
-            fileName = "BitNet-b1.58-2B-4T-q4_k_m.gguf",
-            sizeBytes = 1_044_481_216L,  // ~1.0 GB
+            id = "qwen25-1.5b-instruct-q4km",
+            displayName = "Qwen 2.5 1.5B Instruct (Q4_K_M)",
+            url = "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+            fileName = "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+            sizeBytes = 986_048_768L,  // 940 MB
             minRamGb = 4,
+        ),
+        ModelInfo(
+            id = "bitnet-b158-2b4t-i2s",
+            displayName = "BitNet 2B (1.58-bit, i2_s)",
+            url = "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf",
+            fileName = "ggml-model-i2_s.gguf",
+            sizeBytes = 3_032_273_312L,  // ~2.9 GB
+            minRamGb = 6,
         ),
     )
 
