@@ -54,8 +54,8 @@ android {
         applicationId = "io.agents.arya"
         minSdk = 28
         targetSdk = 36
-        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 61)
-        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "0.6.1")
+        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 62)
+        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "0.6.2")
         buildConfigField("String", "VERSION_INFO", getVersionGit())
         buildConfigField("String", "APP_ORIGIN", "\"آریا · BitNet + Hermes | github.com/asmoia/arya-agent\"")
         buildConfigField("String", "BUILD_FINGERPRINT", "\"${getBuildFingerprint()}\"")
