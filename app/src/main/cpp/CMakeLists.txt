@@ -9,7 +9,7 @@ include(FetchContent)
 FetchContent_Declare(
     llama_cpp
     GIT_REPOSITORY https://github.com/ggerganov/llama.cpp
-    GIT_TAG        b4687
+    GIT_TAG        b9999
     SOURCE_SUBDIR  .
 )
 
