@@ -77,7 +77,7 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
         val response = chat(messages, toolSpecs)
         val text = response.text
         if (text != null) {
-            listener.onToken(text)
+            listener.onPartialText(text)
         }
         return response
     }
