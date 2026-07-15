@@ -115,15 +115,6 @@ android {
             }
         }
     }
-    // If NDK is not available, skip native build — the app will still work
-    // with cloud/LiteRT backends (BitNetNative.ensureLoaded() returns false)
-    gradle.projectsEvaluated {
-        tasks.withType<com.android.build.gradle.internal.tasks.ExternalNativeBuildTask>().configureEach {
-            onlyIf { 
-                com.android.build.gradle.internal.ndk.NdkHandler(android.ndkDirectory).ndkPlatform.isAvailable
-            }
-        }
-    }
 
     packaging {
         resources {
