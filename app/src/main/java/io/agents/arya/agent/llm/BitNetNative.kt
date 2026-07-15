@@ -93,6 +93,8 @@ object BitNetNative {
     /**
      * Streaming completion. Calls [onToken] for each generated token.
      * Returns the full generated text or null on error.
+     *
+     * NOTE: Currently not wired through JNI. Use [completion] instead.
      */
     fun completionStreaming(
         handle: Long,
@@ -105,8 +107,10 @@ object BitNetNative {
         stopSequences: String = "[]",
         onToken: (String) -> Unit,
     ): String? {
-        if (!loaded || handle <= 0) return null
-        return nativeCompletionStreaming(handle, prompt, maxTokens, temperature, topP, topK, repeatPenalty, stopSequences, onToken)
+        // Fallback: run blocking completion, call onToken once with full result
+        val result = completion(handle, prompt, maxTokens, temperature, topP, topK, repeatPenalty, stopSequences)
+        if (result != null) onToken(result)
+        return result
     }
 
     // ---- Tokenization helpers ----
@@ -134,11 +138,6 @@ object BitNetNative {
         handle: Long, prompt: String, maxTokens: Int,
         temperature: Float, topP: Float, topK: Int, repeatPenalty: Float,
         stopSequences: String,
-    ): String?
-    private external fun nativeCompletionStreaming(
-        handle: Long, prompt: String, maxTokens: Int,
-        temperature: Float, topP: Float, topK: Int, repeatPenalty: Float,
-        stopSequences: String, onToken: (String) -> Unit,
     ): String?
     private external fun nativeTokenize(handle: Long, text: String): IntArray?
     private external fun nativeDetokenize(handle: Long, tokens: IntArray): String?

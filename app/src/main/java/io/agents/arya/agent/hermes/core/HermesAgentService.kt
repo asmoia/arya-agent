@@ -20,6 +20,7 @@ import io.agents.arya.agent.DirectDeviceDataGuard
 import io.agents.arya.agent.EmailComposeGuard
 import io.agents.arya.agent.InAppSearchGuard
 import io.agents.arya.agent.LlmProvider
+import io.agents.arya.agent.isLocal
 import io.agents.arya.agent.StuckDetector
 import io.agents.arya.agent.TaskBudget
 import io.agents.arya.agent.TaskPromptEnvelope

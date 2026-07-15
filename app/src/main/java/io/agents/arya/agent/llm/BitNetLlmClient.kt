@@ -72,26 +72,14 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
         toolSpecs: List<ToolSpecification>,
         listener: StreamingListener,
     ): LlmResponse {
-        val handle = ensureModel()
-        val prompt = buildPrompt(messages, toolSpecs)
-        val sb = StringBuilder()
-
-        val rawOutput = BitNetNative.completionStreaming(
-            handle = handle,
-            prompt = prompt,
-            maxTokens = 512,
-            temperature = config.temperature.coerceIn(0.0, 1.0).toFloat(),
-            topP = 0.95f,
-            topK = 20,
-            repeatPenalty = 1.1f,
-            stopSequences = GSON.toJson(STOP_SEQUENCES),
-            onToken = { token ->
-                sb.append(token)
-                listener.onToken(token)
-            },
-        ) ?: throw IllegalStateException("BitNet streaming completion returned null")
-
-        return parseResponse(rawOutput)
+        // BitNet native streaming is not yet wired through JNI.
+        // Fall back to blocking completion + emit all at once.
+        val response = chat(messages, toolSpecs)
+        val text = response.text
+        if (text != null) {
+            listener.onToken(text)
+        }
+        return response
     }
 
     override fun close() {
@@ -131,7 +119,7 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
                     if (props != null && props.isNotEmpty()) {
                         sb.append("  Parameters: ")
                         sb.append(props.entries.joinToString(", ") { (name, schema) ->
-                            "${name}: ${schema.description() ?: schema.type()?.toString() ?: "string"}"
+                            "${name}: ${schema.description() ?: "string"}"
                         })
                         sb.append("\n")
                     }
