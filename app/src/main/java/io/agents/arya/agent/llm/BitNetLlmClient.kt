@@ -43,7 +43,9 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
         }
         val path = config.baseUrl
         if (path.isBlank()) throw IllegalStateException("GGUF model path is empty")
-        val handle = BitNetNative.loadModel(path, nCtx = 2048, nThreads = 0)
+        // nCtx=1024: half the context window = half the KV cache RAM.
+        // For 1.5B phone tasks, 1024 tokens is plenty and saves ~300MB RAM.
+        val handle = BitNetNative.loadModel(path, nCtx = 1024, nThreads = 0)
         if (handle <= 0) throw IllegalStateException("Failed to load GGUF model: $path (handle=$handle)")
         modelHandle = handle
         modelPath = path

@@ -628,7 +628,7 @@ class ChatSessionController(
         val client = BitNetLlmClient(config)
         // Trigger model load by calling ensureModel (via a lightweight call)
         // BitNetLlmClient lazily loads on first chat(), but we want to verify it works now
-        val testHandle = io.agents.arya.agent.llm.BitNetNative.loadModel(modelPath, nCtx = 2048, nThreads = 0)
+        val testHandle = io.agents.arya.agent.llm.BitNetNative.loadModel(modelPath, nCtx = 1024, nThreads = 0)
         if (testHandle <= 0) {
             throw IllegalStateException("Failed to load GGUF model: $modelPath (handle=$testHandle). Ensure the file is a valid GGUF model.")
         }

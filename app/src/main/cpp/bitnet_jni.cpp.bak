@@ -4,11 +4,6 @@
  * Copyright 2026 Arya Agent. Licensed under the Apache License, Version 2.0.
  *
  * Compatible with llama.cpp API as of b9999+ (post-llama-model-api refactor).
- *
- * CRITICAL FIX (v0.5.4): do_completion was re-processing ALL tokens on every
- * generation step (O(n2)), making it ~200x slower than correct incremental
- * decoding (O(n)). Now fixed: prompt processed once, then each new token
- * processed individually using the KV cache.
  */
 
 #include <jni.h>
@@ -16,8 +11,8 @@
 #include <string>
 #include <vector>
 #include <cstring>
-#include <unistd.h>
-#include <sys/sysinfo.h>
+#include <unistd.h>    // sysconf on Android
+#include <sys/sysinfo.h> // get_nprocs on Android
 
 #include "llama.h"
 
@@ -36,19 +31,22 @@ static ModelContext * handle_to_ctx(jlong handle) {
     return reinterpret_cast<ModelContext *>(handle);
 }
 
+// ---- Wrapper for llama_tokenize (new API: returns count, needs pre-allocated buffer) ----
 static std::vector<llama_token> tokenize_string(
     const llama_vocab * vocab,
     const std::string & text,
     bool add_bos,
     bool parse_special)
 {
-    const int32_t max_tokens_est = text.size() + 128;
+    // First call: get required size
+    const int32_t max_tokens_est = text.size() + 128;  // generous estimate
     std::vector<llama_token> tokens(max_tokens_est);
 
     int32_t n = llama_tokenize(vocab, text.c_str(), (int32_t)text.size(),
                                tokens.data(), max_tokens_est, add_bos, parse_special);
 
     if (n < 0) {
+        // Buffer too small; n is the negative of the required size
         tokens.resize(-n);
         n = llama_tokenize(vocab, text.c_str(), (int32_t)text.size(),
                            tokens.data(), -n, add_bos, parse_special);
@@ -70,6 +68,7 @@ static int get_nprocs_onln() {
 #endif
 }
 
+// ---- Parse stop sequences from JSON array ----
 static std::vector<std::string> parse_stop_sequences(const char * json) {
     std::vector<std::string> result;
     if (!json) return result;
@@ -84,16 +83,7 @@ static std::vector<std::string> parse_stop_sequences(const char * json) {
     return result;
 }
 
-/**
- * CORRECT incremental decoding.
- *
- * STEP 1: Process full prompt ONCE (fills KV cache)
- * STEP 2: For each new token, process only THAT token (uses KV cache)
- *
- * Old bug was passing ALL tokens to llama_decode on every iteration,
- * causing O(n2) instead of O(n). A 500-token prompt generating 256 tokens
- * took ~160,000 processing steps instead of ~756. That is ~200x slower!
- */
+// ---- Completion engine (shared by blocking & future streaming) ----
 static std::string do_completion(
     llama_context * ctx,
     const llama_vocab * vocab,
@@ -106,52 +96,28 @@ static std::string do_completion(
     const std::vector<std::string> & stop_strs)
 {
     const int n_ctx = llama_n_ctx(ctx);
-    const int n_prompt = (int)prompt_tokens.size();
-
-    if (n_prompt >= n_ctx) {
-        LOGE("Prompt too long: %d tokens, context size: %d", n_prompt, n_ctx);
-        return "";
-    }
-
-    int max_gen = max_tokens;
-    if (n_prompt + max_gen >= n_ctx) {
-        max_gen = n_ctx - n_prompt - 1;
-    }
-    if (max_gen <= 0) {
-        LOGE("No room for generation after prompt (%d tokens in %d context)", n_prompt, n_ctx);
-        return "";
-    }
+    std::vector<llama_token> tokens = prompt_tokens;
 
     // Sampler chain
     auto * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(smpl, llama_sampler_init_top_k(top_k));
     llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
-    if (repeat_penalty > 1.0f) {
-        llama_sampler_chain_add(smpl, llama_sampler_init_rep_pen(repeat_penalty, 64, 1));
-    }
     llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-    // STEP 1: Process the FULL PROMPT once (fills KV cache)
-    if (llama_decode(ctx, llama_batch_get_one(prompt_tokens.data(), n_prompt)) != 0) {
-        LOGE("llama_decode failed on prompt (%d tokens)", n_prompt);
-        llama_sampler_free(smpl);
-        return "";
-    }
-
-    LOGI("Prompt processed: %d tokens, generating up to %d tokens", n_prompt, max_gen);
-
     std::string result;
-    int n_decoded = 0;
 
-    // STEP 2: Generate tokens incrementally (one at a time, using KV cache)
-    for (int i = 0; i < max_gen; i++) {
-        llama_token new_token = llama_sampler_sample(smpl, ctx, -1);
+    for (int i = 0; i < max_tokens; i++) {
+        if ((int)tokens.size() >= n_ctx - 1) break;
 
-        if (llama_vocab_is_eog(vocab, new_token)) {
-            LOGI("End-of-generation token at step %d", i);
+        if (llama_decode(ctx, llama_batch_get_one(tokens.data(), tokens.size())) != 0) {
+            LOGE("llama_decode failed at token %d", i);
             break;
         }
+
+        llama_token new_token = llama_sampler_sample(smpl, ctx, -1);
+
+        if (llama_vocab_is_eog(vocab, new_token)) break;
 
         char buf[256];
         int n = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, true);
@@ -160,7 +126,7 @@ static std::string do_completion(
             result.append(buf, n);
         }
 
-        n_decoded++;
+        tokens.push_back(new_token);
 
         // Check stop sequences
         bool stopped = false;
@@ -173,18 +139,9 @@ static std::string do_completion(
             }
         }
         if (stopped) break;
-
-        // Process ONLY the new token (uses KV cache for all previous tokens)
-        // THIS IS THE KEY FIX - before, ALL tokens were passed every time!
-        if (llama_decode(ctx, llama_batch_get_one(&new_token, 1)) != 0) {
-            LOGE("llama_decode failed at generated token %d", i);
-            break;
-        }
     }
 
     llama_sampler_free(smpl);
-    LOGI("Generated %d tokens from %d-token prompt (total context: %d)",
-         n_decoded, n_prompt, n_prompt + n_decoded);
     return result;
 }
 
@@ -205,8 +162,9 @@ Java_io_agents_arya_agent_llm_BitNetNative_nativeLoadModel(
 
     llama_backend_init();
 
+    // Model params — llama_model_default_params returns a struct, not a pointer
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = 0;
+    model_params.n_gpu_layers = 0;  // CPU-only for now
 
     llama_model * model = llama_model_load_from_file(path, model_params);
     if (!model) {
@@ -215,6 +173,7 @@ Java_io_agents_arya_agent_llm_BitNetNative_nativeLoadModel(
         return -2;
     }
 
+    // Context params
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx           = n_ctx;
     ctx_params.n_threads       = n_threads;
@@ -268,20 +227,26 @@ Java_io_agents_arya_agent_llm_BitNetNative_nativeCompletion(
 
     const llama_vocab * vocab = mc->vocab;
 
+    // Tokenize — newer llama.cpp returns std::vector<llama_token>
+    // and takes (vocab, text, add_bos, special)
     bool add_bos = llama_vocab_get_add_bos(vocab);
     std::vector<llama_token> tokens = tokenize_string(vocab, std::string(prompt_str), add_bos, true);
 
     env->ReleaseStringUTFChars(prompt, prompt_str);
 
+    // Parse stop sequences
     const char * stops_json = env->GetStringUTFChars(stop_sequences_json, nullptr);
     auto stop_strs = parse_stop_sequences(stops_json);
     if (stops_json) env->ReleaseStringUTFChars(stop_sequences_json, stops_json);
 
+    // Run completion
     std::string result = do_completion(mc->ctx, vocab, tokens,
         max_tokens, temperature, top_p, top_k, repeat_penalty, stop_strs);
 
     return env->NewStringUTF(result.c_str());
 }
+
+// ---- Tokenization helpers ----
 
 extern "C" JNIEXPORT jintArray JNICALL
 Java_io_agents_arya_agent_llm_BitNetNative_nativeTokenize(
