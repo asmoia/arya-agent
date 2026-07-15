@@ -174,26 +174,26 @@ object LlmSessionManager {
      * Single-shot GGUF model call using BitNetLlmClient (llama.cpp backend).
      */
     private fun singleShotBitNet(modelPath: String, systemPrompt: String, prompt: String, temperature: Double): String? {
+        val config = io.agents.arya.agent.AgentConfig(
+            apiKey = "local",
+            baseUrl = modelPath,
+            modelName = modelPath.substringAfterLast('/').substringBeforeLast('.'),
+            systemPrompt = systemPrompt,
+            temperature = temperature,
+            provider = io.agents.arya.agent.LlmProvider.BITNET,
+        )
+        val client = BitNetLlmClient(config)
         return try {
-            val config = io.agents.arya.agent.AgentConfig(
-                apiKey = "local",
-                baseUrl = modelPath,
-                modelName = modelPath.substringAfterLast('/').substringBeforeLast('.'),
-                systemPrompt = systemPrompt,
-                temperature = temperature,
-                provider = io.agents.arya.agent.LlmProvider.BITNET,
+            val messages = listOf<ChatMessage>(
+                SystemMessage.from(systemPrompt),
+                UserMessage.from(prompt),
             )
-            val client = BitNetLlmClient(config)
-            client.use { c ->
-                val messages = listOf<ChatMessage>(
-                    SystemMessage.from(systemPrompt),
-                    UserMessage.from(prompt),
-                )
-                c.chat(messages, emptyList()).text
-            }
+            client.chat(messages, emptyList()).text
         } catch (e: Exception) {
             XLog.w(TAG, "singleShotBitNet failed: ${e.message}")
             null
+        } finally {
+            try { client.close() } catch (_: Exception) {}
         }
     }
 
