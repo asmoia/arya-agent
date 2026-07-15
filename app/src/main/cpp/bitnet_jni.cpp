@@ -31,6 +31,35 @@ static ModelContext * handle_to_ctx(jlong handle) {
     return reinterpret_cast<ModelContext *>(handle);
 }
 
+// ---- Wrapper for llama_tokenize (new API: returns count, needs pre-allocated buffer) ----
+static std::vector<llama_token> tokenize_string(
+    const llama_vocab * vocab,
+    const std::string & text,
+    bool add_bos,
+    bool parse_special)
+{
+    // First call: get required size
+    const int32_t max_tokens_est = text.size() + 128;  // generous estimate
+    std::vector<llama_token> tokens(max_tokens_est);
+
+    int32_t n = llama_tokenize(vocab, text.c_str(), (int32_t)text.size(),
+                               tokens.data(), max_tokens_est, add_bos, parse_special);
+
+    if (n < 0) {
+        // Buffer too small; n is the negative of the required size
+        tokens.resize(-n);
+        n = llama_tokenize(vocab, text.c_str(), (int32_t)text.size(),
+                           tokens.data(), -n, add_bos, parse_special);
+    }
+
+    if (n > 0) {
+        tokens.resize(n);
+    } else {
+        tokens.clear();
+    }
+    return tokens;
+}
+
 static int get_nprocs_onln() {
 #ifdef __ANDROID__
     return get_nprocs();
@@ -150,7 +179,6 @@ Java_io_agents_arya_agent_llm_BitNetNative_nativeLoadModel(
     ctx_params.n_threads       = n_threads;
     ctx_params.n_threads_batch = n_threads;
     ctx_params.n_batch         = 512;
-    ctx_params.flash_attn      = false;
     ctx_params.embeddings      = false;
 
     llama_context * ctx = llama_init_from_model(model, ctx_params);
@@ -202,7 +230,7 @@ Java_io_agents_arya_agent_llm_BitNetNative_nativeCompletion(
     // Tokenize — newer llama.cpp returns std::vector<llama_token>
     // and takes (vocab, text, add_bos, special)
     bool add_bos = llama_vocab_get_add_bos(vocab);
-    std::vector<llama_token> tokens = llama_tokenize(vocab, std::string(prompt_str), add_bos, true);
+    std::vector<llama_token> tokens = tokenize_string(vocab, std::string(prompt_str), add_bos, true);
 
     env->ReleaseStringUTFChars(prompt, prompt_str);
 
@@ -230,7 +258,7 @@ Java_io_agents_arya_agent_llm_BitNetNative_nativeTokenize(
     const char * text_str = env->GetStringUTFChars(text, nullptr);
     if (!text_str) return nullptr;
 
-    std::vector<llama_token> tokens = llama_tokenize(mc->vocab, std::string(text_str), false, true);
+    std::vector<llama_token> tokens = tokenize_string(mc->vocab, std::string(text_str), false, true);
     env->ReleaseStringUTFChars(text, text_str);
 
     jintArray result = env->NewIntArray(static_cast<jsize>(tokens.size()));
