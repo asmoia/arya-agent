@@ -32,11 +32,13 @@ import io.agents.arya.agent.hermes.session.HermesSessionStore
 import io.agents.arya.agent.hermes.skills.HermesSkillStore
 import io.agents.arya.agent.hermes.tools.HermesMetaTools
 import io.agents.arya.agent.langchain.LangChain4jToolBridge
+import io.agents.arya.agent.llm.InferenceTelemetryCollector
 import io.agents.arya.agent.llm.LlmClient
 import io.agents.arya.agent.llm.LlmClientFactory
 import io.agents.arya.agent.llm.LlmResponse
 import io.agents.arya.agent.llm.ScreenContextReducer
 import io.agents.arya.agent.llm.StreamingListener
+import io.agents.arya.service.ForegroundService
 import io.agents.arya.tool.ToolRegistry
 import io.agents.arya.tool.ToolResult
 import io.agents.arya.tool.impl.GetScreenInfoTool
@@ -140,23 +142,27 @@ class HermesAgentService : AgentService {
             return
         }
         cancelled.set(false)
+        ForegroundService.acquireWakeLock(ClawApplication.instance)
+        val taskId = "task_${System.currentTimeMillis()}"
+        InferenceTelemetryCollector.startTask(taskId, userPrompt)
         taskFuture = executor.submit {
             try {
                 runHermesLoop(userPrompt, callback)
+                InferenceTelemetryCollector.endTask(taskId, "completed", "ok")
             } catch (e: Exception) {
                 if (!cancelled.get()) {
                     XLog.e(TAG, "Hermes loop crashed", e)
                     callback.onError(0, e, 0)
+                    InferenceTelemetryCollector.endTask(taskId, "error", e.message ?: "unknown")
+                } else {
+                    InferenceTelemetryCollector.endTask(taskId, "cancelled", "user_cancel")
                 }
             } finally {
-                // Keep the Engine warm but release the only LiteRT conversation for Chat.
                 if (::llmClient.isInitialized && config.provider.isLocal) {
-                    try { llmClient.close() } catch (e: Exception) { XLog.w(TAG, "task conversation close failed: ${e.message}") }
+                    try { llmClient.close() } catch (e: Exception) { XLog.w(TAG, "task close: ${e.message}") }
                 }
-                try {
-                    HermesAppKeeper.onTaskEnd()
-                } catch (_: Exception) {
-                }
+                try { HermesAppKeeper.onTaskEnd() } catch (_: Exception) {}
+                ForegroundService.releaseWakeLock()
                 running.set(false)
             }
         }

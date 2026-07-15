@@ -10,8 +10,9 @@ data class LlmResponse(
     val text: String?,
     val toolExecutionRequests: List<ToolExecutionRequest>,
     val tokenUsage: TokenUsage? = null,
-    /** The actual model name returned by the API (e.g. "gpt-4.1-2025-04-14"). */
-    val modelName: String? = null
+    val modelName: String? = null,
+    /** Inference telemetry from local models (BitNet/llama.cpp). Null for cloud. */
+    val telemetry: BitNetNative.InferenceTelemetry? = null,
 ) {
     fun hasToolExecutionRequests(): Boolean = toolExecutionRequests.isNotEmpty()
 }

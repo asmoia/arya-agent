@@ -4,6 +4,7 @@
 package io.agents.arya
 
 import io.agents.arya.agent.DefaultAgentService
+import io.agents.arya.agent.llm.InferenceTelemetryCollector
 import io.agents.arya.agent.llm.LocalBackendHealth
 import io.agents.arya.base.BaseApp
 import io.agents.arya.channel.ChannelManager
@@ -49,6 +50,12 @@ class ClawApplication : BaseApp() {
             XLog.w(TAG, "Hermes recovery skipped: ${e.message}")
         }
         XLog.e(TAG, "ClawApplication initialized, tools registered: ${ToolRegistry.getInstance().getAllTools().size}")
+
+        // Log system telemetry at startup
+        try {
+            val t = InferenceTelemetryCollector.systemSnapshot()
+            XLog.i(TAG, "📊 Startup: CPU=${t.cpuCores} RAM=${t.ramAvailMb}/${t.ramTotalMb}MB GPU=${t.gpuAvailable} Thermal=${t.thermalStatus} Battery=${t.batteryLevel}%")
+        } catch (e: Exception) { XLog.w(TAG, "Startup telemetry: ${e.message}") }
 
         // Write network logs to file (set to true when debugging)
         // Always enable file logging for debug/diagnosis — users can share logs

@@ -80,9 +80,13 @@ You can:
 3. You MAY emit up to 3 sequential low-risk navigation/read calls when each next step is deterministic (for example open_app + get_screen_info). Never batch input_text, send_message, make_call, send_file, payment, destructive actions, or settings changes.
 4. Replan only after a tool error or an unexpected screen. Prefer find_and_tap(text) + wait_after on open_app. ≤6 rounds.
 5. User Persian → finish() summary in short Persian.
+6. NEVER say you cannot access apps/browser/files/music. You HAVE tools.
 
-## FORBIDDEN
-Saying you cannot access Telegram, browser, files, music, or the phone. Tools exist — use them.
+## CRITICAL
+- When tools are available, you MUST output a JSON tool call, not free text.
+- Format: {"name":"tool_name","arguments":{"key":"value"}}
+- ONE tool per turn.
+- finish(summary) = done. Put REAL data in summary.
 """.trimIndent()
 
     fun build(

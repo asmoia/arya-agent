@@ -9,11 +9,13 @@ import android.view.WindowManager
 import io.agents.arya.ClawApplication
 import io.agents.arya.R
 import io.agents.arya.agent.langchain.LangChain4jToolBridge
+import io.agents.arya.agent.llm.InferenceTelemetryCollector
 import io.agents.arya.agent.llm.LlmClient
 import io.agents.arya.agent.llm.LlmClientFactory
 import io.agents.arya.agent.llm.LlmResponse
 import io.agents.arya.agent.llm.StreamingListener
 import io.agents.arya.service.ClawAccessibilityService
+import io.agents.arya.service.ForegroundService
 import io.agents.arya.tool.ToolRegistry
 import io.agents.arya.tool.impl.GetScreenInfoTool
 import io.agents.arya.tool.ToolResult
