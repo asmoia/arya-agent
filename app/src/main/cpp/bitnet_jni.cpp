@@ -128,12 +128,19 @@ static std::string do_completion(
     llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
     if (repeat_penalty > 1.0f) {
-        llama_sampler_chain_add(smpl, llama_sampler_init_rep_pen(repeat_penalty, 64, 1));
+        llama_sampler_chain_add(smpl, llama_sampler_init_penalties(
+            -1,           // penalty_last_n: -1 = use full context
+            repeat_penalty,  // penalty_repeat
+            0.0f,         // penalty_freq
+            0.0f          // penalty_present
+        ));
     }
     llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
     // STEP 1: Process the FULL PROMPT once (fills KV cache)
-    if (llama_decode(ctx, llama_batch_get_one(prompt_tokens.data(), n_prompt)) != 0) {
+    // llama_batch_get_one takes non-const token pointer
+    std::vector<llama_token> prompt_copy = prompt_tokens; // mutable copy for batch API
+    if (llama_decode(ctx, llama_batch_get_one(prompt_copy.data(), n_prompt)) != 0) {
         LOGE("llama_decode failed on prompt (%d tokens)", n_prompt);
         llama_sampler_free(smpl);
         return "";
