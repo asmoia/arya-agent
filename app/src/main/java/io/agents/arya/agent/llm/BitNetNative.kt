@@ -50,7 +50,12 @@ object BitNetNative {
      */
     fun loadModel(modelPath: String, nCtx: Int = 2048, nThreads: Int = 0): Long {
         if (!ensureLoaded()) return -1L
-        return nativeLoadModel(modelPath, nCtx, nThreads)
+        XLog.i(TAG, "loadModel: path=$modelPath nCtx=$nCtx nThreads=$nThreads")
+        val t0 = System.currentTimeMillis()
+        val handle = nativeLoadModel(modelPath, nCtx, nThreads)
+        val elapsed = System.currentTimeMillis() - t0
+        XLog.i(TAG, "loadModel: handle=$handle elapsed=${elapsed}ms")
+        return handle
     }
 
     /**

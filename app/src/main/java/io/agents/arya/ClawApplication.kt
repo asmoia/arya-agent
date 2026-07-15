@@ -51,7 +51,8 @@ class ClawApplication : BaseApp() {
         XLog.e(TAG, "ClawApplication initialized, tools registered: ${ToolRegistry.getInstance().getAllTools().size}")
 
         // Write network logs to file (set to true when debugging)
-        DefaultAgentService.FILE_LOGGING_ENABLED = BuildConfig.DEBUG
+        // Always enable file logging for debug/diagnosis — users can share logs
+        DefaultAgentService.FILE_LOGGING_ENABLED = true
         DefaultAgentService.FILE_LOGGING_CACHE_DIR = cacheDir
 
         // Lightweight initialization (main thread)

@@ -43,9 +43,9 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
         }
         val path = config.baseUrl
         if (path.isBlank()) throw IllegalStateException("GGUF model path is empty")
-        // nCtx=1024: half the context window = half the KV cache RAM.
-        // For 1.5B phone tasks, 1024 tokens is plenty and saves ~300MB RAM.
-        val handle = BitNetNative.loadModel(path, nCtx = 1024, nThreads = 0)
+        // nCtx=2048: 1024 was too small — system prompt + tool specs alone consume ~800 tokens,
+        // leaving only ~100 for chat+generation which caused immediate "done" responses.
+        val handle = BitNetNative.loadModel(path, nCtx = 2048, nThreads = 0)
         if (handle <= 0) throw IllegalStateException("Failed to load GGUF model: $path (handle=$handle)")
         modelHandle = handle
         modelPath = path
@@ -58,8 +58,14 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
     override fun chat(messages: List<ChatMessage>, toolSpecs: List<ToolSpecification>): LlmResponse {
         val handle = ensureModel()
         val prompt = buildPrompt(messages, toolSpecs)
-        XLog.d(TAG, "chat: prompt=${prompt.length} chars, tools=${toolSpecs.size}")
+        val toolNames = toolSpecs.map { it.name() }
+        XLog.i(TAG, "═══ CHAT START ═══")
+        XLog.i(TAG, "  prompt_len=${prompt.length} chars, tools=${toolSpecs.size} toolNames=$toolNames")
+        XLog.i(TAG, "  temperature=${config.temperature} maxTokens=512 nCtx=2048")
+        // Log full prompt for debugging (first 2000 chars)
+        XLog.i(TAG, "  PROMPT_START>>>\n${prompt.take(2000)}\n<<<PROMPT_END")
 
+        val t0 = System.currentTimeMillis()
         val rawOutput = BitNetNative.completion(
             handle = handle,
             prompt = prompt,
@@ -71,9 +77,16 @@ class BitNetLlmClient(private val config: AgentConfig) : LlmClient {
             stopSequences = GSON.toJson(STOP_SEQUENCES),
         ) ?: throw IllegalStateException("GGUF completion returned null")
 
-        XLog.d(TAG, "chat: output=${rawOutput.length} chars")
-        XLog.d(TAG, "chat: raw=${rawOutput.take(300)}")
-        return parseResponse(rawOutput, toolSpecs)
+        val elapsed = System.currentTimeMillis() - t0
+        XLog.i(TAG, "  RAW_OUTPUT (${rawOutput.length} chars, ${elapsed}ms):")
+        XLog.i(TAG, "  >>>${rawOutput.take(500)}<<<")
+
+        val response = parseResponse(rawOutput, toolSpecs)
+        XLog.i(TAG, "  PARSED: hasTools=${response.hasToolExecutionRequests()} " +
+            "toolCalls=${response.toolExecutionRequests?.map { "${it.name()}(${it.arguments()?.take(60)})" }} " +
+            "text=${response.text?.take(100)}")
+        XLog.i(TAG, "═══ CHAT END (${elapsed}ms) ═══")
+        return response
     }
 
     override fun chatStreaming(
