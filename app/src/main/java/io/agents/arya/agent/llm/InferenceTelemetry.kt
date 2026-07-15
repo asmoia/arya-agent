@@ -6,6 +6,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import android.os.Debug
+import android.os.PowerManager
 import io.agents.arya.ClawApplication
 import io.agents.arya.utils.XLog
 import com.google.gson.Gson
@@ -92,7 +93,10 @@ object InferenceTelemetryCollector {
         val nativeHeap = Debug.getNativeHeapAllocatedSize() / (1024 * 1024)
 
         val thermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try { am.currentThermalStatus } catch (_: Exception) { -1 }
+            try {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                pm.currentThermalStatus
+            } catch (_: Exception) { -1 }
         } else -1
 
         val batteryLevel = try {
