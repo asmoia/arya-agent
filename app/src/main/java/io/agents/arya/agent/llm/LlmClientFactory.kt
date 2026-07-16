@@ -21,6 +21,7 @@ object LlmClientFactory {
             LlmProvider.ANTHROPIC -> AnthropicLlmClient(config, httpClientBuilder)
             LlmProvider.LOCAL -> LocalLlmClient(config)
             LlmProvider.BITNET -> BitNetLlmClient(config)
+            LlmProvider.LITERT -> LitertLlmClient(config)
         }
     }
 }

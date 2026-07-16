@@ -148,6 +148,25 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- PHASE 1: VoiceInteractionService — registers Arya as Default Digital Assistant -->
+        <!--
+            To activate: Settings > Apps > Default apps > Digital assistant app > Arya
+            This enables launching via long-press Home / corner swipe / long-press Power.
+            Wake-word ("Hey Arya") requires separate opt-in (software, higher battery).
+            The actual voice pipeline (STT/TTS) is in io.agents.arya.voice.*
+        -->
+        <service
+            android:name=".voice.AryaVoiceInteractionService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction" />
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

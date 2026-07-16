@@ -3,10 +3,11 @@
 
 package io.agents.arya.agent
 
-enum class LlmProvider { OPENAI, ANTHROPIC, LOCAL, BITNET }
+enum class LlmProvider { OPENAI, ANTHROPIC, LOCAL, BITNET, LITERT }
 
-/** Both LOCAL (LiteRT-LM) and BITNET (llama.cpp) are on-device providers. */
-val LlmProvider.isLocal: Boolean get() = this == LlmProvider.LOCAL || this == LlmProvider.BITNET
+/** All on-device providers: LOCAL (generic), BITNET (llama.cpp), LITERT (NPU/GPU via Google AI Edge). */
+val LlmProvider.isLocal: Boolean get() =
+    this == LlmProvider.LOCAL || this == LlmProvider.BITNET || this == LlmProvider.LITERT
 
 data class AgentConfig(
     val apiKey: String,

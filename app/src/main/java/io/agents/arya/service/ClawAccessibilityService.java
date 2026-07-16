@@ -696,20 +696,92 @@ public class ClawAccessibilityService extends AccessibilityService {
         return performGlobalAction(GLOBAL_ACTION_BACK);
     }
 
+    /**
+     * Reliable BACK: try performGlobalAction first, fall back to edge-swipe back
+     * gesture (Android 13+ style). Far more robust across OEMs (Huawei EMUI,
+     * Xiaomi, Samsung) where performGlobalAction silently returns false.
+     */
+    public boolean pressBackReliable() {
+        if (performGlobalAction(GLOBAL_ACTION_BACK)) return true;
+        XLog.w(TAG, "performGlobalAction(BACK) returned false; trying gesture fallback");
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        int h = dm.heightPixels;
+        int rightX = (int) (dm.widthPixels * 0.98);
+        int startY = (int) (h * 0.5);
+        int endX = (int) (dm.widthPixels * 0.55);
+        return performSwipe(rightX, startY, endX, startY, 120);
+    }
+
     public boolean pressHome() {
         return performGlobalAction(GLOBAL_ACTION_HOME);
+    }
+
+    /**
+     * Reliable HOME: try performGlobalAction first, fall back to bottom-swipe-up
+     * home gesture.
+     */
+    public boolean pressHomeReliable() {
+        if (performGlobalAction(GLOBAL_ACTION_HOME)) return true;
+        XLog.w(TAG, "performGlobalAction(HOME) returned false; trying gesture fallback");
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        int cx = dm.widthPixels / 2;
+        int bottomY = (int) (dm.heightPixels * 0.85);
+        int topY = (int) (dm.heightPixels * 0.25);
+        return performSwipe(cx, bottomY, cx, topY, 160);
     }
 
     public boolean openRecentApps() {
         return performGlobalAction(GLOBAL_ACTION_RECENTS);
     }
 
+    /**
+     * Reliable RECENTS: try performGlobalAction first, fall back to bottom-swipe-up
+     * gesture.
+     */
+    public boolean openRecentAppsReliable() {
+        if (performGlobalAction(GLOBAL_ACTION_RECENTS)) return true;
+        XLog.w(TAG, "performGlobalAction(RECENTS) returned false; trying gesture fallback");
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        int cx = dm.widthPixels / 2;
+        int bottomY = (int) (dm.heightPixels * 0.85);
+        int topY = (int) (dm.heightPixels * 0.2);
+        return performSwipe(cx, bottomY, cx, topY, 220);
+    }
+
     public boolean expandNotifications() {
         return performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS);
     }
 
+    /**
+     * Reliable EXPAND NOTIFICATIONS: try performGlobalAction first, fall back to
+     * top-to-mid swipe gesture.
+     */
+    public boolean expandNotificationsReliable() {
+        if (performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)) return true;
+        XLog.w(TAG, "performGlobalAction(NOTIFICATIONS) returned false; trying gesture fallback");
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        int cx = dm.widthPixels / 2;
+        int topY = (int) (dm.heightPixels * 0.02);
+        int midY = (int) (dm.heightPixels * 0.25);
+        return performSwipe(cx, topY, cx, midY, 160);
+    }
+
     public boolean collapseNotifications() {
         return performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS);
+    }
+
+    /**
+     * Reliable COLLAPSE NOTIFICATIONS: try performGlobalAction first, fall back to
+     * mid-to-top swipe gesture.
+     */
+    public boolean collapseNotificationsReliable() {
+        if (performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)) return true;
+        XLog.w(TAG, "performGlobalAction(QUICK_SETTINGS) returned false; trying gesture fallback");
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        int cx = dm.widthPixels / 2;
+        int midY = (int) (dm.heightPixels * 0.35);
+        int topY = (int) (dm.heightPixels * 0.02);
+        return performSwipe(cx, midY, cx, topY, 160);
     }
 
     public boolean lockScreen() {
