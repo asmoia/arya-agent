@@ -3,9 +3,15 @@
     PHASE 1: VoiceInteractionService configuration.
     This enables Arya to appear as a candidate for the Default Digital Assistant.
     User must still manually select Arya in Settings > Apps > Default apps > Digital assistant app.
+
+    NOTE: The <voice-interaction> root element only accepts the public
+    VoiceInteractionService attributes (sessionService, recognitionService,
+    settingsActivity, supportsAssist, supportsLaunchVoiceAssistFromKeyguard).
+    The previous version used non-existent attributes (android:alwaysOn,
+    android:launchVoiceAssistFromKeyguard, android:shouldRecoverFromTouchTimeout)
+    which broke aapt resource linking.
 -->
 <voice-interaction xmlns:android="http://schemas.android.com/apk/res/android"
     android:sessionService="io.agents.arya.voice.AryaVoiceInteractionService"
-    android:shouldRecoverFromTouchTimeout="true"
-    android:launchVoiceAssistFromKeyguard="true"
-    android:alwaysOn="false" />
+    android:supportsAssist="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="true" />

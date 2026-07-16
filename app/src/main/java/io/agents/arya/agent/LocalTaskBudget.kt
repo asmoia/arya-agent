@@ -28,7 +28,10 @@ class LocalTaskBudget(
     val visualMax: Int = 8,
     val cloudMax: Int = 12
 ) {
-    private val counters = mutableMapOf<String, Int>()
+    // @PublishedApi: the public inline function withBudget() below accesses this
+    // map; a plain `private` member is not allowed in public-API inline bodies.
+    @PublishedApi
+    internal val counters = mutableMapOf<String, Int>()
 
     /**
      * Run [block] only while the budget for [key] allows; else return a stop message.

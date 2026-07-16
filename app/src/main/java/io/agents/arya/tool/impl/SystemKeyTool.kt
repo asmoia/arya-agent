@@ -11,9 +11,6 @@ import io.agents.arya.tool.ToolParameter
 import io.agents.arya.tool.ToolResult
 import io.agents.arya.utils.XLog
 
-import java.util.Collections
-import java.util.List
-
 /**
  * System key tool with reliable fallback.
  *
@@ -37,7 +34,7 @@ class SystemKeyTool : BaseTool() {
     override fun getName(): String = "system_key"
 
     override fun getDisplayName(): String =
-        ClawApplication.getInstance().getString(R.string.tool_name_system_key)
+        ClawApplication.instance.getString(R.string.tool_name_system_key)
 
     override fun getDescriptionEN(): String =
         "Press a system key. Supported keys: back (navigate back), home (go to home screen), " +
@@ -54,7 +51,7 @@ class SystemKeyTool : BaseTool() {
         "enter (press Enter/confirm), tab (press Tab)."
 
     override fun getParameters(): List<ToolParameter> =
-        Collections.singletonList(
+        listOf(
             ToolParameter(
                 "key",
                 "string",
@@ -64,11 +61,11 @@ class SystemKeyTool : BaseTool() {
             )
         )
 
-    override fun execute(params: Map<String, Any?>): ToolResult {
+    override fun execute(params: Map<String, Any>): ToolResult {
         // 1) Try to obtain a CONNECTED service; wait briefly for rebind.
         val service = ClawAccessibilityService.getConnectedInstance(REBIND_WAIT_MS)
         if (service == null) {
-            val enabled = ClawAccessibilityService.isEnabledInSettings(ClawApplication.getInstance())
+            val enabled = ClawAccessibilityService.isEnabledInSettings(ClawApplication.instance)
             return if (enabled) {
                 // Service is enabled in Settings but not attached yet -> transient.
                 ToolResult.error(
