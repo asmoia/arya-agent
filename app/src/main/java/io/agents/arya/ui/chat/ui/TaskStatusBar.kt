@@ -31,10 +31,10 @@ fun TaskStatusBar(
     }
 
     val statusText = when (taskState) {
-        is TaskState.Routing -> "در حال مسیریابی..."
-        is TaskState.Executing -> "در حال اجرا: ${taskState.stepDescription}"
-        is TaskState.ConfirmPending -> "منتظر تایید کاربر: ${taskState.actionDescription}"
-        is TaskState.Stopping -> "در حال متوقف‌سازی..."
+        is TaskState.Routing -> stringResource(R.string.task_status_routing)
+        is TaskState.Executing -> stringResource(R.string.task_status_executing, taskState.stepDescription)
+        is TaskState.ConfirmPending -> stringResource(R.string.task_status_confirm, taskState.actionDescription)
+        is TaskState.Stopping -> stringResource(R.string.task_status_stopping)
         else -> ""
     }
 

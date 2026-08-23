@@ -124,6 +124,26 @@ object FastTaskMatchers {
                 ToolMatch("system_key", mapOf("key" to "lock"), "قفل صفحه")
             "اسکرین شات بفرست", "take a screenshot" ->
                 ToolMatch("take_screenshot", emptyMap(), "گرفتن اسکرین‌شات")
+            "وای فای چطوره", "wifi status", "وضعیت وای فای" ->
+                ToolMatch("get_device_info", mapOf("category" to "wifi"), "وضعیت وای‌فای")
+            "بلوتوث چطوره", "bluetooth status" ->
+                ToolMatch("get_device_info", mapOf("category" to "bluetooth"), "وضعیت بلوتوث")
+            "حجم خالی چقدره", "storage left", "فضای ذخیره" ->
+                ToolMatch("get_device_info", mapOf("category" to "storage"), "فضای ذخیره‌سازی")
+            "نسخه اندروید", "android version" ->
+                ToolMatch("get_device_info", mapOf("category" to "device"), "اطلاعات دستگاه")
+            "اپ‌های نصب شده", "list apps", "installed apps" ->
+                ToolMatch("get_installed_apps", emptyMap(), "فهرست برنامه‌ها")
+            "برو هوم", "go home" ->
+                ToolMatch("system_key", mapOf("key" to "home"), "رفتن به صفحهٔ اصلی")
+            "صدا قطع کن", "mute", "سایلنت کن" ->
+                ToolMatch("system_setting", mapOf("setting" to "volume", "action" to "mute"), "بی‌صدا کردن")
+            "روشنایی زیاد کن", "brightness up" ->
+                ToolMatch("system_setting", mapOf("setting" to "brightness", "action" to "up"), "افزایش روشنایی")
+            "روشنایی کم کن", "brightness down" ->
+                ToolMatch("system_setting", mapOf("setting" to "brightness", "action" to "down"), "کاهش روشنایی")
+            "کروم رو باز کن", "open chrome" ->
+                ToolMatch("open_app", mapOf("app_name" to "Chrome"), "باز کردن کروم")
             else -> null
         }
     }

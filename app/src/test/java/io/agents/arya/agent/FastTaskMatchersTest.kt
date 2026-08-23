@@ -62,5 +62,8 @@ class FastTaskMatchersTest {
         assertEquals("get_notifications", FastTaskMatchers.match("show notifications")?.toolName)
         assertEquals("open_app", FastTaskMatchers.match("open settings")?.toolName)
         assertEquals("system_setting", FastTaskMatchers.match("airplane mode on")?.toolName)
+        assertEquals("get_device_info", FastTaskMatchers.match("wifi status")?.toolName)
+        assertEquals("get_installed_apps", FastTaskMatchers.match("list apps")?.toolName)
+        assertEquals("open_app", FastTaskMatchers.match("open chrome")?.toolName)
     }
 }

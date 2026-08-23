@@ -1,0 +1,43 @@
+== loadLibrary (must be engine only) ==
+app/src/main/java/io/agents/arya/engine/EngineNative.kt:11:        System.loadLibrary("arya-engine")
+== litert / langchain ==
+app/src/main/java/io/agents/arya/agent/llm/LlmSessionManager.kt:7: * Single-shot helpers over the new LlmClient (no LangChain4j).
+== task-state reads ==
+app/src/main/java/io/agents/arya/AppViewModel.kt:71:    fun isTaskRunning(): Boolean = taskSessionStore.isTaskRunning()
+app/src/main/java/io/agents/arya/AppViewModel.kt:174:    // Old pass-through methods removed — use startTask/stopTask/isTaskRunning/clearTaskCallback instead
+app/src/main/java/io/agents/arya/TaskOrchestrator.kt:96:    fun isTaskRunning(): Boolean = taskSessionStore.isTaskRunning()
+app/src/main/java/io/agents/arya/TaskOrchestrator.kt:122:        if (!isTaskRunning()) {
+app/src/main/java/io/agents/arya/TaskSessionStore.kt:152:    fun isTaskRunning(): Boolean = !_state.value.isTerminal()
+app/src/main/java/io/agents/arya/automation/ExternalAutomationEntrypoint.kt:46:        if (appViewModel.isTaskRunning()) {
+app/src/main/java/io/agents/arya/ui/chat/ActiveTaskShellController.kt:59:        // Always request agent cancel — isTaskRunning can lag while local LiteRT is blocked.
+app/src/main/java/io/agents/arya/ui/chat/ActiveTaskShellController.kt:61:        val wasRunning = appViewModel.isTaskRunning()
+app/src/main/java/io/agents/arya/ui/chat/ui/AssistantOverlaySheet.kt:37:    taskState: TaskState,
+app/src/main/java/io/agents/arya/ui/chat/ui/AssistantOverlaySheet.kt:76:            TaskStatusBar(taskState = taskState, onRequestStop = {})
+app/src/main/java/io/agents/arya/ui/chat/ui/TaskStatusBar.kt:25:    taskState: TaskState,
+app/src/main/java/io/agents/arya/ui/chat/ui/TaskStatusBar.kt:29:    if (taskState is TaskState.Idle || taskState is TaskState.Finished || taskState is TaskState.Cancelled || taskState is TaskState.Failed) {
+app/src/main/java/io/agents/arya/ui/chat/ui/TaskStatusBar.kt:33:    val statusText = when (taskState) {
+app/src/main/java/io/agents/arya/ui/chat/ui/TaskStatusBar.kt:35:        is TaskState.Executing -> "در حال اجرا: ${taskState.stepDescription}"
+app/src/main/java/io/agents/arya/ui/chat/ui/TaskStatusBar.kt:36:        is TaskState.ConfirmPending -> "منتظر تایید کاربر: ${taskState.actionDescription}"
+app/src/main/java/io/agents/arya/ui/chat/ChatScreen.kt:30:    taskState: TaskState,
+app/src/main/java/io/agents/arya/ui/chat/ChatScreen.kt:58:                    taskState = taskState,
+app/src/main/java/io/agents/arya/ui/chat/ChatSessionController.kt:33:    private val isTaskRunning: () -> Boolean,
+app/src/main/java/io/agents/arya/ui/chat/ComposeChatActivity.kt:56:            val taskState by taskSessionStore.state.collectAsState()
+app/src/main/java/io/agents/arya/ui/chat/ComposeChatActivity.kt:60:                taskState = taskState,
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:41:    val isTaskRunning: MutableState<Boolean>,
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:71:        if (appViewModel.isTaskRunning()) {
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:179:        uiState.isTaskRunning.value = false
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:225:        uiState.isTaskRunning.value = true
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:226:        XLog.i(TAG, "sendTask: isProcessing=TRUE isTaskRunning=TRUE")
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:258:        uiState.isTaskRunning.value = false
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:325:        uiState.isTaskRunning.value = false
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:335:            uiState.isTaskRunning.value = false
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:374:                    uiState.isTaskRunning.value = true
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:382:                    uiState.isTaskRunning.value = true
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:391:                    uiState.isTaskRunning.value = true
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:396:                    uiState.isTaskRunning.value = true
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:401:                    uiState.isTaskRunning.value = true
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:412:                    uiState.isTaskRunning.value = true
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:418:                    uiState.isTaskRunning.value = true
+app/src/main/java/io/agents/arya/ui/chat/TaskFlowController.kt:447:        uiState.isTaskRunning.value = false
+app/src/main/java/io/agents/arya/ui/chat/OverlayHostActivity.kt:32:                taskState = task,
+OK

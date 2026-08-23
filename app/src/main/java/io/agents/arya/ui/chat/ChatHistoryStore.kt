@@ -126,6 +126,27 @@ class ChatHistoryStore(private val context: Context) {
         }
     }
 
+    fun exportMarkdown(id: String): String {
+        val meta = listConversations().firstOrNull { it.id == id }
+        val messages = loadConversation(id)
+        return buildString {
+            appendLine("# ${meta?.title ?: id}")
+            appendLine()
+            for (m in messages) {
+                val who = when (m.role) {
+                    ChatMessage.Role.USER -> "User"
+                    ChatMessage.Role.ASSISTANT -> "Arya"
+                    ChatMessage.Role.SYSTEM -> "System"
+                    ChatMessage.Role.TOOL_GROUP -> "Tool"
+                }
+                appendLine("**$who**")
+                appendLine()
+                appendLine(m.content)
+                appendLine()
+            }
+        }
+    }
+
     private fun saveIndex(list: List<ConversationMeta>) {
         val array = JSONArray()
         for (c in list) {

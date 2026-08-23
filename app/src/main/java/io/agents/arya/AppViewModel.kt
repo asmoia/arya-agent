@@ -141,8 +141,13 @@ class AppViewModel : ViewModel() {
         try {
             FloatingCircleManager.show(ClawApplication.instance)
             FloatingCircleManager.onFloatClick = {
-                XLog.d(TAG, "Floating circle clicked")
-                bringAppToForeground()
+                XLog.d(TAG, "Floating circle clicked — opening overlay sheet")
+                val context = ClawApplication.instance
+                val overlay = android.content.Intent(context, io.agents.arya.ui.chat.OverlayHostActivity::class.java).apply {
+                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+                context.startActivity(overlay)
             }
             FloatingCircleManager.onStopTask = {
                 XLog.i(TAG, "Stop task requested from floating pill")

@@ -25,7 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.agents.arya.R
 import io.agents.arya.TaskState
 import io.agents.arya.ui.chat.ChatUiState
 
@@ -35,6 +37,7 @@ fun AssistantOverlaySheet(
     taskState: TaskState,
     onSendText: (String) -> Unit,
     onStartVoiceInput: () -> Unit,
+    onRequestStopTask: () -> Unit = {},
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -56,7 +59,7 @@ fun AssistantOverlaySheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "آریا · دستیار هوشمند",
+                    text = stringResource(R.string.overlay_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f)
@@ -65,13 +68,13 @@ fun AssistantOverlaySheet(
                 IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "بستن",
+                        contentDescription = stringResource(R.string.common_close),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            TaskStatusBar(taskState = taskState, onRequestStop = {})
+            TaskStatusBar(taskState = taskState, onRequestStop = onRequestStopTask)
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -93,7 +96,7 @@ fun AssistantOverlaySheet(
                 IconButton(onClick = onStartVoiceInput) {
                     Icon(
                         imageVector = Icons.Default.Mic,
-                        contentDescription = "صدا",
+                        contentDescription = stringResource(R.string.chat_cd_voice),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -101,7 +104,7 @@ fun AssistantOverlaySheet(
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    placeholder = { Text("پیام سریع...") },
+                    placeholder = { Text(stringResource(R.string.chat_input_hint)) },
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 4.dp),

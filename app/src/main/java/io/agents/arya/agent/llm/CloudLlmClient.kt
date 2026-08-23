@@ -84,10 +84,14 @@ class CloudLlmClient(private val config: CloudConfig) : LlmClient {
                         val currentLine = line!!.trim()
                         if (currentLine.isEmpty()) continue
 
-                        if (config.dialect == CloudDialect.ANTHROPIC) {
-                            handleAnthropicSseLine(currentLine, assembler, this@callbackFlow::trySend)
-                        } else {
-                            handleOpenAiSseLine(currentLine, assembler, this@callbackFlow::trySend)
+                        if (currentLine.startsWith("data:")) {
+                            val data = currentLine.substring(5).trim()
+                            val events = if (config.dialect == CloudDialect.ANTHROPIC) {
+                                SseParser.parseAnthropicDataLine(data, assembler)
+                            } else {
+                                SseParser.parseOpenAiDataLine(data, assembler)
+                            }
+                            for (event in events) trySend(event)
                         }
                     }
 

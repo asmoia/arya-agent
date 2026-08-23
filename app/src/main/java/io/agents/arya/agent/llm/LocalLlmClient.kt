@@ -38,9 +38,9 @@ class LocalLlmClient(
         val req = EngineRequest(
             prompt = promptText,
             promptMode = "full",
-            maxTokens = 512,
+            maxTokens = 256,
             temperature = config.temperature,
-            deadlineMs = 45_000L,
+            deadlineMs = 20_000L,
             tokenDeadlineMs = 4_000L,
         )
         engineClient.generate(req).collect { engineEv ->
