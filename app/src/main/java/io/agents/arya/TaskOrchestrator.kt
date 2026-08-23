@@ -11,10 +11,7 @@ import io.agents.arya.agent.PipelineRouter
 import io.agents.arya.agent.PlanExecutor
 import io.agents.arya.agent.LlmProvider
 import io.agents.arya.agent.isLocal
-import io.agents.arya.agent.llm.LocalInferenceCoordinator
-import io.agents.arya.agent.llm.LocalInferenceOwner
 import io.agents.arya.agent.llm.LocalModelManager
-import io.agents.arya.agent.llm.LocalRuntimePolicy
 import io.agents.arya.agent.skill.SkillExecutor
 import io.agents.arya.agent.skill.SkillRegistry
 import io.agents.arya.channel.Channel
@@ -68,21 +65,8 @@ class TaskOrchestrator(
         return try {
             val config = agentConfigProvider()
             if (::agentService.isInitialized) {
-                // If Hermes toggle flipped, recreate the service implementation.
-                val wantHermes = config.hermesEnabled
-                val isHermes = agentService is io.agents.arya.agent.hermes.core.HermesAgentService
-                if (wantHermes != isHermes) {
-                    XLog.i(TAG, "Agent implementation switch hermes=$wantHermes — recreating service")
-                    try {
-                        agentService.shutdown()
-                    } catch (_: Exception) {
-                    }
-                    agentService = AgentServiceFactory.create(config)
-                    agentService.initialize(config)
-                } else {
-                    agentService.updateConfig(config)
-                }
-                XLog.d(TAG, "Agent config updated: model=${config.modelName}, temp=${config.temperature}, hermes=$wantHermes")
+                agentService.updateConfig(config)
+                XLog.d(TAG, "Agent config updated: model=${config.modelName}, temp=${config.temperature}")
                 true
             } else {
                 XLog.w(TAG, "AgentService not initialized, initializing with new config")
@@ -344,9 +328,6 @@ class TaskOrchestrator(
                 agentService.updateConfig(config)
             }
         } catch (e: Exception) {
-            if (agentConfigProvider().provider.isLocal) {
-                LocalInferenceCoordinator.release(LocalInferenceOwner.TASK)
-            }
             XLog.e(TAG, "Failed to prepare AgentService", e)
             releaseTask()
             ForegroundService.resetToIdle(ClawApplication.instance)
@@ -557,10 +538,6 @@ class TaskOrchestrator(
         val config = agentConfigProvider()
         if (!config.provider.isLocal) return null
         if (config.baseUrl.isBlank()) return "No local model is configured for fallback."
-        return LocalRuntimePolicy.checkAdmission(
-            ClawApplication.instance,
-            config.baseUrl,
-            LocalInferenceOwner.TASK,
-        ) ?: LocalRuntimePolicy.checkBackendAdmission(config.baseUrl)
+        return null
     }
 }

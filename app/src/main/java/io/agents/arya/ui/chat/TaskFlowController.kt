@@ -24,8 +24,7 @@ import io.agents.arya.agent.TaskAcknowledgement
 import io.agents.arya.agent.TaskPerfTrace
 import io.agents.arya.agent.llm.ModelConfigRepository
 import io.agents.arya.agent.llm.LocalModelManager
-import io.agents.arya.agent.llm.LocalInferenceOwner
-import io.agents.arya.agent.llm.LocalRuntimePolicy
+
 import io.agents.arya.service.ClawAccessibilityService
 import io.agents.arya.service.ForegroundService
 import io.agents.arya.service.AutoReplyManager
@@ -216,18 +215,6 @@ class TaskFlowController(
         if (localMode && (needsLlm || routeMayFallbackToAgent)) {
             chatSessionController.prepareForTaskStart()
         }
-        if (needsLlm && localMode) {
-            val modelPath = ModelConfigRepository.snapshot().local.modelPath
-            if (modelPath.isNotBlank()) {
-                LocalRuntimePolicy.checkAdmission(activity, modelPath, LocalInferenceOwner.TASK)?.let { reason ->
-                    addUser(text); addSystem("⚠️ $reason"); onTaskTerminal?.invoke(TaskEvent.Failed(reason)); return
-                }
-                LocalRuntimePolicy.checkBackendAdmission(modelPath)?.let { reason ->
-                    addUser(text); addSystem("⚠️ $reason"); onTaskTerminal?.invoke(TaskEvent.Failed(reason)); return
-                }
-            }
-        }
-
         val agentPromptOverride = buildAgentPromptOverride(text)
         // HermesBootstrapActions is the single owner of agent-loop bootstrap.
         // TaskFlowController only acknowledges and dispatches; it must not open

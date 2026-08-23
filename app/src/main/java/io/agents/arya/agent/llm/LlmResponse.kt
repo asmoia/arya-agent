@@ -23,4 +23,5 @@ data class LlmResponse(
     val telemetry: InferenceTelemetry? = null,
 ) {
     fun hasToolExecutionRequests(): Boolean = toolCalls.isNotEmpty()
+    val toolExecutionRequests: List<ToolCallSpec> get() = toolCalls
 }

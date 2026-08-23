@@ -1,70 +1,15 @@
-// Copyright 2026 PokeClaw (agents.io). All rights reserved.
-// Licensed under the Apache License, Version 2.0.
-
 package io.agents.arya.agent.llm
 
-import dev.langchain4j.data.message.ChatMessage
-import dev.langchain4j.data.message.SystemMessage
-import dev.langchain4j.data.message.UserMessage
-import dev.langchain4j.model.anthropic.AnthropicChatModel
-import dev.langchain4j.model.chat.request.ChatRequest
-import dev.langchain4j.model.openai.OpenAiChatModel
-import io.agents.arya.agent.langchain.http.OkHttpClientBuilderAdapter
+import io.agents.arya.ClawApplication
 import io.agents.arya.utils.XLog
 
 /**
- * Single source of truth for LLM client creation.
- *
- * Eliminates duplicate client construction in ComposeChatActivity,
- * AutoReplyManager.generateReplyCloud(), and AutoReplyManager.singleLlmCall().
- *
- * Thread-safe. All methods can be called from any thread.
+ * Single-shot helpers over the new LlmClient (no LangChain4j).
  */
 object LlmSessionManager {
-
     private const val TAG = "LlmSessionManager"
     private const val DEFAULT_LOCAL_SYSTEM_PROMPT = "You are a helpful assistant. Answer concisely."
 
-    /**
-     * Create a Cloud LLM ChatModel using the user's current config.
-     * Returns null if no API key is configured.
-     */
-    fun createCloudChatModel(temperature: Double = 0.7): dev.langchain4j.model.chat.ChatModel? {
-        val config = ModelConfigRepository.snapshot()
-        if (config.activeMode == ActiveModelMode.LOCAL) {
-            XLog.w(TAG, "createCloudChatModel: local mode is active")
-            return null
-        }
-
-        val cloud = config.activeCloud
-        if (cloud.apiKey.isEmpty()) {
-            XLog.w(TAG, "createCloudChatModel: no API key configured")
-            return null
-        }
-
-        XLog.d(TAG, "createCloudChatModel: provider=${cloud.providerName}, model=${cloud.modelName}, baseUrl=${cloud.resolvedBaseUrl}")
-        return when (cloud.agentProvider) {
-            io.agents.arya.agent.LlmProvider.ANTHROPIC -> AnthropicChatModel.builder()
-                .httpClientBuilder(OkHttpClientBuilderAdapter())
-                .apiKey(cloud.apiKey)
-                .modelName(cloud.modelName)
-                .baseUrl(cloud.resolvedBaseUrl)
-                .temperature(temperature)
-                .build()
-
-            else -> OpenAiChatModel.builder()
-                .httpClientBuilder(OkHttpClientBuilderAdapter())
-                .apiKey(cloud.apiKey)
-                .modelName(cloud.modelName.ifEmpty { "gpt-4o-mini" })
-                .baseUrl(cloud.resolvedBaseUrl.ifEmpty { "https://api.openai.com/v1" })
-                .temperature(temperature)
-                .build()
-        }
-    }
-
-    /**
-     * Create a Cloud LlmClient using the resolved active config.
-     */
     fun createCloudClient(temperature: Double = 0.7): LlmClient? {
         val config = ModelConfigRepository.snapshot()
         if (config.activeMode == ActiveModelMode.LOCAL) return null
@@ -73,21 +18,10 @@ object LlmSessionManager {
             XLog.w(TAG, "createCloudClient: incomplete cloud config")
             return null
         }
-        return LlmClientFactory.create(
-            config.toAgentConfig(
-                temperature = temperature,
-                maxIterations = 60
-            )
-        )
+        val agent = config.toAgentConfig(temperature = temperature, maxIterations = 60)
+        return LlmClientFactory.create(ClawApplication.instance, agent, ClawApplication.instance.engineClient)
     }
 
-    /**
-     * Single-shot LLM call — send one prompt, get one response.
-     * Uses the user's selected Cloud or Local model.
-     * For quick targeted questions (not a full agent loop).
-     *
-     * @return LLM response text, or null if failed
-     */
     fun singleShot(prompt: String, temperature: Double = 0.3): String? {
         return if (ModelConfigRepository.snapshot().activeMode == ActiveModelMode.CLOUD) {
             singleShotCloud(prompt, temperature)
@@ -96,73 +30,62 @@ object LlmSessionManager {
         }
     }
 
-    /**
-     * Single-shot Cloud LLM call.
-     */
     fun singleShotCloud(prompt: String, temperature: Double = 0.7): String? {
+        val client = createCloudClient(temperature) ?: return null
         return try {
-            val chatModel = createCloudChatModel(temperature) ?: return null
-            val messages = listOf<ChatMessage>(UserMessage.from(prompt))
-            val request = ChatRequest.builder().messages(messages).build()
-            val response = chatModel.chat(request)
-            response.aiMessage().text()
+            client.chatSync(listOf(ChatMsg(Role.USER, prompt))).text
         } catch (e: Exception) {
             XLog.w(TAG, "singleShotCloud failed: ${e.message}")
             null
+        } finally {
+            client.close()
         }
     }
 
-    /**
-     * Single-shot Cloud LLM call with system prompt.
-     */
     fun singleShotCloud(systemPrompt: String, userPrompt: String, temperature: Double = 0.7): String? {
+        val client = createCloudClient(temperature) ?: return null
         return try {
-            val chatModel = createCloudChatModel(temperature) ?: return null
-            val messages = listOf<ChatMessage>(
-                SystemMessage.from(systemPrompt),
-                UserMessage.from(userPrompt)
-            )
-            val request = ChatRequest.builder().messages(messages).build()
-            val response = chatModel.chat(request)
-            response.aiMessage().text()
+            client.chatSync(
+                listOf(
+                    ChatMsg(Role.SYSTEM, systemPrompt),
+                    ChatMsg(Role.USER, userPrompt),
+                ),
+            ).text
         } catch (e: Exception) {
             XLog.w(TAG, "singleShotCloud failed: ${e.message}")
             null
+        } finally {
+            client.close()
         }
     }
 
-    /**
-     * Single-shot Local LLM call using LiteRT-LM.
-     */
-    fun singleShotLocal(prompt: String, temperature: Double = 0.3): String? {
-        return singleShotLocal(
-            systemPrompt = DEFAULT_LOCAL_SYSTEM_PROMPT,
-            prompt = prompt,
-            temperature = temperature
-        )
-    }
+    fun singleShotLocal(prompt: String, temperature: Double = 0.3): String? =
+        singleShotLocal(DEFAULT_LOCAL_SYSTEM_PROMPT, prompt, temperature)
 
     fun singleShotLocal(systemPrompt: String, prompt: String, temperature: Double = 0.3): String? {
         return try {
             val modelPath = ModelConfigRepository.snapshot().local.modelPath
             if (modelPath.isNullOrEmpty()) return null
-            if (LocalModelManager.isRetiredHeavyLocalModel(modelPath)) {
-                XLog.w(TAG, "singleShotLocal skipped: retired large local model is disabled in Fast Local mode")
-                return null
-            }
-
-            // Route GGUF/BitNet models through llama.cpp, not LiteRT-LM
-            if (LocalRuntimePolicy.isBitNet(modelPath)) {
-                singleShotBitNet(modelPath, systemPrompt, prompt, temperature)
-            } else {
-                val context = io.agents.arya.ClawApplication.instance
-                LocalModelRuntime.runSingleShot(
-                    context = context,
-                    modelPath = modelPath,
-                    systemPrompt = systemPrompt,
-                    prompt = prompt,
-                    temperature = temperature,
+            if (LocalModelManager.isRetiredHeavyLocalModel(modelPath)) return null
+            val app = ClawApplication.instance
+            val config = io.agents.arya.agent.AgentConfig(
+                apiKey = "",
+                baseUrl = modelPath,
+                modelName = modelPath.substringAfterLast('/').substringBeforeLast('.'),
+                systemPrompt = systemPrompt,
+                temperature = temperature,
+                provider = io.agents.arya.agent.LlmProvider.LOCAL,
+            )
+            val client = LocalLlmClient(app, config, app.engineClient)
+            try {
+                client.chatSync(
+                    listOf(
+                        ChatMsg(Role.SYSTEM, systemPrompt),
+                        ChatMsg(Role.USER, prompt),
+                    ),
                 ).text
+            } finally {
+                client.close()
             }
         } catch (e: Exception) {
             XLog.w(TAG, "singleShotLocal failed: ${e.message}")
@@ -170,37 +93,5 @@ object LlmSessionManager {
         }
     }
 
-    /**
-     * Single-shot GGUF model call using BitNetLlmClient (llama.cpp backend).
-     */
-    private fun singleShotBitNet(modelPath: String, systemPrompt: String, prompt: String, temperature: Double): String? {
-        val config = io.agents.arya.agent.AgentConfig(
-            apiKey = "local",
-            baseUrl = modelPath,
-            modelName = modelPath.substringAfterLast('/').substringBeforeLast('.'),
-            systemPrompt = systemPrompt,
-            temperature = temperature,
-            provider = io.agents.arya.agent.LlmProvider.BITNET,
-        )
-        val client = BitNetLlmClient(config)
-        return try {
-            val messages = listOf<ChatMessage>(
-                SystemMessage.from(systemPrompt),
-                UserMessage.from(prompt),
-            )
-            client.chat(messages, emptyList()).text
-        } catch (e: Exception) {
-            XLog.w(TAG, "singleShotBitNet failed: ${e.message}")
-            null
-        } finally {
-            try { client.close() } catch (_: Exception) {}
-        }
-    }
-
-    /**
-     * Check if Cloud LLM is configured (has API key).
-     */
-    fun isCloudConfigured(): Boolean {
-        return ModelConfigRepository.snapshot().defaultCloud.isConfigured
-    }
+    fun isCloudConfigured(): Boolean = ModelConfigRepository.snapshot().defaultCloud.isConfigured
 }

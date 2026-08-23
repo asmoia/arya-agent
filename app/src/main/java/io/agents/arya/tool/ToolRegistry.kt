@@ -3,7 +3,6 @@
 
 package io.agents.arya.tool
 
-import io.agents.arya.agent.knowledge.*
 import io.agents.arya.tool.impl.*
 import io.agents.arya.tool.impl.mobile.*
 import io.agents.arya.tool.impl.tv.*
@@ -27,7 +26,6 @@ object ToolRegistry {
             DeviceType.TV -> registerTvTools()
             DeviceType.MOBILE -> registerMobileTools()
         }
-        io.agents.arya.agent.langchain.LangChain4jToolBridge.invalidateCache()
     }
 
     private fun registerCommonTools() {
@@ -47,12 +45,6 @@ object ToolRegistry {
         register(GetNotificationsTool())
         register(MakeCallTool())
         register(FinishTool())
-        // Knowledge Base tools — shared vault available in all modes
-        register(KbWriteTool())
-        register(KbReadTool())
-        register(KbSearchTool())
-        register(KbAppendTool())
-        register(KbAddTodoTool())
     }
 
     private fun registerTvTools() {
@@ -79,8 +71,6 @@ object ToolRegistry {
         // Arya-specific tools: EMUI settings + Shamsi calendar
         register(EmuiSettingsTool())
         register(ShamsiCalendarTool())
-        // Background listen for messaging/voice notifications (Hermes)
-        register(HermesListenVoiceTool())
         // Bounded no-LLM shortcuts for common phone tasks.
         register(TelegramSavedMediaTool())
         register(SearchBrowserTool())
@@ -89,7 +79,6 @@ object ToolRegistry {
 
     fun register(tool: BaseTool) {
         tools[tool.getName()] = tool
-        io.agents.arya.agent.langchain.LangChain4jToolBridge.invalidateCache()
     }
 
     fun getTool(name: String): BaseTool? = tools[name]

@@ -1,34 +1,20 @@
-// Copyright 2026 PokeClaw (agents.io). All rights reserved.
-// Licensed under the Apache License, Version 2.0.
-
 package io.agents.arya.agent.visual
 
+import io.agents.arya.ClawApplication
 import io.agents.arya.agent.AgentConfig
 import io.agents.arya.agent.LlmProvider
+import io.agents.arya.agent.llm.ChatMsg
 import io.agents.arya.agent.llm.LlmClientFactory
+import io.agents.arya.agent.llm.Role
 import io.agents.arya.tool.BaseTool
 import io.agents.arya.tool.ToolRegistry
 import io.agents.arya.tool.ToolResult
 import io.agents.arya.utils.XLog
-import dev.langchain4j.data.message.AiMessage
-import dev.langchain4j.data.message.SystemMessage
-import dev.langchain4j.data.message.UserMessage
 
-/**
- * PHASE 2 — Visual control agent for AMBIGUOUS / NOVEL tasks.
- *
- * Loop: perceive -> plan (LLM) -> act (existing tools via ToolRegistry) ->
- * reflect -> repeat, capped by an iteration budget.
- *
- * Reuses the existing tool implementations (including the new reliable
- * system_key from Phase 0) through ToolRegistry, so no tool logic is duplicated.
- * For routine tasks, the System Orchestrator (Phase 3) will NOT route here.
- */
 class VisualControlAgent(
     private val task: String,
-    private val maxIterations: Int = 8
+    private val maxIterations: Int = 8,
 ) {
-
     companion object {
         private const val TAG = "VisualAgent"
         private const val SYSTEM_PROMPT = """
@@ -37,28 +23,27 @@ Available actions (respond with ONE action per step):
 - tap <id>            : tap element id (e.g. tap n3)
 - type <id> <text>    : type text into element id
 - swipe <id> up|down|left|right : scroll a list
-- back                : go back (uses reliable system back)
+- back                : go back
 - home                : go home
-- finish <summary>    : task done; summarize what was achieved
-Only output the action, nothing else. If stuck after reflection, try a different element.
+- finish <summary>    : task done
+Only output the action, nothing else.
 """
     }
 
     private val perceiver = ScreenPerceiver()
     private val reflector = ActionReflector()
-
-    // Reuse the same local model client the chat uses (Phase 0 backend).
     private val config: AgentConfig = AgentConfig(
         apiKey = "",
         baseUrl = "",
         provider = LlmProvider.LOCAL,
-        systemPrompt = SYSTEM_PROMPT
+        systemPrompt = SYSTEM_PROMPT,
     )
-    private val client = LlmClientFactory.create(config)
+    private val client = LlmClientFactory.create(
+        ClawApplication.instance,
+        config,
+        ClawApplication.instance.engineClient,
+    )
 
-    /**
-     * Run the visual agent loop and return a final summary.
-     */
     fun run(): String {
         val history = mutableListOf<String>()
         repeat(maxIterations) { step ->
@@ -68,30 +53,25 @@ Only output the action, nothing else. If stuck after reflection, try a different
                 XLog.w(TAG, "step $step: no screen; aborting")
                 return "Could not read the screen."
             }
-
             val prompt = buildPrompt(task, elements, history)
-            val resp = client.chat(
+            val resp = client.chatSync(
                 messages = listOf(
-                    SystemMessage.from(SYSTEM_PROMPT),
-                    UserMessage.from(prompt)
+                    ChatMsg(Role.SYSTEM, SYSTEM_PROMPT),
+                    ChatMsg(Role.USER, prompt),
                 ),
-                toolSpecs = emptyList()
             )
             val action = (resp.text ?: "").trim()
             XLog.i(TAG, "step $step: $action")
-
             if (action.startsWith("finish")) {
                 return action.removePrefix("finish").trim()
             }
-
             val expectedChange = !action.startsWith("type")
             execute(action)
             val after = perceiver.perceive()
             val r = reflector.reflect(before, after, expectedChange)
             history.add("Action: $action -> ${if (r.changed) "OK" else "FAILED: ${r.reason}"}")
             if (!r.changed && expectedChange) {
-                // Reflection says nothing happened -> tell the model to adapt next step.
-                history.add("Reflection: previous action had NO effect. Pick a different element or approach.")
+                history.add("Reflection: previous action had NO effect. Pick a different element.")
             }
         }
         return "Reached iteration limit ($maxIterations) without completing: $task"
@@ -101,7 +81,7 @@ Only output the action, nothing else. If stuck after reflection, try a different
         buildString {
             append("TASK: $task\n\nSCREEN ELEMENTS:\n$elements\n")
             if (history.isNotEmpty()) {
-                append("\nHISTORY:\n").append(history.joinToString("\n")).append("\n")
+                append("\nHISTORY:\n").append(history.joinToString("\n")).append('\n')
             }
             append("\nNext action:")
         }

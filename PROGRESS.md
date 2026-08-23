@@ -42,9 +42,20 @@ adb shell kill -9 <engine-pid>       # UI must survive; next generate rebinds
 
 ## Phase A2 — Delete LiteRT-LM + LangChain4j
 
-- [ ] No litert/mediapipe/langchain4j artifacts
-- [ ] `LlmClientFactory` returns Local (AIDL) or Cloud (OkHttp+SSE)
-- [ ] DefaultAgentService ported off LangChain4j
+- [x] LangChain4j artifacts removed from `libs.versions.toml` (never referenced by `app/build.gradle.kts`)
+- [x] `LlmClient` / `LlmClientFactory` return only Local (AIDL) or Cloud (OkHttp+SSE)
+- [x] `DefaultAgentService` rewritten off LangChain4j; `AgentServiceFactory` always returns it
+- [x] Hermes core/cron/mcp/memory/skills/voice archived under `archive/hermes/`
+- [x] OpenAi/Anthropic LangChain clients deleted
+- [x] KB tools + Hermes listen tool unregistered (S8 freeze)
+- [ ] APK size before/after: **USER ACTION REQUIRED** (no assemble here)
+
+**USER ACTION REQUIRED:**
+
+```bash
+./gradlew :app:dependencies --configuration releaseRuntimeClasspath | tee test-logs/a2-dependencies.txt
+# expect no litert / mediapipe / langchain4j
+```
 
 ## Phase A3 — MemoryBudget + DeviceProfile
 

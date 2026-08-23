@@ -83,6 +83,27 @@ object ChannelManager {
     }
 
     @JvmStatic
+    fun sendImage(channel: Channel, imageBytes: ByteArray, messageID: String) {
+        handlers[channel]?.sendImage(imageBytes, messageID)
+    }
+
+    @JvmStatic
+    fun flushMessages(channel: Channel?) {
+        channel ?: return
+        handlers[channel]?.flushMessages()
+    }
+
+    @JvmStatic
+    fun reinitWeChatFromStorage() {
+        XLog.i(TAG, "WeChat channel archived — no-op")
+    }
+
+    @JvmStatic
+    fun reinitDiscordFromStorage() {
+        XLog.i(TAG, "Discord channel archived — no-op")
+    }
+
+    @JvmStatic
     fun dispatchMessage(channel: Channel, message: String, messageID: String) {
         messageListener?.onMessageReceived(channel, message, messageID)
     }

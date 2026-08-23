@@ -1,6 +1,7 @@
 package io.agents.arya
 
 import com.tencent.mmkv.MMKV
+import io.agents.arya.channel.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -11,6 +12,19 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+
+data class TaskSessionSnapshot(
+    val messageId: String = "",
+    val channel: Channel? = null,
+    val taskText: String = "",
+    val autoReturnToChat: Boolean = true,
+)
+
+data class TaskSessionState(
+    val messageId: String = "",
+    val channel: Channel? = null,
+    val autoReturnToChat: Boolean = true,
+)
 
 sealed interface TaskState {
     val taskId: String

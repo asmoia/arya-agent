@@ -50,13 +50,7 @@ class ClawApplication : BaseApp() {
         io.agents.arya.agent.skill.SkillRegistry.loadBuiltInSkills()
         io.agents.arya.agent.PlaybookManager.loadAll(this)
 
-        try {
-            val recovery = io.agents.arya.agent.hermes.core.HermesRecovery.runOnAppStart()
-            XLog.i(TAG, recovery)
-            io.agents.arya.agent.hermes.cron.HermesCronStore.rescheduleAll(this)
-        } catch (e: Exception) {
-            XLog.w(TAG, "Hermes recovery skipped: ${e.message}")
-        }
+        // Hermes recovery/cron archived (S8).
 
         DefaultAgentService.FILE_LOGGING_ENABLED = true
         DefaultAgentService.FILE_LOGGING_CACHE_DIR = cacheDir

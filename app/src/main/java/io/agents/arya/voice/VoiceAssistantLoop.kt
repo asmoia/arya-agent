@@ -6,9 +6,11 @@ package io.agents.arya.voice
 import android.content.Context
 import io.agents.arya.agent.AgentConfig
 import io.agents.arya.agent.LlmProvider
+import io.agents.arya.ClawApplication
+import io.agents.arya.agent.llm.ChatMsg
 import io.agents.arya.agent.llm.LlmClientFactory
+import io.agents.arya.agent.llm.Role
 import io.agents.arya.utils.XLog
-import dev.langchain4j.data.message.UserMessage
 
 /**
  * PHASE 1 — The streaming voice-to-voice loop:
@@ -40,7 +42,12 @@ class VoiceAssistantLoop(private val context: Context) {
                 "Reply concisely and in the user's language."
     )
 
-    private val client = LlmClientFactory.create(config)
+    private val client = LlmClientFactory.create(
+        context,
+        config,
+        (context.applicationContext as? ClawApplication)?.engineClient
+            ?: ClawApplication.instance.engineClient,
+    )
 
     /**
      * Start the voice loop. The provided callback fires with the final recognized text.
@@ -60,9 +67,8 @@ class VoiceAssistantLoop(private val context: Context) {
     private fun respond(userText: String) {
         // Single-turn voice reply.
         // For multi-turn conversation, accumulate history from ConversationStore.
-        val response = client.chat(
-            messages = listOf(UserMessage.from(userText)),
-            toolSpecs = emptyList()
+        val response = client.chatSync(
+            messages = listOf(ChatMsg(Role.USER, userText)),
         )
         val reply = response.text ?: run {
             // If the model emitted a tool call, fall back to a short acknowledgement.
