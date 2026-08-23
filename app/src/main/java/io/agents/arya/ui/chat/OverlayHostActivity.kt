@@ -81,6 +81,24 @@ class OverlayHostActivity : ComponentActivity() {
                         }
                     },
                     onStartVoiceInput = { startVoiceInput() },
+                    onVoiceStart = {
+                        holdActive = true
+                        startVoiceInput()
+                    },
+                    onVoiceStop = {
+                        if (holdActive) {
+                            holdActive = false
+                            voiceCapture?.stop()
+                        }
+                    },
+                    onVoiceCancel = {
+                        holdActive = false
+                        voiceCapture?.cancel()
+                    },
+                    onToggleVoice = {
+                        if (isVoiceListening) voiceCapture?.stop() else startVoiceInput()
+                    },
+                    isListening = isVoiceListening,
                     onRequestStopTask = { app.taskSessionStore.requestStop() },
                     onDismiss = { finish() },
                 )

@@ -7,15 +7,17 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -32,9 +34,11 @@ fun AryaVoiceOrb(
     onTap: () -> Unit,
     onHoldStart: () -> Unit,
     onHoldEnd: () -> Unit,
+    onHoldCancel: () -> Unit = onHoldEnd,
     modifier: Modifier = Modifier,
     size: Dp = if (hero) AryaDimens.orbHero else AryaDimens.orb,
 ) {
+    var pressed by remember { mutableStateOf(false) }
     val palette = LocalAryaPalette.current
     val pulse = rememberInfiniteTransition(label = "orb")
     val scale by pulse.animateFloat(
@@ -59,23 +63,25 @@ fun AryaVoiceOrb(
     Box(
         modifier = modifier
             .size(size)
+            .scale(if (pressed) 0.94f else 1f)
             .pointerInput(enabled, listening) {
                 if (!enabled) return@pointerInput
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    val already = listening
-                    val downAt = System.currentTimeMillis()
-                    onHoldStart()
-                    waitForUpOrCancellation()
-                    val heldMs = System.currentTimeMillis() - downAt
-                    // Hold = push-to-talk (stop on release). Tap = lock listening on,
-                    // or stop if it was already listening.
-                    if (already || heldMs >= 280L) {
-                        onHoldEnd()
-                    } else {
-                        onTap()
-                    }
-                }
+                detectTapGestures(
+                    onPress = {
+                        val downAt = System.currentTimeMillis()
+                        pressed = true
+                        onHoldStart()
+                        val released = tryAwaitRelease()
+                        val heldMs = System.currentTimeMillis() - downAt
+                        pressed = false
+                        if (!released || heldMs < 300L) {
+                            onHoldCancel()
+                            if (released) onTap()
+                        } else {
+                            onHoldEnd()
+                        }
+                    },
+                )
             },
         contentAlignment = Alignment.Center,
     ) {

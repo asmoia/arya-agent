@@ -56,6 +56,7 @@ fun AryaHomeScreen(
     onToggleVoice: () -> Unit,
     onHoldStart: () -> Unit,
     onHoldEnd: () -> Unit,
+    onHoldCancel: () -> Unit = onHoldEnd,
     onStopStreaming: () -> Unit,
     onRequestStopTask: () -> Unit,
     onOpenModels: () -> Unit,
@@ -209,6 +210,7 @@ fun AryaHomeScreen(
                             onTap = onToggleVoice,
                             onHoldStart = onHoldStart,
                             onHoldEnd = onHoldEnd,
+                            onHoldCancel = onHoldCancel,
                         )
                         Spacer(Modifier.height(20.dp))
                         Text(
@@ -247,6 +249,7 @@ fun AryaHomeScreen(
                 onToggleVoice = onToggleVoice,
                 onHoldStart = onHoldStart,
                 onHoldEnd = onHoldEnd,
+                onHoldCancel = onHoldCancel,
                 onStopStreaming = onStopStreaming,
             )
         }

@@ -37,6 +37,8 @@ fun ChatScreen(
     voiceErrorMessage: String? = null,
     onStartVoiceInput: () -> Unit = {},
     onStopVoiceInput: () -> Unit = {},
+    onCancelVoiceInput: () -> Unit = onStopVoiceInput,
+    onToggleVoice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -71,7 +73,11 @@ fun ChatScreen(
             } else {
                 InputBar(
                     onSendText = onSendText,
-                    onStartVoiceInput = onStartVoiceInput,
+                    onVoiceStart = onStartVoiceInput,
+                    onVoiceStop = onStopVoiceInput,
+                    onVoiceCancel = onCancelVoiceInput,
+                    onToggleVoice = onToggleVoice,
+                    isListening = isVoiceListening,
                     isStreaming = chatUiState.isStreaming,
                     onStopStreaming = onStopStreaming,
                     initialText = chatUiState.draftText,

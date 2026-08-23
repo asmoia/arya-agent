@@ -127,6 +127,10 @@ class ComposeChatActivity : ComponentActivity() {
                             stopVoiceInput()
                         }
                     },
+                    onHoldCancel = {
+                        holdActive = false
+                        cancelVoiceInput()
+                    },
                     onStopStreaming = { chatRuntime.stopStreaming() },
                     onRequestStopTask = { taskSessionStore.requestStop() },
                     onOpenModels = { showModels = true },

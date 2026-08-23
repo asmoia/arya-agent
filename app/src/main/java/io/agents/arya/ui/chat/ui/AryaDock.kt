@@ -57,6 +57,7 @@ fun AryaDock(
     onToggleVoice: () -> Unit,
     onHoldStart: () -> Unit,
     onHoldEnd: () -> Unit,
+    onHoldCancel: () -> Unit = onHoldEnd,
     onStopStreaming: () -> Unit,
     modifier: Modifier = Modifier,
 ) {

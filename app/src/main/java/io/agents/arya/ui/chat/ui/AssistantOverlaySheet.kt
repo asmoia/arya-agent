@@ -1,5 +1,8 @@
 package io.agents.arya.ui.chat.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -7,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -25,6 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.agents.arya.R
@@ -36,12 +42,18 @@ fun AssistantOverlaySheet(
     chatUiState: ChatUiState,
     taskState: TaskState,
     onSendText: (String) -> Unit,
-    onStartVoiceInput: () -> Unit,
+    onStartVoiceInput: () -> Unit = {},
+    onVoiceStart: () -> Unit = onStartVoiceInput,
+    onVoiceStop: () -> Unit = {},
+    onVoiceCancel: () -> Unit = {},
+    onToggleVoice: () -> Unit = onStartVoiceInput,
+    isListening: Boolean = false,
     onRequestStopTask: () -> Unit = {},
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var text by remember { mutableStateOf("") }
+    var pressed by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -93,11 +105,46 @@ fun AssistantOverlaySheet(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onStartVoiceInput) {
+                val micTint = when {
+                    isListening -> MaterialTheme.colorScheme.error
+                    pressed -> MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                isListening -> MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
+                                pressed -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                                else -> MaterialTheme.colorScheme.surface
+                            }
+                        )
+                        .pointerInput(isListening) {
+                            detectTapGestures(
+                                onPress = {
+                                    val downAt = System.currentTimeMillis()
+                                    pressed = true
+                                    onVoiceStart()
+                                    val released = tryAwaitRelease()
+                                    val heldMs = System.currentTimeMillis() - downAt
+                                    pressed = false
+                                    if (!released || heldMs < 300L) {
+                                        onVoiceCancel()
+                                        if (released) onToggleVoice()
+                                    } else {
+                                        onVoiceStop()
+                                    }
+                                },
+                            )
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
                         imageVector = Icons.Default.Mic,
                         contentDescription = stringResource(R.string.chat_cd_voice),
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = micTint,
                     )
                 }
 
