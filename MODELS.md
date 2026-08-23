@@ -6,9 +6,9 @@ Pinned llama.cpp: **b10566** (`ggml-org/llama.cpp`, 2026-08). CPU only. Prompt f
 
 | id | file (Q4_K_M) | ~size | min RAM | role |
 |---|---|---|---|---|
-| `qwen3-0.6b` | [Qwen_Qwen3-0.6B-Q4_K_M.gguf](https://huggingface.co/bartowski/Qwen_Qwen3-0.6B-GGUF/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.gguf) | ~0.5 GB | 3 GB | Tier2-lite only |
-| `qwen3-1.7b` **default** | [Qwen_Qwen3-1.7B-Q4_K_M.gguf](https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main/Qwen_Qwen3-1.7B-Q4_K_M.gguf) | ~1.28 GB | 4 GB | Tier2-lite + short Tier3 |
-| `qwen3-4b` | [Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf](https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf) | ~2.5 GB | 8 GB | full local Tier3 |
+| `qwen3-0.6b` | [Qwen_Qwen3-0.6B-Q4_K_M.gguf](https://huggingface.co/bartowski/Qwen_Qwen3-0.6B-GGUF/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.gguf) | 484 220 320 B | 3 GB | Tier2-lite only |
+| `qwen3-1.7b` **default** | [Qwen_Qwen3-1.7B-Q4_K_M.gguf](https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main/Qwen_Qwen3-1.7B-Q4_K_M.gguf) | 1 282 439 584 B | 4 GB | Tier2-lite + short Tier3 |
+| `qwen3-4b` | [Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf](https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf) | 2 497 280 736 B | 8 GB | full local Tier3 |
 | `custom` | user URL (`.gguf`) | — | MemoryBudget.plan | gated |
 
 Sources verified 2026-08-23 via Hugging Face (bartowski official GGUF).

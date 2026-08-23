@@ -75,22 +75,37 @@ object LocalModelManager {
     }
 
     /**
-     * Arya ships Qwen2.5-1.5B-Instruct as the recommended on-device model.
-     * It supports ChatML natively, has great multilingual coverage (including
-     * Persian), and at Q4_K_M is only ~940 MB — far smaller than E4B's 3.6 GB.
-     * BitNet GGUF (i2_s) is also supported but requires bitnet.cpp kernels.
-     * Any GGUF model works as a custom local model.
+     * Built-in catalog: Qwen3 Q4_K_M GGUF only (bartowski, verified 2026-08-23).
+     * Official Qwen/Qwen3-0.6B-GGUF Q4_K_M path 404s; bartowski filenames are the
+     * ones already on device (do not rename Qwen_Qwen3-0.6B-Q4_K_M.gguf).
+     * BitNet is not supported — llama.cpp CPU, no bitnet.cpp kernels.
      */
-    val AVAILABLE_MODELS: List<ModelInfo> = ModelCatalog.MODELS.map { m ->
+    val AVAILABLE_MODELS: List<ModelInfo> = listOf(
         ModelInfo(
-            id = m.id,
-            displayName = m.nameEn,
-            url = m.downloadUrl,
-            fileName = m.fileName,
-            sizeBytes = m.sizeMb * 1_000_000L,
-            minRamGb = m.minRamGb,
-        )
-    }
+            id = "qwen3-0.6b",
+            displayName = "Qwen3 0.6B (very light)",
+            url = "https://huggingface.co/bartowski/Qwen_Qwen3-0.6B-GGUF/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.gguf",
+            fileName = "Qwen_Qwen3-0.6B-Q4_K_M.gguf",
+            sizeBytes = 484_220_320L,
+            minRamGb = 3,
+        ),
+        ModelInfo(
+            id = "qwen3-1.7b",
+            displayName = "Qwen3 1.7B (default)",
+            url = "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main/Qwen_Qwen3-1.7B-Q4_K_M.gguf",
+            fileName = "Qwen_Qwen3-1.7B-Q4_K_M.gguf",
+            sizeBytes = 1_282_439_584L,
+            minRamGb = 4,
+        ),
+        ModelInfo(
+            id = "qwen3-4b",
+            displayName = "Qwen3 4B Instruct 2507",
+            url = "https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+            fileName = "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+            sizeBytes = 2_497_280_736L,
+            minRamGb = 8,
+        ),
+    )
 
     fun recommendedModel(context: Context): ModelInfo? {
         val deviceRamGb = getDeviceRamGb(context)
@@ -100,8 +115,8 @@ object LocalModelManager {
     /** Blocks retired large Gemma selections left in old app preferences. */
     fun isRetiredHeavyLocalModel(modelPath: String?): Boolean {
         val path = modelPath.orEmpty().lowercase()
-        // BitNet/GGUF models are never retired — they are the new default
-        if (path.contains("bitnet") || path.contains("gguf")) return false
+        // GGUF (Qwen3) is the supported local format. Never retire a valid GGUF.
+        if (path.contains("gguf") || path.contains("qwen3")) return false
         return path.contains("gemma-4-e4b") || path.contains("gemma4-e4b") ||
             path.contains("gemma-4-e2b") || path.contains("gemma4-e2b") ||
             path.contains("e4b-it") || path.contains("e2b-it")
