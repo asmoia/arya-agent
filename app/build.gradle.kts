@@ -93,6 +93,7 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+        aidl = true
     }
 
     // ---- BitNet / llama.cpp native build ----
@@ -136,19 +137,6 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.gson)
 
-
-    implementation(libs.oapi.sdk)
-    implementation(libs.dingtalk)
-
-
-    // LangChain4j (exclude JDK http-client, use OkHttp adapter for Android)
-    implementation(libs.langchain4j.core)
-    implementation(libs.langchain4j.openai) {
-        exclude(group = "dev.langchain4j", module = "langchain4j-http-client-jdk")
-    }
-    implementation(libs.langchain4j.anthropic) {
-        exclude(group = "dev.langchain4j", module = "langchain4j-http-client-jdk")
-    }
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.retrofit)
@@ -163,7 +151,6 @@ dependencies {
     implementation(libs.glide.transformations)
     implementation(libs.easyfloat)
 
-
     // Jetpack Compose
     implementation(platform("androidx.compose:compose-bom:2025.05.00"))
     implementation("androidx.compose.ui:ui")
@@ -175,15 +162,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // LiteRT-LM on-device LLM inference (Google AI Edge)
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
-
-    // ZXing 二维码/条形码扫描
+    // ZXing QR code
     implementation(libs.zxing)
-
-    // NanoHTTPD 嵌入式 HTTP 服务器（局域网配置服务）
-    implementation(libs.nanohttpd)
-
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

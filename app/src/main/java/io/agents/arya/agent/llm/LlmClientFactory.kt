@@ -1,27 +1,32 @@
-// Copyright 2026 PokeClaw (agents.io). All rights reserved.
-// Licensed under the Apache License, Version 2.0.
-
 package io.agents.arya.agent.llm
 
+import android.content.Context
 import io.agents.arya.agent.AgentConfig
-import io.agents.arya.agent.DefaultAgentService
-import io.agents.arya.agent.LlmProvider
-import io.agents.arya.agent.langchain.http.OkHttpClientBuilderAdapter
 
 object LlmClientFactory {
 
-    fun create(config: AgentConfig): LlmClient {
-        val httpClientBuilder = OkHttpClientBuilderAdapter().apply {
-            if (DefaultAgentService.FILE_LOGGING_ENABLED && DefaultAgentService.FILE_LOGGING_CACHE_DIR != null) {
-                setFileLoggingEnabled(true, DefaultAgentService.FILE_LOGGING_CACHE_DIR)
+    fun create(
+        context: Context,
+        config: AgentConfig,
+        engineClient: EngineClient
+    ): LlmClient {
+        return if (config.isLocalModel) {
+            LocalLlmClient(context, config, engineClient)
+        } else {
+            val dialect = if (config.provider.lowercase().contains("anthropic")) {
+                CloudDialect.ANTHROPIC
+            } else {
+                CloudDialect.OPENAI
             }
-        }
-        return when (config.provider) {
-            LlmProvider.OPENAI -> OpenAiLlmClient(config, httpClientBuilder)
-            LlmProvider.ANTHROPIC -> AnthropicLlmClient(config, httpClientBuilder)
-            LlmProvider.LOCAL -> LocalLlmClient(config)
-            LlmProvider.BITNET -> BitNetLlmClient(config)
-            LlmProvider.LITERT -> LitertLlmClient(config)
+
+            val cloudConfig = CloudConfig(
+                baseUrl = config.baseUrl.ifEmpty { "https://api.openai.com/v1" },
+                apiKey = config.apiKey,
+                model = config.modelName.ifEmpty { "gpt-4o-mini" },
+                dialect = dialect,
+                temperature = config.temperature
+            )
+            CloudLlmClient(cloudConfig)
         }
     }
 }
