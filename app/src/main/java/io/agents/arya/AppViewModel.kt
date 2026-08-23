@@ -14,7 +14,6 @@ import io.agents.arya.channel.ChannelManager
 import io.agents.arya.channel.ChannelSetup
 import io.agents.arya.service.ForegroundService
 import io.agents.arya.floating.FloatingCircleManager
-import io.agents.arya.server.ConfigServerManager
 import io.agents.arya.service.KeepAliveJobService
 import io.agents.arya.utils.KVUtils
 import io.agents.arya.utils.XLog
@@ -102,7 +101,6 @@ class AppViewModel : ViewModel() {
         acquireScreenWakeLock()
         KeepAliveJobService.cancel(ClawApplication.instance)
         ForegroundService.syncToBackgroundState(ClawApplication.instance)
-        ConfigServerManager.autoStartIfNeeded(ClawApplication.instance)
         channelSetup.setup()
     }
 

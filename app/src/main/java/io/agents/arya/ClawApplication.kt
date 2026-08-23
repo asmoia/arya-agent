@@ -1,11 +1,8 @@
-// Copyright 2026 PokeClaw (agents.io). All rights reserved.
-// Licensed under the Apache License, Version 2.0.
-
 package io.agents.arya
 
 import io.agents.arya.agent.DefaultAgentService
+import io.agents.arya.agent.llm.EngineClient
 import io.agents.arya.agent.llm.InferenceTelemetryCollector
-import io.agents.arya.agent.llm.LocalBackendHealth
 import io.agents.arya.base.BaseApp
 import io.agents.arya.channel.ChannelManager
 import io.agents.arya.tool.ToolRegistry
@@ -14,11 +11,8 @@ import io.agents.arya.utils.KVUtils
 import io.agents.arya.utils.XLog
 import com.blankj.utilcode.util.NetworkUtils
 
-/**
- * Application entry point
- */
-
 val appViewModel: AppViewModel by lazy { ClawApplication.appViewModelInstance }
+
 class ClawApplication : BaseApp() {
 
     companion object {
@@ -28,20 +22,34 @@ class ClawApplication : BaseApp() {
         lateinit var appViewModelInstance: AppViewModel
     }
 
+    lateinit var engineClient: EngineClient
+        private set
+    lateinit var taskSessionStore: TaskSessionStore
+        private set
+    lateinit var permissionTruth: PermissionTruth
+        private set
+
     override fun onCreate() {
         super.onCreate()
-        AppCapabilityCoordinator.markProcessStart()
         instance = this
+        AppCapabilityCoordinator.markProcessStart()
         AppLogStore.init(this)
         XLog.setDEBUG(BuildConfig.DEBUG)
+
+        KVUtils.init(this)
+
+        // Singletons for redesign architecture
+        engineClient = EngineClient(this)
+        taskSessionStore = TaskSessionStore()
+        permissionTruth = PermissionTruth(this)
+
         registerNetworkCallback()
         appViewModelInstance = getAppViewModelProvider()[AppViewModel::class.java]
-        KVUtils.init(this)
-        LocalBackendHealth.recoverPendingGpuCrashIfNeeded()
+
         ToolRegistry.getInstance().registerAllTools(ToolRegistry.DeviceType.MOBILE)
         io.agents.arya.agent.skill.SkillRegistry.loadBuiltInSkills()
         io.agents.arya.agent.PlaybookManager.loadAll(this)
-        // Close orphan Hermes sessions left open by force-stop / OOM / reboot mid-task.
+
         try {
             val recovery = io.agents.arya.agent.hermes.core.HermesRecovery.runOnAppStart()
             XLog.i(TAG, recovery)
@@ -49,48 +57,30 @@ class ClawApplication : BaseApp() {
         } catch (e: Exception) {
             XLog.w(TAG, "Hermes recovery skipped: ${e.message}")
         }
-        XLog.e(TAG, "ClawApplication initialized, tools registered: ${ToolRegistry.getInstance().getAllTools().size}")
 
-        // Log system telemetry at startup
-        try {
-            val t = InferenceTelemetryCollector.systemSnapshot()
-            XLog.i(TAG, "📊 Startup: CPU=${t.cpuCores} RAM=${t.ramAvailMb}/${t.ramTotalMb}MB GPU=${t.gpuAvailable} Thermal=${t.thermalStatus} Battery=${t.batteryLevel}%")
-        } catch (e: Exception) { XLog.w(TAG, "Startup telemetry: ${e.message}") }
-
-        // Write network logs to file (set to true when debugging)
-        // Always enable file logging for debug/diagnosis — users can share logs
         DefaultAgentService.FILE_LOGGING_ENABLED = true
         DefaultAgentService.FILE_LOGGING_CACHE_DIR = cacheDir
 
-        // Lightweight initialization (main thread)
         appViewModelInstance.initCommon()
         Thread({
             try {
-                android.util.Log.e("POKECLAW_INIT", "app-async-init thread STARTED")
-                val hasConfig = KVUtils.hasLlmConfig()
-                android.util.Log.e("POKECLAW_INIT", "app-async-init: hasLlmConfig=$hasConfig, canDrawOverlays=${android.provider.Settings.canDrawOverlays(instance)}")
-                if (hasConfig) {
+                if (KVUtils.hasLlmConfig()) {
                     appViewModelInstance.initAgent()
                     appViewModelInstance.afterInit()
                 }
             } catch (e: Exception) {
-                android.util.Log.e("POKECLAW_INIT", "app-async-init CRASHED: ${e.message}", e)
+                XLog.e(TAG, "Async init failed: ${e.message}", e)
             }
         }, "app-async-init").start()
     }
 
     private var networkListener: NetworkUtils.OnNetworkStatusChangedListener? = null
 
-    /**
-     * Listen for network recovery and automatically re-initialize channels.
-     * Fixes channel initialization failures when booting with no network, and reconnects channels after network outages.
-     */
     private fun registerNetworkCallback() {
         networkListener = object : NetworkUtils.OnNetworkStatusChangedListener {
             override fun onConnected(networkType: NetworkUtils.NetworkType?) {
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                     if (KVUtils.hasLlmConfig()) {
-                        XLog.i(TAG, "Network recovered (${networkType?.name}), checking and reconnecting dropped channels")
                         ChannelManager.reconnectIfNeeded()
                     }
                 }, 2000)
@@ -102,5 +92,4 @@ class ClawApplication : BaseApp() {
         }
         NetworkUtils.registerNetworkStatusChangedListener(networkListener)
     }
-
 }

@@ -81,6 +81,26 @@ object FastTaskMatchers {
                 ToolMatch("system_key", mapOf("key" to "back"), "بازگشت")
             "اسکرین شات بگیر", "اسکرین‌شات بگیر", "عکس از صفحه بگیر" ->
                 ToolMatch("take_screenshot", emptyMap(), "گرفتن اسکرین‌شات")
+            "وای فای رو روشن کن", "وای‌فای رو روشن کن", "روشن کردن وای فای" ->
+                ToolMatch("system_setting", mapOf("setting" to "wifi", "action" to "on"), "روشن کردن وای‌فای")
+            "وای فای رو خاموش کن", "وای‌فای رو خاموش کن", "خاموش کردن وای فای" ->
+                ToolMatch("system_setting", mapOf("setting" to "wifi", "action" to "off"), "خاموش کردن وای‌فای")
+            "بلوتوث رو روشن کن", "روشن کردن بلوتوث" ->
+                ToolMatch("system_setting", mapOf("setting" to "bluetooth", "action" to "on"), "روشن کردن بلوتوث")
+            "بلوتوث رو خاموش کن", "خاموش کردن بلوتوث" ->
+                ToolMatch("system_setting", mapOf("setting" to "bluetooth", "action" to "off"), "خاموش کردن بلوتوث")
+            "چراغ قوه رو روشن کن", "فلاش رو روشن کن" ->
+                ToolMatch("system_setting", mapOf("setting" to "flashlight", "action" to "on"), "روشن کردن چراغ‌قوه")
+            "چراغ قوه رو خاموش کن", "فلاش رو خاموش کن" ->
+                ToolMatch("system_setting", mapOf("setting" to "flashlight", "action" to "off"), "خاموش کردن چراغ‌قوه")
+            "صدا رو زیاد کن", "ولوم رو زیاد کن" ->
+                ToolMatch("system_setting", mapOf("setting" to "volume", "action" to "up"), "افزایش صدای زنگ")
+            "صدا رو کم کن", "ولوم رو کم کن" ->
+                ToolMatch("system_setting", mapOf("setting" to "volume", "action" to "down"), "کاهش صدای زنگ")
+            "دوربین رو باز کن", "برنامه دوربین رو باز کن" ->
+                ToolMatch("open_app", mapOf("app_name" to "Camera"), "باز کردن دوربین")
+            "ماشین حساب رو باز کن" ->
+                ToolMatch("open_app", mapOf("app_name" to "Calculator"), "باز کردن ماشین حساب")
             else -> null
         }
     }
