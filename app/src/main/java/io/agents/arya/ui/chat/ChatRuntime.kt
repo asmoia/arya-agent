@@ -25,6 +25,7 @@ data class ChatUiState(
     val activeToolName: String? = null,
     val errorMessage: String? = null,
     val draftText: String = "",
+    val statusLine: String? = null,
 )
 
 class ChatRuntime(
@@ -64,6 +65,7 @@ class ChatRuntime(
             streamingReasoning = null,
             activeToolName = null,
             draftText = "",
+            statusLine = "Starting…",
         )
 
         historyStore.saveConversation(conversationId, userText.take(20), updatedMsgs)
@@ -153,7 +155,8 @@ class ChatRuntime(
         streamJob?.cancel()
         _uiState.value = _uiState.value.copy(
             isStreaming = false,
-            activeToolName = null
+            activeToolName = null,
+            statusLine = null,
         )
     }
 

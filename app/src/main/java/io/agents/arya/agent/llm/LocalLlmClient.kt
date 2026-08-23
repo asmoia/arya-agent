@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import io.agents.arya.utils.XLog
 
 /**
  * Main-process local client. Never loads natives — all work goes over AIDL.
@@ -20,38 +22,68 @@ class LocalLlmClient(
     private val engineClient: EngineClient,
 ) : LlmClient {
 
+    companion object {
+        private const val TAG = "LocalLlmClient"
+    }
+
     override fun chatStream(messages: List<ChatMsg>, tools: List<ToolSpec>): Flow<LlmEvent> = flow {
         val modelPath = config.baseUrl
         if (modelPath.isEmpty()) {
             emit(LlmEvent.Error(2, "No local model path configured"))
             return@flow
         }
+        val promptMessages = if (messages.any { it.role == Role.SYSTEM }) {
+            messages
+        } else {
+            listOf(
+                ChatMsg(
+                    Role.SYSTEM,
+                    "You are Arya, a concise on-device assistant. Answer in a few short sentences. Never write <think> tags.",
+                ),
+            ) + messages
+        }
         try {
-            engineClient.ensureLoaded(modelPath)
+            emit(LlmEvent.Status("Starting local engine…"))
+            XLog.i(TAG, "ensureLoaded $modelPath")
+            withTimeout(90_000L) {
+                engineClient.ensureLoaded(modelPath)
+            }
+            emit(LlmEvent.Status("Model ready. Writing…"))
         } catch (e: Exception) {
+            XLog.e(TAG, "ensureLoaded failed", e)
             emit(LlmEvent.Error(3, "Failed to load local model: ${e.message}"))
             return@flow
         }
 
         val assembler = StreamAssembler()
-        val promptText = ChatMlPrompt.build(messages, tools, enableThinking = false)
+        val promptText = ChatMlPrompt.build(promptMessages, tools, enableThinking = false)
+        XLog.i(TAG, "generate promptChars=${promptText.length}")
         val req = EngineRequest(
             prompt = promptText,
             promptMode = "full",
-            maxTokens = 256,
-            temperature = config.temperature,
-            deadlineMs = 20_000L,
-            tokenDeadlineMs = 4_000L,
+            maxTokens = 192,
+            temperature = 0.2,
+            topP = 0.9,
+            topK = 20,
+            deadlineMs = 25_000L,
+            tokenDeadlineMs = 6_000L,
         )
-        engineClient.generate(req).collect { engineEv ->
-            when (engineEv) {
-                is EngineEvent.Delta -> assembler.feed(engineEv.text).forEach { emit(it) }
-                is EngineEvent.Done -> {
-                    assembler.finish().forEach { emit(it) }
+        try {
+            withTimeout(40_000L) {
+                engineClient.generate(req).collect { engineEv ->
+                    when (engineEv) {
+                        is EngineEvent.Delta -> assembler.feed(engineEv.text).forEach { emit(it) }
+                        is EngineEvent.Done -> {
+                            assembler.finish().forEach { emit(it) }
+                        }
+                        is EngineEvent.Failed -> emit(LlmEvent.Error(engineEv.code, engineEv.message))
+                        is EngineEvent.LoadProgress -> emit(LlmEvent.Status(engineEv.phase.ifBlank { "Loading…" }))
+                    }
                 }
-                is EngineEvent.Failed -> emit(LlmEvent.Error(engineEv.code, engineEv.message))
-                is EngineEvent.LoadProgress -> { }
             }
+        } catch (e: Exception) {
+            XLog.e(TAG, "generate failed", e)
+            emit(LlmEvent.Error(5, "Local model timed out or failed: ${e.message}"))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -111,6 +143,7 @@ object ChatMlPrompt {
             }
         }
         sb.append("<|im_start|>assistant\n")
+        if (!enableThinking) sb.append("/no_think\n")
         return sb.toString()
     }
 }

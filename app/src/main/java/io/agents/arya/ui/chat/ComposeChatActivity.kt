@@ -20,8 +20,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.delay
 import io.agents.arya.AppCapabilityCoordinator
-import io.agents.arya.AppRequirement
 import io.agents.arya.ClawApplication
 import io.agents.arya.TaskSessionStore
 import io.agents.arya.agent.llm.LocalModelManager
@@ -52,13 +52,17 @@ class ComposeChatActivity : ComponentActivity() {
     private var textToSpeech: TextToSpeech? = null
     private var showModels by mutableStateOf(false)
     private var showCaps by mutableStateOf(false)
+    private var capTick by mutableStateOf(0)
     private var readiness by mutableStateOf<ModelReadiness>(
         ModelReadiness.NeedsSetup("Checking models…", null),
     )
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { refreshReadiness() }
+    ) {
+        refreshReadiness()
+        capTick++
+    }
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,6 +88,12 @@ class ComposeChatActivity : ComponentActivity() {
                 val taskState by taskSessionStore.state.collectAsState()
                 val jobs by ModelDownloadHub.jobs.collectAsState()
                 LaunchedEffect(jobs) { refreshReadiness() }
+                LaunchedEffect(showCaps) {
+                    while (showCaps) {
+                        capTick++
+                        delay(800)
+                    }
+                }
 
                 AryaHomeScreen(
                     chatUiState = chatUiState,
@@ -94,7 +104,7 @@ class ComposeChatActivity : ComponentActivity() {
                     voiceError = voiceErrorMessage,
                     onSendText = { text -> trySend(text) },
                     onDraftChange = { chatRuntime.setDraft(it) },
-                    onToggleVoice = { toggleVoice() },
+                    onToggleVoice = { },
                     onHoldStart = {
                         holdActive = true
                         startVoiceInput()
@@ -143,6 +153,7 @@ class ComposeChatActivity : ComponentActivity() {
                         onDismissRequest = { showCaps = false },
                         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                     ) {
+                        capTick
                         CapabilitySheet(
                             snapshot = AppCapabilityCoordinator.snapshot(this@ComposeChatActivity),
                             onOpenSystem = { req ->
@@ -159,10 +170,23 @@ class ComposeChatActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshReadiness()
+        capTick++
+        prewarmIfPossible()
     }
 
     private fun refreshReadiness() {
         readiness = ModelSession.resolve(this)
+    }
+
+    private fun prewarmIfPossible() {
+        val gate = readiness as? ModelReadiness.Local ?: return
+        val client = (application as ClawApplication).engineClient
+        Thread({
+            try {
+                kotlinx.coroutines.runBlocking { client.ensureLoaded(gate.path) }
+            } catch (_: Exception) {
+            }
+        }, "arya-prewarm").start()
     }
 
     private fun trySend(text: String) {

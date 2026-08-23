@@ -7,7 +7,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -57,24 +59,23 @@ fun AryaVoiceOrb(
     Box(
         modifier = modifier
             .size(size)
-            .pointerInput(enabled) {
+            .pointerInput(enabled, listening) {
                 if (!enabled) return@pointerInput
-                var holding = false
-                detectTapGestures(
-                    onLongPress = {
-                        holding = true
-                        onHoldStart()
-                    },
-                    onPress = {
-                        holding = false
-                        try {
-                            tryAwaitRelease()
-                        } catch (_: Exception) {
-                        }
-                        if (holding) onHoldEnd()
-                    },
-                    onTap = { onTap() },
-                )
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    val already = listening
+                    val downAt = System.currentTimeMillis()
+                    onHoldStart()
+                    waitForUpOrCancellation()
+                    val heldMs = System.currentTimeMillis() - downAt
+                    // Hold = push-to-talk (stop on release). Tap = lock listening on,
+                    // or stop if it was already listening.
+                    if (already || heldMs >= 280L) {
+                        onHoldEnd()
+                    } else {
+                        onTap()
+                    }
+                }
             },
         contentAlignment = Alignment.Center,
     ) {

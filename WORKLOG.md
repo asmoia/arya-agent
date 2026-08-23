@@ -24,3 +24,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 16:14:23 | 143 min | [ui] iPhone-like Arya home: center voice orb, side keyboard, model studio + background FGS download, capability sheet, local-first send (no silent OpenAI)
 2026-08-23 16:20:44 | 149 min | [fix] ContextCompat/PackageManager imports; OverlayHost this@Activity for ModelSession
 2026-08-23 16:33:47 | 162 min | [release] bump 1.2.0 / 103 and tag signed APK (same keystore — upgrade keeps models)
+2026-08-23 17:00:47 | 189 min | [fix] engine process no longer boots full app; /no_think; load timeout+status; PTT voice; live permission refresh

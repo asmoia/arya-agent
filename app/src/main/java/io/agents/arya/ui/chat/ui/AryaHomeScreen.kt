@@ -166,6 +166,15 @@ fun AryaHomeScreen(
                 Spacer(Modifier.height(12.dp))
             }
 
+            if (!chatUiState.statusLine.isNullOrBlank()) {
+                Text(
+                    chatUiState.statusLine ?: "",
+                    color = palette.accent,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
+            }
+
             TaskStatusBar(taskState = taskState, onRequestStop = onRequestStopTask)
 
             Box(
@@ -191,7 +200,7 @@ fun AryaHomeScreen(
                         Spacer(Modifier.height(20.dp))
                         Text(
                             if (listening) (voicePartial.ifBlank { "Listening…" })
-                            else "Hold the orb to speak.\nOpen the keyboard on the left to type.",
+                            else "Press and hold the orb to talk. Tap to keep listening.\nKeyboard is on the left.",
                             color = palette.textSecondary,
                             fontSize = 16.sp,
                             textAlign = TextAlign.Center,

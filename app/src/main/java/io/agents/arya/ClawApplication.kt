@@ -32,6 +32,13 @@ class ClawApplication : BaseApp() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        if (isEngineProcess()) {
+            try {
+                com.tencent.mmkv.MMKV.initialize(this)
+            } catch (_: Exception) {
+            }
+            return
+        }
         AppCapabilityCoordinator.markProcessStart()
         AppLogStore.init(this)
         XLog.setDEBUG(BuildConfig.DEBUG)
@@ -92,5 +99,20 @@ class ClawApplication : BaseApp() {
             }
         }
         NetworkUtils.registerNetworkStatusChangedListener(networkListener)
+    }
+
+    private fun isEngineProcess(): Boolean {
+        val name = try {
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                getProcessName()
+            } else {
+                val pid = android.os.Process.myPid()
+                val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+                am.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName
+            }
+        } catch (_: Exception) {
+            null
+        }
+        return name?.contains(":engine") == true
     }
 }

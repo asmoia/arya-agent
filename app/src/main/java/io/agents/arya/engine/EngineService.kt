@@ -35,6 +35,8 @@ class EngineService : Service() {
     @Volatile
     private var lastTokenMs: Long = 0L
     @Volatile
+    private var generateStartedMs: Long = 0L
+    @Volatile
     private var requestDeadlineMs: Long = 0L
     @Volatile
     private var activeRequestId: Int = -1
@@ -55,8 +57,10 @@ class EngineService : Service() {
             val now = System.currentTimeMillis()
             val tokenGap = if (lastTokenMs == 0L) 0L else now - lastTokenMs
             val overdue = requestDeadlineMs > 0 && now > requestDeadlineMs
-            val stalled = lastTokenMs > 0 && tokenGap > 4_000L
-            if (overdue || stalled) {
+            val stalled = lastTokenMs > 0 && tokenGap > 6_000L
+            val noFirstToken = lastTokenMs == 0L && generateStartedMs > 0L &&
+                now - generateStartedMs > 15_000L
+            if (overdue || stalled || noFirstToken) {
                 engineCore.cancel(activeRequestId)
             } else {
                 watchdogHandler.postDelayed(this, 500L)
@@ -107,6 +111,7 @@ class EngineService : Service() {
             val requestId = nextRequestId.getAndIncrement()
             activeRequestId = requestId
             lastTokenMs = 0L
+            generateStartedMs = System.currentTimeMillis()
             val req = try {
                 EngineRequest.parse(requestJson)
             } catch (_: Exception) {

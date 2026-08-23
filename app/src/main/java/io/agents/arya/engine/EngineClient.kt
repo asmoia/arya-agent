@@ -78,11 +78,13 @@ class EngineClient(private val app: Context) {
         activeModelPath = modelPath
         val binder = getOrBindService()
         return try {
-            val json = binder.ensureLoaded(modelPath, ctxSize, nThreads)
-            _state.value = EngineState.Ready(modelPath)
-            json
+            withTimeout(90_000L) {
+                val json = binder.ensureLoaded(modelPath, ctxSize, nThreads)
+                _state.value = EngineState.Ready(modelPath)
+                json
+            }
         } catch (e: Exception) {
-            throw e
+            throw IllegalStateException("Model load failed or timed out: ${e.message}", e)
         }
     }
 

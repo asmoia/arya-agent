@@ -18,7 +18,23 @@ class DeviceProfileManager(private val context: Context) {
         if (existing != null && existing.version == DeviceProfileStore.CURRENT_VERSION) {
             return existing
         }
-        return runBench(onProgress)
+        // Never block first chat on a 64 MB flash write. Persist a conservative
+        // profile now; a later idle pass can refine it.
+        val (total, _, _) = DeviceProfileStore.readDeviceRam(context)
+        val fallback = MemoryBudget.DeviceProfile(
+            version = DeviceProfileStore.CURRENT_VERSION,
+            bigCores = detectBigCoresFallback(),
+            bestThreads = 4,
+            memBwGbs = 8.0,
+            flashMbps = 150.0,
+            ramClass = MemoryBudget.ramClassOf(total),
+        )
+        try {
+            DeviceProfileStore.write(fallback)
+        } catch (_: Exception) {
+        }
+        onProgress(100, "Using default device profile")
+        return fallback
     }
 
     fun runBench(onProgress: (Int, String) -> Unit): MemoryBudget.DeviceProfile {

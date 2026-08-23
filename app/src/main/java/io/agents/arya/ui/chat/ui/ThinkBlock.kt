@@ -45,7 +45,7 @@ fun ThinkBlock(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "تفکر عمیق مدل",
+                    text = "Model thinking",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f)
