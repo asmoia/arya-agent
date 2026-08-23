@@ -104,7 +104,9 @@ class ChatRuntime(
                                 currentAssistantText += event.delta
                                 val lastIdx = msgsWithPlaceholder.lastIndex
                                 val updated = msgsWithPlaceholder.toMutableList()
-                                updated[lastIdx] = placeholderMsg.copy(content = currentAssistantText)
+                                updated[lastIdx] = placeholderMsg.copy(
+                                    content = ChatNoise.sanitizeAssistant(currentAssistantText),
+                                )
                                 _uiState.value = _uiState.value.copy(messages = updated)
                             }
                         }
