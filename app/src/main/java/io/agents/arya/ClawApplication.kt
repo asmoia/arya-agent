@@ -37,6 +37,13 @@ class ClawApplication : BaseApp() {
         XLog.setDEBUG(BuildConfig.DEBUG)
 
         KVUtils.init(this)
+        try {
+            val mmkv = com.tencent.mmkv.MMKV.defaultMMKV()
+            if (mmkv.decodeInt("schema_version", 0) < 2) {
+                mmkv.encode("schema_version", 2)
+            }
+        } catch (_: Exception) {
+        }
 
         // Singletons for redesign architecture
         engineClient = EngineClient(this)
