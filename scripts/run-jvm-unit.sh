@@ -32,6 +32,7 @@ mkdir -p "$OUT"
   "$ROOT/app/src/main/java/io/agents/arya/utils/PersianFormat.kt" \
   "$ROOT/app/src/main/java/io/agents/arya/voice/VoiceInputState.kt" \
   "$ROOT/app/src/test/java/io/agents/arya/engine/budget/MemoryBudgetTest.kt" \
+  "$ROOT/app/src/test/java/io/agents/arya/engine/budget/GgufHeaderParserTest.kt" \
   "$ROOT/app/src/test/java/io/agents/arya/engine/PrefixCacheTest.kt" \
   "$ROOT/app/src/test/java/io/agents/arya/agent/llm/StreamAssemblerTest.kt" \
   "$ROOT/app/src/test/java/io/agents/arya/agent/llm/StreamAssemblerFuzzTest.kt" \
@@ -53,6 +54,7 @@ mkdir -p "$OUT"
 java -cp "$OUT:$CP:/tmp/kt-test/kotlinc/lib/kotlin-stdlib.jar" org.junit.runner.JUnitCore \
   io.agents.arya.engine.budget.MemoryBudgetSingleTest \
   io.agents.arya.engine.budget.MemoryBudgetTableTest \
+  io.agents.arya.engine.budget.GgufHeaderParserTest \
   io.agents.arya.engine.PrefixCacheTest \
   io.agents.arya.agent.llm.StreamAssemblerTest \
   io.agents.arya.agent.llm.StreamAssemblerFuzzTest \

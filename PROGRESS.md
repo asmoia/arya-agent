@@ -130,7 +130,14 @@ adb shell kill -9 <engine-pid>       # UI must survive; next generate rebinds
 
 ## Completion gates
 
-- [ ] TIME GATE PASS (paste bash output at end of session)
+- [ ] TIME GATE FAIL as of last check (elapsed_hours=0, ~40 min). Output:
+
+```
+elapsed_hours=0
+TIME GATE: FAIL — keep working
+```
+
+Overflow continues (22+ commits after A1). Do not treat the project as finished.
 - [ ] Phases A1–E4 tagged
 - [x] Voice state-machine tests green; manual steps in docs/MANUAL_QA.md Group V
 - [x] Overlay sheet source delivered; device proof USER ACTION
