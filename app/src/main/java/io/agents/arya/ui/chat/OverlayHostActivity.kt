@@ -1,14 +1,18 @@
 package io.agents.arya.ui.chat
 
+import android.Manifest
+import android.app.AlertDialog
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.agents.arya.ClawApplication
+import io.agents.arya.R
 import io.agents.arya.agent.AgentConfig
 import io.agents.arya.agent.llm.ModelReadiness
 import io.agents.arya.agent.llm.ModelSession
@@ -28,6 +32,13 @@ class OverlayHostActivity : ComponentActivity() {
     private var voicePartialText by mutableStateOf("")
     private var voiceErrorMessage by mutableStateOf<String?>(null)
     private var voiceCapture: VoiceCapture? = null
+    private var holdActive = false
+
+    private val micPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) actuallyStartVoice() else onMicPermissionDenied()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,7 +80,7 @@ class OverlayHostActivity : ComponentActivity() {
                             is ModelReadiness.NeedsSetup -> runtime.setDraft(text)
                         }
                     },
-                    onStartVoiceInput = { voiceCapture?.start() },
+                    onStartVoiceInput = { startVoiceInput() },
                     onRequestStopTask = { app.taskSessionStore.requestStop() },
                     onDismiss = { finish() },
                 )
@@ -84,7 +95,43 @@ class OverlayHostActivity : ComponentActivity() {
         }
 
         if (intent.getBooleanExtra(EXTRA_START_VOICE, false)) {
-            voiceCapture?.start()
+            startVoiceInput()
+        }
+    }
+
+    private fun startVoiceInput() {
+        if (VoiceCapture.hasRecordAudio(this)) {
+            actuallyStartVoice()
+            return
+        }
+        getSharedPreferences("arya_voice", MODE_PRIVATE)
+            .edit()
+            .putBoolean("mic_asked", true)
+            .apply()
+        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun actuallyStartVoice() {
+        voicePartialText = ""
+        voiceErrorMessage = null
+        voiceCapture?.start()
+    }
+
+    private fun onMicPermissionDenied() {
+        val asked = getSharedPreferences("arya_voice", MODE_PRIVATE)
+            .getBoolean("mic_asked", false)
+        val showRationale = shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
+        if (asked && !showRationale) {
+            voiceErrorMessage = getString(R.string.voice_mic_denied_forever)
+            AlertDialog.Builder(this)
+                .setMessage(R.string.voice_mic_denied_forever)
+                .setPositiveButton(R.string.voice_mic_open_settings) { _, _ ->
+                    VoiceCapture.openAppSettings(this)
+                }
+                .setNegativeButton(R.string.common_cancel, null)
+                .show()
+        } else {
+            voiceErrorMessage = getString(R.string.voice_need_mic)
         }
     }
 

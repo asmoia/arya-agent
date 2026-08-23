@@ -1,6 +1,7 @@
 package io.agents.arya.ui.chat
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
 import io.agents.arya.AppCapabilityCoordinator
 import io.agents.arya.ClawApplication
+import io.agents.arya.R
 import io.agents.arya.TaskSessionStore
 import io.agents.arya.agent.llm.LocalModelManager
 import io.agents.arya.agent.llm.ModelConfigRepository
@@ -62,6 +64,16 @@ class ComposeChatActivity : ComponentActivity() {
     ) {
         refreshReadiness()
         capTick++
+    }
+
+    private val micPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            actuallyStartVoice()
+        } else {
+            onMicPermissionDenied()
+        }
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -104,7 +116,7 @@ class ComposeChatActivity : ComponentActivity() {
                     voiceError = voiceErrorMessage,
                     onSendText = { text -> trySend(text) },
                     onDraftChange = { chatRuntime.setDraft(it) },
-                    onToggleVoice = { },
+                    onToggleVoice = { toggleVoice() },
                     onHoldStart = {
                         holdActive = true
                         startVoiceInput()
@@ -220,6 +232,18 @@ class ComposeChatActivity : ComponentActivity() {
     }
 
     private fun startVoiceInput() {
+        if (VoiceCapture.hasRecordAudio(this)) {
+            actuallyStartVoice()
+            return
+        }
+        getSharedPreferences("arya_voice", MODE_PRIVATE)
+            .edit()
+            .putBoolean("mic_asked", true)
+            .apply()
+        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun actuallyStartVoice() {
         voicePartialText = ""
         voiceErrorMessage = null
         voiceCapture?.start()
@@ -227,6 +251,29 @@ class ComposeChatActivity : ComponentActivity() {
 
     private fun stopVoiceInput() {
         voiceCapture?.stop()
+    }
+
+    fun cancelVoiceInput() {
+        holdActive = false
+        voiceCapture?.cancel()
+    }
+
+    private fun onMicPermissionDenied() {
+        val asked = getSharedPreferences("arya_voice", MODE_PRIVATE)
+            .getBoolean("mic_asked", false)
+        val showRationale = shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
+        if (asked && !showRationale) {
+            voiceErrorMessage = getString(R.string.voice_mic_denied_forever)
+            AlertDialog.Builder(this)
+                .setMessage(R.string.voice_mic_denied_forever)
+                .setPositiveButton(R.string.voice_mic_open_settings) { _, _ ->
+                    VoiceCapture.openAppSettings(this)
+                }
+                .setNegativeButton(R.string.common_cancel, null)
+                .show()
+        } else {
+            voiceErrorMessage = getString(R.string.voice_need_mic)
+        }
     }
 
     private fun initTts() {

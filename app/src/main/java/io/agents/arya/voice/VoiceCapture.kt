@@ -4,11 +4,12 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.agents.arya.R
 
@@ -25,6 +26,8 @@ class VoiceCapture(
 ) {
     private var recognizer: SpeechRecognizer? = null
     val controller = VoiceInputController()
+    @Volatile
+    private var discardNextResult = false
 
     fun ensureReady(): Boolean {
         if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
@@ -35,11 +38,7 @@ class VoiceCapture(
         if (ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            ActivityCompat.requestPermissions(
-                activity,
-                arrayOf(Manifest.permission.RECORD_AUDIO),
-                REQ_RECORD_AUDIO,
-            )
+            // Activity owns ActivityResultContracts.RequestPermission — do not request here.
             onError(activity.getString(R.string.voice_need_mic))
             return false
         }
@@ -53,6 +52,7 @@ class VoiceCapture(
 
     fun start() {
         if (!ensureReady()) return
+        discardNextResult = false
         controller.start()
         onPartial("")
         onError("")
@@ -83,6 +83,22 @@ class VoiceCapture(
         onListeningChanged(false)
     }
 
+    /** Drop the current utterance without delivering onFinal (short-press cancel). */
+    fun cancel() {
+        discardNextResult = true
+        try {
+            recognizer?.cancel()
+        } catch (_: Exception) {
+        }
+        try {
+            recognizer?.stopListening()
+        } catch (_: Exception) {
+        }
+        controller.stop()
+        onListeningChanged(false)
+        onPartial("")
+    }
+
     fun destroy() {
         try {
             recognizer?.destroy()
@@ -104,12 +120,24 @@ class VoiceCapture(
         override fun onEndOfSpeech() {}
 
         override fun onError(error: Int) {
+            if (discardNextResult) {
+                discardNextResult = false
+                controller.stop()
+                onListeningChanged(false)
+                return
+            }
             controller.onError("sr-$error")
             onListeningChanged(false)
             onError(activity.getString(R.string.voice_no_speech))
         }
 
         override fun onResults(results: Bundle?) {
+            if (discardNextResult) {
+                discardNextResult = false
+                controller.stop()
+                onListeningChanged(false)
+                return
+            }
             val transcript = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 ?.firstOrNull()

@@ -257,4 +257,6 @@
     <string name="settings_offline_stt">Offline speech recognition</string>
     <string name="settings_search_hint">Search settings</string>
     <string name="voice_need_mic">Microphone permission is required for voice input</string>
+    <string name="voice_mic_denied_forever">دسترسی میکروفون برای همیشه رد شده. از تنظیمات برنامه اجازه بدهید.</string>
+    <string name="voice_mic_open_settings">Open app settings</string>
 </resources>

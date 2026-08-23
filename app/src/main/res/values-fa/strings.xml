@@ -120,6 +120,8 @@
     <string name="settings_offline_stt">تشخیص گفتار آفلاین</string>
     <string name="settings_search_hint">جستجو در تنظیمات</string>
     <string name="voice_need_mic">برای ورودی صوتی اجازه میکروفون لازم است</string>
+    <string name="voice_mic_denied_forever">دسترسی میکروفون برای همیشه رد شده. از تنظیمات برنامه اجازه بدهید.</string>
+    <string name="voice_mic_open_settings">باز کردن تنظیمات برنامه</string>
     <string name="voice_input_unavailable">تشخیص گفتار روی این دستگاه در دسترس نیست</string>
     <string name="voice_input_error">ورودی صوتی ناموفق بود. دوباره امتحان کنید.</string>
 </resources>
