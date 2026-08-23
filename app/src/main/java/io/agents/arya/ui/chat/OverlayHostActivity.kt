@@ -63,7 +63,7 @@ class OverlayHostActivity : ComponentActivity() {
                     chatUiState = chat,
                     taskState = task,
                     onSendText = { text ->
-                        when (val gate = ModelSession.resolve(this)) {
+                        when (val gate = ModelSession.resolve(this@OverlayHostActivity)) {
                             is ModelReadiness.Local -> runtime.send(text, gate.config)
                             is ModelReadiness.Cloud -> runtime.send(text, gate.config)
                             is ModelReadiness.NeedsSetup -> runtime.setDraft(text)
