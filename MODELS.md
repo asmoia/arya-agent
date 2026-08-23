@@ -1,26 +1,22 @@
-# MODELS.md — Arya Agent (آریا) Model Catalog & Guidelines
+# Arya model catalog (S7)
 
-## 1. Official Model Lineup (Qwen3 Series)
+Pinned llama.cpp: **v0.2.0** (`ggml-org/llama.cpp`). CPU only. Prompt format: ChatML. Tool calls: `<tool_call>{json}</tool_call>`. Thinking off by default (`/no_think`).
 
-| Model ID | Name | File Format | ~Size | Min RAM | Target Role | Download Link |
-|---|---|---|---|---|---|---|
-| `qwen3-0.6b` | Qwen3 0.6B Instruct | `Q4_K_M.gguf` | ~500 MB | 3 GB | Tier2-lite only | [Download GGUF](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf) |
-| `qwen3-1.7b` **(DEFAULT)** | Qwen3 1.7B Instruct | `Q4_K_M.gguf` | ~1.2 GB | 4 GB | Tier2-lite + short Tier3 | [Download GGUF](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf) |
-| `qwen3-4b` | Qwen3 4B Instruct | `Q4_K_M.gguf` | ~2.5 GB | 8 GB | Full local Tier3 Agent | [Download GGUF](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf) |
-| `custom` | Custom GGUF Model | `.gguf` | Custom | Dynamic | User provided URL | Any valid GGUF URL |
+| id | file (Q4_K_M) | ~size | min RAM | role |
+|---|---|---|---|---|
+| `qwen3-0.6b` | [Qwen_Qwen3-0.6B-Q4_K_M.gguf](https://huggingface.co/bartowski/Qwen_Qwen3-0.6B-GGUF/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.gguf) | ~0.5 GB | 3 GB | Tier2-lite only |
+| `qwen3-1.7b` **default** | [Qwen_Qwen3-1.7B-Q4_K_M.gguf](https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main/Qwen_Qwen3-1.7B-Q4_K_M.gguf) | ~1.28 GB | 4 GB | Tier2-lite + short Tier3 |
+| `qwen3-4b` | [Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf](https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf) | ~2.5 GB | 8 GB | full local Tier3 |
+| `custom` | user URL (`.gguf`) | — | MemoryBudget.plan | gated |
 
----
+Sources verified 2026-08-23 via Hugging Face (bartowski official GGUF).
 
-## 2. RAM Gating Policy
+## Policy
 
-- Devices with **< 8 GB RAM** are restricted from running full local Tier3 agent loops on 4B models.
-- When an oversized model or task is requested on low RAM devices, Arya displays an actionable Persian message suggesting a lighter model or switching to cloud inference.
+- `ramClass < 8GB` → local **AgentLoop (Tier3)** is refused. Message: *This task needs a cloud model or a phone with at least 8 GB of RAM.*
+- Tier2-lite local calls: prompt ≤ ~1.5k tokens, maxTokens ≤ 256, deadline ≤ 20 s (enforced by EngineRequest + TaskBudget).
+- Cloud (user key) may run full Tier3.
 
----
+## Optional LoRA
 
-## 3. Fine-Tuning with Free Google Colab (Optional)
-
-You can fine-tune Qwen3 models for Persian tool calls using our free Google Colab notebook:
-- Notebook path: `training/arya_lora.ipynb`
-- Uses **Unsloth QLoRA** on a free T4 GPU
-- Exports a `Q4_K_M.gguf` file ready for installation in Arya Agent via the custom URL slot.
+See `training/arya_lora.ipynb`. User runs it on free Colab T4. The app does **not** train.
