@@ -3,12 +3,14 @@ project(arya-engine LANGUAGES C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
-# Pinned llama.cpp stable tag — recorded in PROGRESS.md
-# Tag: v0.2.0 (2026-08-21, ggml-org/llama.cpp)
+# Pin: ggml-org/llama.cpp b10566 (2026-08).
+# NOTE: tag v0.2.0 is an ancient 2023 snapshot and does NOT match this JNI
+# (no llama_model_load_from_file / llama_vocab / sampler chain). Do not revert.
 include(FetchContent)
 FetchContent_Declare(llama_cpp
     GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
-    GIT_TAG        v0.2.0
+    GIT_TAG        b10566
+    GIT_SHALLOW    TRUE
     SOURCE_SUBDIR  .
 )
 
@@ -16,12 +18,19 @@ set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
+set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
+set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA OFF CACHE BOOL "" FORCE)
 set(GGML_METAL OFF CACHE BOOL "" FORCE)
 set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
 set(GGML_BLAS OFF CACHE BOOL "" FORCE)
 set(GGML_RPC OFF CACHE BOOL "" FORCE)
+set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
+set(GGML_SYCL OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(llama_cpp)
 

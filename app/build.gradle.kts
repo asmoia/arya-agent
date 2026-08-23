@@ -111,6 +111,8 @@ android {
             cmake {
                 arguments += listOf(
                     "-DCMAKE_BUILD_TYPE=Release",
+                    "-DGGML_NATIVE=OFF",
+                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
                 )
             }
         }

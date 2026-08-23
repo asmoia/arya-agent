@@ -186,8 +186,8 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     llama_backend_init();
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0;
-    mp.use_mmap = true;
-    mp.use_mlock = false;
+    // mmap/mlock left at llama.cpp defaults (use_mmap/use_mlock were removed from
+    // llama_model_params after the 2025 API rename).
 
     llama_model * model = llama_model_load_from_file(path, mp);
     if (!model) {
@@ -254,9 +254,9 @@ Java_io_agents_arya_engine_EngineNative_nativeSaveState(
     if (!path) return JNI_FALSE;
 
     LOGI("Saving state to file: %s", path);
-    size_t written = llama_state_save_file(mc->ctx, path, nullptr, 0);
+    const bool ok = llama_state_save_file(mc->ctx, path, nullptr, 0);
     env->ReleaseStringUTFChars(state_path, path);
-    return written > 0 ? JNI_TRUE : JNI_FALSE;
+    return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -341,10 +341,13 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     }
     double prompt_eval_ms = now_ms() - t_start;
 
-    // Sampler setup
+    // Sampler setup (b10566: penalties is n_vocab, last_n, repeat, freq, present)
     auto * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(n_ctx, repeat_penalty, 0.0f, 0.0f));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_k(top_k));
+    const int32_t n_vocab = llama_vocab_n_tokens(mc->vocab);
+    if (repeat_penalty > 0.01f && repeat_penalty != 1.0f) {
+        llama_sampler_chain_add(smpl, llama_sampler_init_penalties(n_vocab, 64, repeat_penalty, 0.0f, 0.0f));
+    }
+    if (top_k > 0) llama_sampler_chain_add(smpl, llama_sampler_init_top_k(top_k));
     llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
     if (temperature < 0.01f)
