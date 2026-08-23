@@ -269,9 +269,10 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadState(
     if (!path) return JNI_FALSE;
 
     LOGI("Loading state from file: %s", path);
-    size_t read_bytes = llama_state_load_file(mc->ctx, path, nullptr, 0);
+    size_t n_tokens_out = 0;
+    const bool ok = llama_state_load_file(mc->ctx, path, nullptr, 0, &n_tokens_out);
     env->ReleaseStringUTFChars(state_path, path);
-    return read_bytes > 0 ? JNI_TRUE : JNI_FALSE;
+    return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jint JNICALL
