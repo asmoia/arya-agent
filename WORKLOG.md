@@ -11,3 +11,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 14:28:43 | 37 min | [overflow] voice settings rows, RoutingPolicy tests, Tier enum move
 2026-08-23 14:29:38 | 38 min | [overflow] long-press overlay voice, ChatMarkdown export
 2026-08-23 14:30:25 | 39 min | [overflow] unified JVM suite 55/55 green
+2026-08-23 14:30:56 | 39 min | [overflow] restore HermesDirectOpen + VoiceListenStore stubs for compile
