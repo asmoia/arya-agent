@@ -13,7 +13,51 @@ Constraint: source-only. No Gradle Android/NDK assemble, no APK compile/decompil
 
 ## Time
 
-Timer started in `/tmp/arya_t0`. See `WORKLOG.md`.
+Timer started in `/tmp/arya_t0`. See `WORKLOG.md`. F1–F8 session T0=`1787513474`. Minimum 2 h before calling this work-order done.
+
+---
+
+## F1–F8 user-test failure fixes (2026-08-23)
+
+Commits on `redesign/v1`: `[F1]` … `[F8]`. Version **1.2.2 / 105**. Source-only; signed APK = tag `v1.2.2` → Actions. See `USER_ACTION_REQUIRED.md`.
+
+### Acceptance greps (pasted)
+
+```
+$ grep -n "GIT_TAG" app/src/main/cpp/CMakeLists.txt
+13:    GIT_TAG        b10603
+
+$ grep -rn "getMemoryInfo" app/src/main/java/io/agents/arya/engine/
+app/src/main/java/io/agents/arya/engine/EngineCore.kt:306:        am.getMemoryInfo(info)
+app/src/main/java/io/agents/arya/engine/budget/DeviceProfileManager.kt:100:        am.getMemoryInfo(info)
+app/src/main/java/io/agents/arya/engine/budget/DeviceProfileStore.kt:56:        am.getMemoryInfo(info)
+
+$ grep -n "RECORD_AUDIO" app/src/main/AndroidManifest.xml
+6:    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+$ grep -n "tryAwaitRelease" app/src/main/java/io/agents/arya/ui/chat/ui/InputBar.kt
+91:                                val released = tryAwaitRelease()
+
+$ grep -n "Qwen3" app/src/main/java/io/agents/arya/agent/llm/LocalModelManager.kt
+78:     * Built-in catalog: Qwen3 Q4_K_M GGUF only (bartowski, verified 2026-08-23).
+79:     * Official Qwen/Qwen3-0.6B-GGUF Q4_K_M path 404s; bartowski filenames are the
+80:     * ones already on device (do not rename Qwen_Qwen3-0.6B-Q4_K_M.gguf).
+86:            displayName = "Qwen3 0.6B (very light)",
+87:            url = "https://huggingface.co/bartowski/Qwen_Qwen3-0.6B-GGUF/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.gguf",
+88:            fileName = "Qwen_Qwen3-0.6B-Q4_K_M.gguf",
+94:            displayName = "Qwen3 1.7B (default)",
+95:            url = "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main/Qwen_Qwen3-1.7B-Q4_K_M.gguf",
+96:            fileName = "Qwen_Qwen3-1.7B-Q4_K_M.gguf",
+102:            displayName = "Qwen3 4B Instruct 2507",
+103:            url = "https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+104:            fileName = "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+118:        // GGUF (Qwen3) is the supported local format. Never retire a valid GGUF.
+
+$ grep -rn "totalMemory()" app/src/main/java/io/agents/arya/engine/
+(empty — PASS)
+```
+
+HEAD-verified GGUF sizes: 484220320 / 1282439584 / 2497280736.
 
 ---
 

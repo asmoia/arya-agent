@@ -25,3 +25,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 16:20:44 | 149 min | [fix] ContextCompat/PackageManager imports; OverlayHost this@Activity for ModelSession
 2026-08-23 16:33:47 | 162 min | [release] bump 1.2.0 / 103 and tag signed APK (same keystore — upgrade keeps models)
 2026-08-23 17:00:47 | 189 min | [fix] engine process no longer boots full app; /no_think; load timeout+status; PTT voice; live permission refresh
+2026-08-23 19:45:33 | 14 min | [F1-F8] llama.cpp b10603, RAM via ActivityManager, async requestLoad, bind via onServiceConnected, RECORD_AUDIO runtime, hold-to-talk tryAwaitRelease, callback map, Qwen3 catalog; JVM 62/62

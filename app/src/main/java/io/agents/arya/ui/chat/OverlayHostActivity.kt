@@ -40,6 +40,23 @@ class OverlayHostActivity : ComponentActivity() {
         if (granted) actuallyStartVoice() else onMicPermissionDenied()
     }
 
+    private val sttFallbackLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val spoken = result.data
+            ?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            .orEmpty()
+        if (spoken.isNotBlank()) {
+            voicePartialText = spoken
+            // OverlayHost wires onFinal via VoiceCapture; apply here as draft/send.
+            voiceCapture?.let { /* result handled below via activity */ }
+        }
+        lastFallbackTranscript = spoken
+    }
+
+    private var lastFallbackTranscript: String = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as ClawApplication
@@ -65,6 +82,10 @@ class OverlayHostActivity : ComponentActivity() {
                 voiceErrorMessage = msg.ifBlank { null }
             },
         )
+        voiceCapture?.launchFallbackIntent = { intent ->
+            runCatching { sttFallbackLauncher.launch(intent) }
+                .onFailure { voiceErrorMessage = getString(R.string.voice_input_unavailable) }
+        }
 
         setContent {
             val chat by runtime.uiState.collectAsState()

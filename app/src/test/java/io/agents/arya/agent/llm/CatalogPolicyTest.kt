@@ -27,4 +27,13 @@ class CatalogPolicyTest {
         assertTrue(CatalogPolicy.canRunLocalTier3("8GB+"))
         assertTrue(CatalogPolicy.isAllowed(models.first { it.id == "qwen3-4b" }, "8GB+"))
     }
+
+    @Test
+    fun catalogIsThreeQwen3Q4Km() {
+        assertEquals(3, models.size)
+        assertTrue(models.all { it.id.startsWith("qwen3-") })
+        assertTrue(models.all { it.fileName.contains("Qwen3") && it.fileName.endsWith("Q4_K_M.gguf") })
+        assertTrue(models.none { it.downloadUrl.contains("bitnet", ignoreCase = true) })
+        assertTrue(models.all { it.downloadUrl.contains("bartowski") })
+    }
 }

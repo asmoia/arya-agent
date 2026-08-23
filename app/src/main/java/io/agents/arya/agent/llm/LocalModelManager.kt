@@ -388,16 +388,26 @@ object LocalModelManager {
      * Check if a model is already downloaded.
      */
     fun isModelDownloaded(context: Context, model: ModelInfo): Boolean {
-        val file = File(getModelDir(context), model.fileName)
-        return isValidModelFile(file, model)
+        return findExistingModelFile(context, model) != null
     }
 
     /**
      * Get the path to a downloaded model.
      */
     fun getModelPath(context: Context, model: ModelInfo): String? {
-        val file = File(getModelDir(context), model.fileName)
-        return if (isValidModelFile(file, model)) file.absolutePath else null
+        return findExistingModelFile(context, model)?.absolutePath
+    }
+
+    /**
+     * Look in the active dir first, then the other storage root. The Huawei 0.6B
+     * already lives under external files/models — never hide it if preference flips.
+     */
+    fun findExistingModelFile(context: Context, model: ModelInfo): File? {
+        val candidates = linkedSetOf<File>()
+        runCatching { candidates += File(getModelDir(context), model.fileName) }
+        context.getExternalFilesDir(null)?.let { candidates += File(File(it, "models"), model.fileName) }
+        candidates += File(File(context.filesDir, "models"), model.fileName)
+        return candidates.firstOrNull { isValidModelFile(it, model) }
     }
 
     private fun matchesConfiguredModel(model: ModelInfo, localConfig: LocalModelConfig): Boolean {

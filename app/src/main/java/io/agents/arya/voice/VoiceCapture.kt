@@ -28,6 +28,8 @@ class VoiceCapture(
     val controller = VoiceInputController()
     @Volatile
     private var discardNextResult = false
+    /** Optional RecognizerIntent launcher for EMUI when SpeechRecognizer returns ERROR_CLIENT. */
+    var launchFallbackIntent: ((Intent) -> Unit)? = null
 
     fun ensureReady(): Boolean {
         if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
@@ -57,14 +59,7 @@ class VoiceCapture(
         onPartial("")
         onError("")
         onListeningChanged(true)
-        val tag = java.util.Locale.getDefault().toLanguageTag()
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, tag)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-        }
+        val intent = buildListenIntent()
         try {
             recognizer?.startListening(intent)
         } catch (e: Exception) {
@@ -126,6 +121,15 @@ class VoiceCapture(
                 onListeningChanged(false)
                 return
             }
+            if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_SERVER) {
+                val fallback = launchFallbackIntent
+                if (fallback != null) {
+                    controller.stop()
+                    onListeningChanged(false)
+                    fallback(buildListenIntent())
+                    return
+                }
+            }
             controller.onError("sr-$error")
             onListeningChanged(false)
             onError(activity.getString(R.string.voice_no_speech))
@@ -160,7 +164,31 @@ class VoiceCapture(
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
+    fun buildListenIntent(): Intent {
+        val tag = java.util.Locale.getDefault().toLanguageTag()
+        return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, tag)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        }
+    }
+
     companion object {
         const val REQ_RECORD_AUDIO = 71
+
+        fun hasRecordAudio(activity: Activity): Boolean {
+            return ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        }
+
+        fun openAppSettings(activity: Activity) {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", activity.packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            activity.startActivity(intent)
+        }
     }
 }

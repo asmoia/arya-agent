@@ -1,0 +1,9 @@
+app/src/main/java/io/agents/arya/agent/llm/StreamAssembler.kt:55:21: warning: variable 'maxOpenerLen' is never used
+                val maxOpenerLen = maxOf(toolCallOpener.length, thinkOpener.length)
+                    ^
+JUnit version 4.13.2
+..............................................................
+Time: 0.146
+
+OK (62 tests)
+

@@ -76,6 +76,20 @@ class ComposeChatActivity : ComponentActivity() {
         }
     }
 
+    private val sttFallbackLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val spoken = result.data
+            ?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            .orEmpty()
+        if (spoken.isNotBlank()) {
+            if (KVUtils.isVoiceAutoSend()) trySend(spoken) else chatRuntime.setDraft(spoken)
+        } else if (result.resultCode != RESULT_CANCELED) {
+            voiceErrorMessage = getString(R.string.voice_no_speech)
+        }
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

@@ -159,7 +159,7 @@ jobs:
           notes.append("\n### Model note\n")
           notes.append("Local models live under the app files directory (`…/files/models`) and **survive APK upgrades**.\n")
           notes.append("They are only wiped by **Clear Data** / uninstall.\n")
-          notes.append("\nEngine: llama.cpp **b10566**, isolated `:engine` process, ABIs arm64-v8a + x86_64.\n")
+          notes.append("\nEngine: llama.cpp **b10603**, isolated `:engine` process, ABIs arm64-v8a + x86_64.\n")
           Path("release-notes.md").write_text("\n".join(notes), encoding="utf-8")
           PY
 
