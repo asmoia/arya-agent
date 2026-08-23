@@ -241,6 +241,9 @@
     <string name="task_status_executing">Running: %s</string>
     <string name="task_status_confirm">Waiting for confirmation: %s</string>
     <string name="task_status_stopping">Stopping…</string>
+    <string name="task_status_done">Done: %1$s · %2$s</string>
+    <string name="settings_offline_stt_on">Offline STT requested (not bundled in v1)</string>
+    <string name="settings_offline_stt_off">Offline STT off</string>
     <string name="voice_listening">Listening… speak now</string>
     <string name="voice_stop">Stop listening</string>
     <string name="voice_no_speech">No speech heard. Try again.</string>

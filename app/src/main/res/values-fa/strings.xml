@@ -104,6 +104,9 @@
     <string name="task_status_executing">در حال اجرا: %s</string>
     <string name="task_status_confirm">منتظر تایید: %s</string>
     <string name="task_status_stopping">در حال توقف…</string>
+    <string name="task_status_done">تمام: %1$s · %2$s</string>
+    <string name="settings_offline_stt_on">تشخیص آفلاین درخواست شد (در v1 همراه نیست)</string>
+    <string name="settings_offline_stt_off">تشخیص آفلاین خاموش</string>
     <string name="voice_listening">در حال گوش دادن… صحبت کنید</string>
     <string name="voice_stop">توقف شنود</string>
     <string name="voice_no_speech">صدایی شنیده نشد. دوباره امتحان کنید.</string>

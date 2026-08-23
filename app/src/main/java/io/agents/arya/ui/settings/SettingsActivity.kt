@@ -760,6 +760,24 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         }
 
         toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_btn_speak_now,
+            title = getString(R.string.settings_offline_stt),
+            onClick = {
+                val next = !KVUtils.isOfflineSttEnabled()
+                KVUtils.setOfflineSttEnabled(next)
+                Toast.makeText(
+                    this,
+                    if (next) getString(R.string.settings_offline_stt_on)
+                    else getString(R.string.settings_offline_stt_off),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            },
+            showDivider = true
+        ).apply {
+            setTrailingText(if (KVUtils.isOfflineSttEnabled()) "ON" else "OFF")
+        }
+
+        toolsGroup.addMenuItem(
             leadingIcon = android.R.drawable.ic_menu_info_details,
             title = "راهنمای OEM / باتری",
             onClick = { showOemGuide() },

@@ -429,4 +429,8 @@ object KVUtils {
     fun setVoiceAutoSend(enabled: Boolean) = putBoolean(KEY_VOICE_AUTO_SEND, enabled)
     fun isVoiceTtsEnabled(): Boolean = getBoolean(KEY_VOICE_TTS, true)
     fun setVoiceTtsEnabled(enabled: Boolean) = putBoolean(KEY_VOICE_TTS, enabled)
+
+    private const val KEY_OFFLINE_STT = "KEY_OFFLINE_STT"
+    fun isOfflineSttEnabled(): Boolean = getBoolean(KEY_OFFLINE_STT, false)
+    fun setOfflineSttEnabled(enabled: Boolean) = putBoolean(KEY_OFFLINE_STT, enabled)
 }
