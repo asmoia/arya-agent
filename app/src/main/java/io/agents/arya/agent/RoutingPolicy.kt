@@ -3,8 +3,6 @@
 
 package io.agents.arya.agent
 
-import io.agents.arya.utils.XLog
-
 /**
  * PHASE 3 — Classification + escalation policy.
  *
@@ -12,6 +10,8 @@ import io.agents.arya.utils.XLog
  * Escalation triggers decide when to bump a struggling LOCAL task to CLOUD
  * (only if the user opted in).
  */
+enum class Tier { ROUTINE, VISUAL, CLOUD }
+
 object RoutingPolicy {
 
     // Routine: explicit device/app intents -> fast deterministic/local path.
@@ -62,10 +62,6 @@ object RoutingPolicy {
         noToolCallStreak: Int
     ): Boolean {
         if (!cloudOptIn) return false
-        val escalate = consecutiveToolFailures >= 2 || noToolCallStreak >= 3
-        if (escalate) {
-            io.agents.arya.utils.XLog.i("RoutingPolicy", "escalate local->cloud (fails=$consecutiveToolFailures, noTool=$noToolCallStreak)")
-        }
-        return escalate
+        return consecutiveToolFailures >= 2 || noToolCallStreak >= 3
     }
 }

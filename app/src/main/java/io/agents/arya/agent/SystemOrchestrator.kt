@@ -7,8 +7,6 @@ import io.agents.arya.agent.llm.Role
 import io.agents.arya.agent.visual.VisualControlAgent
 import io.agents.arya.utils.XLog
 
-enum class Tier { ROUTINE, VISUAL, CLOUD }
-
 class SystemOrchestrator {
     companion object {
         private const val TAG = "Orchestrator"

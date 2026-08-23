@@ -706,6 +706,32 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         }
 
         toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_btn_speak_now,
+            title = getString(R.string.settings_voice_auto_send),
+            onClick = {
+                val next = !KVUtils.isVoiceAutoSend()
+                KVUtils.setVoiceAutoSend(next)
+                Toast.makeText(this, if (next) "Auto-send on" else "Auto-send off", Toast.LENGTH_SHORT).show()
+            },
+            showDivider = true
+        ).apply {
+            setTrailingText(if (KVUtils.isVoiceAutoSend()) "ON" else "OFF")
+        }
+
+        toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_lock_silent_mode_off,
+            title = getString(R.string.settings_voice_tts),
+            onClick = {
+                val next = !KVUtils.isVoiceTtsEnabled()
+                KVUtils.setVoiceTtsEnabled(next)
+                Toast.makeText(this, if (next) "TTS on" else "TTS off", Toast.LENGTH_SHORT).show()
+            },
+            showDivider = true
+        ).apply {
+            setTrailingText(if (KVUtils.isVoiceTtsEnabled()) "ON" else "OFF")
+        }
+
+        toolsGroup.addMenuItem(
             leadingIcon = android.R.drawable.ic_menu_info_details,
             title = "راهنمای OEM / باتری",
             onClick = { showOemGuide() },
