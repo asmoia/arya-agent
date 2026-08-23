@@ -1,0 +1,17 @@
+GIT_TAG:
+13:    GIT_TAG        b10603
+getMemoryInfo:
+app/src/main/java/io/agents/arya/engine/EngineCore.kt:306:        am.getMemoryInfo(info)
+app/src/main/java/io/agents/arya/engine/budget/DeviceProfileManager.kt:100:        am.getMemoryInfo(info)
+app/src/main/java/io/agents/arya/engine/budget/DeviceProfileStore.kt:56:        am.getMemoryInfo(info)
+RECORD_AUDIO:
+6:    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+tryAwaitRelease:
+91:                                val released = tryAwaitRelease()
+Qwen3 entries:
+count=13
+totalMemory():
+(empty — PASS)
+requestLoad:
+14:    oneway void requestLoad(String modelPath, int ctxSize, int nThreads, int requestId);
+VERIFY PASS
