@@ -8,6 +8,13 @@
  * - Cancel atomic flag for immediate cancellation
  * - Prefix state save/load (llama_state_save_file / llama_state_load_file)
  * - Token counting
+ *
+ * llama.cpp b10603 C API (verified against include/llama.h):
+ *   llama_state_save_file(ctx, path, tokens, n_token_count)           -> bool  (4 args)
+ *   llama_state_load_file(ctx, path, tokens_out, cap, n_token_out)    -> bool  (5 args)
+ *   llama_sampler_init_penalties(n_vocab, last_n, repeat, freq, pres) -> 5 args
+ *   llama_batch_get_one(tokens, n_tokens)                             -> 2 args
+ *   llama_model_params has NO use_mmap / use_mlock (removed)
  */
 
 #include <jni.h>
@@ -122,6 +129,15 @@ static bool detect_gpu_available() {
     if (access("/dev/kgsl-3d0", F_OK) == 0) return true;
     if (access("/dev/mali0", F_OK) == 0) return true;
     return false;
+}
+
+// llama_model_params.progress_callback — reports mmap/load fraction.
+static bool llama_load_progress_cb(float progress, void * /*user_data*/) {
+    int pct = static_cast<int>(progress * 100.0f + 0.5f);
+    if (pct == 0 || pct == 100 || (pct % 10) == 0) {
+        LOGI("nativeLoadModel progress=%d%%", pct);
+    }
+    return true; // continue
 }
 
 static std::vector<std::string> parse_stop_sequences(const char * json) {
@@ -342,7 +358,7 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     }
     double prompt_eval_ms = now_ms() - t_start;
 
-    // Sampler setup (b10566: penalties is n_vocab, last_n, repeat, freq, present)
+    // Sampler setup (b10603: penalties is still n_vocab, last_n, repeat, freq, present)
     auto * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     const int32_t n_vocab = llama_vocab_n_tokens(mc->vocab);
     if (repeat_penalty > 0.01f && repeat_penalty != 1.0f) {

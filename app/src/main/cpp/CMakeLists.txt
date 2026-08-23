@@ -3,13 +3,14 @@ project(arya-engine LANGUAGES C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
-# Pin: ggml-org/llama.cpp b10566 (2026-08).
-# NOTE: tag v0.2.0 is an ancient 2023 snapshot and does NOT match this JNI
-# (no llama_model_load_from_file / llama_vocab / sampler chain). Do not revert.
+# Pin: ggml-org/llama.cpp b10603 (2026-08-23, latest stable release at fix time).
+# Qwen3 GGUF requires llama.cpp ≥ b5092. Do NOT revert to b3800 (Sep 2024) —
+# that tag has no Qwen3 architecture and nativeLoadModel returns -2.
+# Do NOT revert to v0.2.0 (2023) — no llama_model_load_from_file / llama_vocab.
 include(FetchContent)
 FetchContent_Declare(llama_cpp
     GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
-    GIT_TAG        b10566
+    GIT_TAG        b10603
     GIT_SHALLOW    TRUE
     SOURCE_SUBDIR  .
 )
