@@ -2,7 +2,7 @@
 
 ## Engine
 - Isolated `:engine` process, AIDL `IEngine` / `IEngineCallback`
-- llama.cpp **v0.2.0**, `libarya-engine.so`, arm64 + x86_64
+- llama.cpp **b10566**, `libarya-engine.so`, arm64 + x86_64
 - Cancel, prefix state save/load, UTF-8 guard, token/request deadlines
 - MemoryBudget + DeviceProfile first-run bench
 - Crash-loop quarantine (3 / 10 min)

@@ -6,7 +6,8 @@ Constraint: source-only. No Gradle Android/NDK assemble, no APK compile/decompil
 
 ## Pins recorded
 
-- llama.cpp FetchContent tag: **`v0.2.0`** (stable semantic release, 2026-08-21; nightly sibling `b10566`)
+- llama.cpp FetchContent tag: **`b10566`** (ggml-org/llama.cpp, 2026-08).  
+  Deviation: earlier pin `v0.2.0` is an ancient 2023 tag; CI `assembleDebug` failed (`llama_model_load_from_file` / `llama_vocab` missing). JNI matches the modern C API.
 - Repository: `https://github.com/ggml-org/llama.cpp`
 - JSON protocol: `org.json` (already on Android). Deviation from S1 “kotlinx-serialization”: avoided a new plugin/dep; same APK, same JSON contract.
 
@@ -25,7 +26,7 @@ Timer started in `/tmp/arya_t0`. See `WORKLOG.md`.
 - [x] `EngineCore` one-model / one-generation invariant + MemoryBudget refuse
 - [x] `EngineClient` is the only AIDL consumer (DeathRecipient, crash-loop breaker)
 - [x] JNI: cancel, state save/load, countTokens, UTF-8 guard, deadlines, delta mode
-- [x] CMake target `arya-engine`; ABIs `arm64-v8a` + `x86_64`; llama.cpp `v0.2.0`
+- [x] CMake target `arya-engine`; ABIs `arm64-v8a` + `x86_64`; llama.cpp `b10566`
 - [x] `bitnet_jni.cpp` removed (bridge lives in `engine_jni.cpp`)
 - [x] `LocalLlmClient` talks only to `EngineClient`
 
@@ -130,20 +131,13 @@ adb shell kill -9 <engine-pid>       # UI must survive; next generate rebinds
 
 ## Completion gates
 
-- [ ] TIME GATE FAIL as of last check (elapsed_hours=0, ~40 min). Output:
-
-```
-elapsed_hours=0
-TIME GATE: FAIL — keep working
-```
-
-Overflow continues (22+ commits after A1). Do not treat the project as finished.
-- [ ] Phases A1–E4 tagged
-- [x] Voice state-machine tests green; manual steps in docs/MANUAL_QA.md Group V
+- [ ] TIME GATE still FAIL until ≥14400s. Do not treat the project as finished.
+- [x] Phases A1–E4 tagged (`phase-a1-done` … `phase-e4-done`)
+- [x] Voice state-machine tests green; OverlayHost consumes `start_voice`; shared `VoiceCapture`
 - [x] Overlay sheet source delivered; device proof USER ACTION
 - [ ] S10 — see below
 - [x] WORKLOG consistent with commits
-- [ ] Final APK: **USER ACTION REQUIRED**
+- [ ] Final APK: produced by GitHub Actions `release.yml` on tag `v1.1.0` (USER ACTION if CI red)
 
 ## S10 release gates
 

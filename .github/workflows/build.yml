@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
 
     steps:
     - uses: actions/checkout@v4
@@ -20,6 +21,14 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install NDK + CMake
+      run: |
+        yes | sdkmanager --licenses >/dev/null || true
+        sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"
+
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
@@ -27,13 +36,14 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run unit tests
-      run: ./gradlew testDebugUnitTest
+      run: ./gradlew testDebugUnitTest --stacktrace
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug
+      run: ./gradlew assembleDebug --stacktrace
 
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
         name: arya-debug-apk
         path: app/build/outputs/apk/debug/*.apk
+        if-no-files-found: error

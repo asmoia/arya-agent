@@ -1,6 +1,8 @@
 # Arya model catalog (S7)
 
-Pinned llama.cpp: **v0.2.0** (`ggml-org/llama.cpp`). CPU only. Prompt format: ChatML. Tool calls: `<tool_call>{json}</tool_call>`. Thinking off by default (`/no_think`).
+Pinned llama.cpp: **b10566** (`ggml-org/llama.cpp`, 2026-08). CPU only. Prompt format: ChatML. Tool calls: `<tool_call>{json}</tool_call>`. Thinking off by default (`/no_think`).
+
+> `v0.2.0` is an ancient 2023 tag and does **not** implement `llama_model_load_from_file` / `llama_vocab`. Do not pin it.
 
 | id | file (Q4_K_M) | ~size | min RAM | role |
 |---|---|---|---|---|

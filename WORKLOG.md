@@ -14,3 +14,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 14:30:56 | 39 min | [overflow] restore HermesDirectOpen + VoiceListenStore stubs for compile
 2026-08-23 14:31:20 | 40 min | [overflow] GGUF header parser tests
 2026-08-23 14:32:05 | 41 min | [overflow] watchdog math + chat tool-json sanitizer
+2026-08-23 14:49:46 | 58 min | [overflow+release] pin llama.cpp b10566 + JNI API; VoiceCapture+overlay start_voice; ToolDeltaAssembler; settings search UI; FastTaskMatchers EN; release.yml signing local.properties fix; JVM 61/61

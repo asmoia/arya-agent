@@ -30,7 +30,7 @@ This document describes the **actual** tree after the redesign. It replaces the 
 │    EngineCore — one model, one generation, MemoryBudget refuse                   │
 │    DeviceProfileManager — first-run bench                                        │
 │    PrefixCache — llama.cpp state save/load                                       │
-│  libarya-engine.so  llama.cpp v0.2.0, CPU, arm64-v8a + x86_64                    │
+│  libarya-engine.so  llama.cpp b10566, CPU, arm64-v8a + x86_64                    │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 

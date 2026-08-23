@@ -29,9 +29,9 @@
 
 ## راهنمای نصب و اجرا (Installation)
 
-1. فایل APK را دانلود و نصب کنید.
-2. دسترسی‌های مورد نیاز (دسترسی‌پذیری Accessibility، اعلان‌ها و پنجره شناور) را فعال کنید.
-3. در صورت تمایل، مدل محلی Qwen3 را از بخش تنظیمات مدل دانلود نمایید.
+1. Signed APK: [GitHub Releases](https://github.com/asmoia/arya-agent/releases) (`v1.1.0` and later).
+2. Enable Accessibility, notifications, overlay, and microphone.
+3. Optionally download a local Qwen3 GGUF from Settings → LLM.
 
 ---
 
@@ -48,12 +48,13 @@ Arya is a fast, local-first Persian Android AI agent built on a 3-tier routing a
 ### What was removed
 LiteRT-LM / MediaPipe LLM, LangChain4j, WeChat + Discord runtimes, embedded HTTP config server, Hermes parallel agent/cron/MCP (archived under `archive/`). Telegram *automation via Accessibility* is kept.
 
-### Build (Android Studio)
+### Build (Android Studio / GitHub Actions)
 ```
 ./gradlew :app:assembleDebug
-./gradlew :app:test
+./gradlew :app:testDebugUnitTest
+./gradlew :app:assembleRelease   # needs KEYSTORE_* in local.properties
 ```
-This redesign environment does **not** run the Android/NDK toolchain. See `PROGRESS.md` for the owner checklist.
+Signed releases are produced by `.github/workflows/release.yml` on `v*` tags (see `RELEASING.md`). Engine pin: llama.cpp **b10566**.
 
 ### Docs
 - `ARCHITECTURE.md` — processes, AIDL, state machine
