@@ -12,7 +12,20 @@
         android:layout_height="44dp" />
 
     <!-- 滚动内容 -->
+    <EditText
+        android:id="@+id/settingsSearch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="8dp"
+        android:hint="@string/settings_search_hint"
+        android:inputType="text"
+        android:imeOptions="actionSearch"
+        android:padding="12dp"
+        android:background="@android:drawable/edit_text" />
+
     <ScrollView
+        android:id="@+id/settingsScroll"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 

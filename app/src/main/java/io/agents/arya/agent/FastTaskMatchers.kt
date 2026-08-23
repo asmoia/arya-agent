@@ -144,6 +144,34 @@ object FastTaskMatchers {
                 ToolMatch("system_setting", mapOf("setting" to "brightness", "action" to "down"), "کاهش روشنایی")
             "کروم رو باز کن", "open chrome" ->
                 ToolMatch("open_app", mapOf("app_name" to "Chrome"), "باز کردن کروم")
+            "turn on wifi", "enable wifi" ->
+                ToolMatch("system_setting", mapOf("setting" to "wifi", "action" to "on"), "turn on wifi")
+            "turn off wifi", "disable wifi" ->
+                ToolMatch("system_setting", mapOf("setting" to "wifi", "action" to "off"), "turn off wifi")
+            "turn on bluetooth", "enable bluetooth" ->
+                ToolMatch("system_setting", mapOf("setting" to "bluetooth", "action" to "on"), "turn on bluetooth")
+            "turn off bluetooth", "disable bluetooth" ->
+                ToolMatch("system_setting", mapOf("setting" to "bluetooth", "action" to "off"), "turn off bluetooth")
+            "open camera" ->
+                ToolMatch("open_app", mapOf("app_name" to "Camera"), "open camera")
+            "open calculator" ->
+                ToolMatch("open_app", mapOf("app_name" to "Calculator"), "open calculator")
+            "volume up" ->
+                ToolMatch("system_setting", mapOf("setting" to "volume", "action" to "up"), "volume up")
+            "volume down" ->
+                ToolMatch("system_setting", mapOf("setting" to "volume", "action" to "down"), "volume down")
+            "flashlight on", "torch on" ->
+                ToolMatch("system_setting", mapOf("setting" to "flashlight", "action" to "on"), "flashlight on")
+            "flashlight off", "torch off" ->
+                ToolMatch("system_setting", mapOf("setting" to "flashlight", "action" to "off"), "flashlight off")
+            "go back" ->
+                ToolMatch("system_key", mapOf("key" to "back"), "go back")
+            "open youtube" ->
+                ToolMatch("open_app", mapOf("app_name" to "YouTube"), "open youtube")
+            "open maps", "open google maps" ->
+                ToolMatch("open_app", mapOf("app_name" to "Maps"), "open maps")
+            "take screenshot" ->
+                ToolMatch("take_screenshot", emptyMap(), "take screenshot")
             else -> null
         }
     }

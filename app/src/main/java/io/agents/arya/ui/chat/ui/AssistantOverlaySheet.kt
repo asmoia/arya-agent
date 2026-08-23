@@ -121,7 +121,7 @@ fun AssistantOverlaySheet(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Send,
-                        contentDescription = "ارسال",
+                        contentDescription = stringResource(R.string.chat_cd_send),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }

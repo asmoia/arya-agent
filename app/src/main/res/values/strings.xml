@@ -252,4 +252,6 @@
     <string name="settings_voice_auto_send">Auto-send voice transcripts</string>
     <string name="settings_voice_tts">Speak short answers</string>
     <string name="settings_offline_stt">Offline speech recognition</string>
+    <string name="settings_search_hint">Search settings</string>
+    <string name="voice_need_mic">Microphone permission is required for voice input</string>
 </resources>

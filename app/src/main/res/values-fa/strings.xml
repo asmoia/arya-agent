@@ -108,4 +108,15 @@
     <string name="voice_stop">توقف شنود</string>
     <string name="voice_no_speech">صدایی شنیده نشد. دوباره امتحان کنید.</string>
     <string name="voice_cd_listen">شنود</string>
+    <string name="overlay_title">آریا</string>
+    <string name="settings_group_permissions">دسترسی‌ها</string>
+    <string name="settings_group_voice">صدا</string>
+    <string name="settings_group_advanced">پیشرفته</string>
+    <string name="settings_voice_auto_send">ارسال خودکار متن صدا</string>
+    <string name="settings_voice_tts">خواندن جواب‌های کوتاه</string>
+    <string name="settings_offline_stt">تشخیص گفتار آفلاین</string>
+    <string name="settings_search_hint">جستجو در تنظیمات</string>
+    <string name="voice_need_mic">برای ورودی صوتی اجازه میکروفون لازم است</string>
+    <string name="voice_input_unavailable">تشخیص گفتار روی این دستگاه در دسترس نیست</string>
+    <string name="voice_input_error">ورودی صوتی ناموفق بود. دوباره امتحان کنید.</string>
 </resources>

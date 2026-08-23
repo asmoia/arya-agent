@@ -54,6 +54,7 @@ class CloudLlmClient(private val config: CloudConfig) : LlmClient {
 
         var active: Call = client.newCall(request)
         val assembler = StreamAssembler()
+        val toolDelta = ToolDeltaAssembler()
         var receivedDelta = false
         var attempt = 0
 
@@ -92,18 +93,19 @@ class CloudLlmClient(private val config: CloudConfig) : LlmClient {
                             if (currentLine.startsWith("data:")) {
                                 val data = currentLine.substring(5).trim()
                                 val events = if (config.dialect == CloudDialect.ANTHROPIC) {
-                                    SseParser.parseAnthropicDataLine(data, assembler)
+                                    SseParser.parseAnthropicDataLine(data, assembler, toolDelta)
                                 } else {
-                                    SseParser.parseOpenAiDataLine(data, assembler)
+                                    SseParser.parseOpenAiDataLine(data, assembler, toolDelta)
                                 }
                                 for (event in events) {
-                                    if (event is LlmEvent.Text || event is LlmEvent.ToolCallStart) {
+                                    if (event is LlmEvent.Text || event is LlmEvent.ToolCallStart || event is LlmEvent.ToolCall) {
                                         receivedDelta = true
                                     }
                                     trySend(event)
                                 }
                             }
                         }
+                        toolDelta.finish()?.let { trySend(it) }
                         for (event in assembler.finish()) trySend(event)
                     } catch (e: Exception) {
                         trySend(LlmEvent.Error(500, "Stream parse error: ${e.message}"))
@@ -240,6 +242,18 @@ class CloudLlmClient(private val config: CloudConfig) : LlmClient {
                 })
             }
             put("messages", msgsArray)
+
+            if (tools.isNotEmpty()) {
+                val toolsArray = JSONArray()
+                for (tool in tools) {
+                    toolsArray.put(JSONObject().apply {
+                        put("name", tool.name)
+                        put("description", tool.descriptionFa)
+                        put("input_schema", JSONObject(tool.paramsJsonSchema))
+                    })
+                }
+                put("tools", toolsArray)
+            }
         }
 
         return Request.Builder()

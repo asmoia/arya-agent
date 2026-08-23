@@ -124,8 +124,36 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
 
         initToolbar()
         initMenuGroups()
+        initSettingsSearch()
         applyThemeToGroups(themeColors)
         observeViewModel()
+    }
+
+    private fun initSettingsSearch() {
+        val box = findViewById<android.widget.EditText>(R.id.settingsSearch) ?: return
+        box.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                applySettingsFilter(s?.toString().orEmpty())
+            }
+        })
+    }
+
+    private fun applySettingsFilter(query: String) {
+        val visible = SettingsSearch.visibleGroups(SettingsCatalog.defaultRows(), query)
+        val showAll = query.isBlank()
+        fun show(id: Int, group: SettingsGroup, extra: Boolean = true) {
+            findViewById<android.view.View>(id)?.visibility =
+                if (showAll || (extra && visible.contains(group))) android.view.View.VISIBLE
+                else android.view.View.GONE
+        }
+        show(R.id.permissionsGroup, SettingsGroup.PERMISSIONS)
+        show(R.id.modelGroup, SettingsGroup.MODEL)
+        show(R.id.appearanceGroup, SettingsGroup.ADVANCED)
+        show(R.id.toolsGroup, SettingsGroup.VOICE)
+        show(R.id.remoteGroup, SettingsGroup.ADVANCED)
+        show(R.id.aboutGroup, SettingsGroup.ADVANCED)
     }
 
     override fun onResume() {

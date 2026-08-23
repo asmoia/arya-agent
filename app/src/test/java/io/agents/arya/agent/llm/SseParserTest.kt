@@ -8,16 +8,27 @@ class SseParserTest {
     @Test
     fun openaiContentAndToolCall() {
         val a = StreamAssembler()
+        val acc = ToolDeltaAssembler()
         val text = SseParser.parseOpenAiDataLine(
             """{"choices":[{"delta":{"content":"hi "}}]}""",
             a,
+            acc,
         )
         assertEquals("hi ", text.filterIsInstance<LlmEvent.Text>().joinToString("") { it.delta })
         val tools = SseParser.parseOpenAiDataLine(
             """{"choices":[{"delta":{"tool_calls":[{"function":{"name":"open_app","arguments":"{"}}]}}]}""",
             a,
+            acc,
         )
         assertTrue(tools.any { it is LlmEvent.ToolCallStart && it.name == "open_app" })
+        val more = SseParser.parseOpenAiDataLine(
+            """{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\"pkg\":\"tg\"}"}}]},"finish_reason":"tool_calls"}]}""",
+            a,
+            acc,
+        )
+        val done = more.filterIsInstance<LlmEvent.ToolCall>().single()
+        assertEquals("open_app", done.name)
+        assertTrue(done.argsJson.contains("pkg"))
     }
 
     @Test

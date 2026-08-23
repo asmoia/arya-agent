@@ -62,7 +62,8 @@ class ChatRuntime(
             isStreaming = true,
             errorMessage = null,
             streamingReasoning = null,
-            activeToolName = null
+            activeToolName = null,
+            draftText = "",
         )
 
         historyStore.saveConversation(conversationId, userText.take(20), updatedMsgs)

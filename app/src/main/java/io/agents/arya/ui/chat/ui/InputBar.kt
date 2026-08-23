@@ -37,7 +37,9 @@ fun InputBar(
 ) {
     var text by remember { mutableStateOf(initialText) }
     androidx.compose.runtime.LaunchedEffect(initialText) {
-        if (initialText.isNotBlank()) text = initialText
+        if (initialText.isNotBlank() || text.isNotEmpty()) {
+            text = initialText
+        }
     }
 
     Surface(

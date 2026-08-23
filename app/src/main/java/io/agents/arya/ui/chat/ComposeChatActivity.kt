@@ -1,10 +1,6 @@
 package io.agents.arya.ui.chat
 
-import android.content.Intent
 import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,11 +9,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.agents.arya.ClawApplication
-import io.agents.arya.R
 import io.agents.arya.TaskSessionStore
 import io.agents.arya.agent.AgentConfig
 import io.agents.arya.engine.EngineClient
 import io.agents.arya.utils.KVUtils
+import io.agents.arya.voice.VoiceCapture
 import java.util.Locale
 
 class ComposeChatActivity : ComponentActivity() {
@@ -26,7 +22,7 @@ class ComposeChatActivity : ComponentActivity() {
     private lateinit var chatRuntime: ChatRuntime
     private lateinit var taskSessionStore: TaskSessionStore
 
-    private var speechRecognizer: SpeechRecognizer? = null
+    private var voiceCapture: VoiceCapture? = null
     private var isVoiceListening by mutableStateOf(false)
     private var voicePartialText by mutableStateOf("")
     private var voiceErrorMessage by mutableStateOf<String?>(null)
@@ -49,7 +45,7 @@ class ComposeChatActivity : ComponentActivity() {
             historyStore = historyStore
         )
 
-        initSpeechRecognizer()
+        initVoiceCapture()
         isTtsEnabled = KVUtils.isVoiceTtsEnabled()
         initTts()
 
@@ -79,64 +75,30 @@ class ComposeChatActivity : ComponentActivity() {
         }
     }
 
-    private fun initSpeechRecognizer() {
-        if (SpeechRecognizer.isRecognitionAvailable(this)) {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-                setRecognitionListener(object : RecognitionListener {
-                    override fun onReadyForSpeech(params: Bundle?) {
-                        isVoiceListening = true
-                        voiceErrorMessage = null
-                    }
-
-                    override fun onBeginningOfSpeech() {}
-                    override fun onRmsChanged(rmsdB: Float) {}
-                    override fun onBufferReceived(buffer: ByteArray?) {}
-                    override fun onEndOfSpeech() {}
-
-                    override fun onError(error: Int) {
-                        isVoiceListening = false
-                        voiceErrorMessage = getString(R.string.voice_no_speech)
-                    }
-
-                    override fun onResults(results: Bundle?) {
-                        isVoiceListening = false
-                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        val transcript = matches?.firstOrNull() ?: ""
-                        if (transcript.isNotBlank()) {
-                            if (KVUtils.isVoiceAutoSend()) {
-                                chatRuntime.send(transcript, AgentConfig())
-                            } else {
-                                chatRuntime.setDraft(transcript)
-                            }
-                        }
-                    }
-
-                    override fun onPartialResults(partialResults: Bundle?) {
-                        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        voicePartialText = matches?.firstOrNull() ?: ""
-                    }
-
-                    override fun onEvent(eventType: Int, params: Bundle?) {}
-                })
-            }
-        }
+    private fun initVoiceCapture() {
+        voiceCapture = VoiceCapture(
+            activity = this,
+            onListeningChanged = { isVoiceListening = it },
+            onPartial = { voicePartialText = it },
+            onFinal = { transcript ->
+                if (KVUtils.isVoiceAutoSend()) {
+                    chatRuntime.send(transcript, AgentConfig())
+                } else {
+                    chatRuntime.setDraft(transcript)
+                }
+            },
+            onError = { msg -> voiceErrorMessage = msg.ifBlank { null } },
+        )
     }
 
     private fun startVoiceInput() {
         voicePartialText = ""
         voiceErrorMessage = null
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fa-IR")
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        }
-        speechRecognizer?.startListening(intent)
-        isVoiceListening = true
+        voiceCapture?.start()
     }
 
     private fun stopVoiceInput() {
-        speechRecognizer?.stopListening()
-        isVoiceListening = false
+        voiceCapture?.stop()
     }
 
     private fun initTts() {

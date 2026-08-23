@@ -66,4 +66,16 @@ class FastTaskMatchersTest {
         assertEquals("get_installed_apps", FastTaskMatchers.match("list apps")?.toolName)
         assertEquals("open_app", FastTaskMatchers.match("open chrome")?.toolName)
     }
+
+    @Test
+    fun englishOverflowControls() {
+        assertEquals("system_setting", FastTaskMatchers.match("turn on wifi")?.toolName)
+        assertEquals("on", FastTaskMatchers.match("turn on wifi")?.params?.get("action"))
+        assertEquals("off", FastTaskMatchers.match("turn off bluetooth")?.params?.get("action"))
+        assertEquals("Camera", FastTaskMatchers.match("open camera")?.params?.get("app_name"))
+        assertEquals("YouTube", FastTaskMatchers.match("open youtube")?.params?.get("app_name"))
+        assertEquals("take_screenshot", FastTaskMatchers.match("take screenshot")?.toolName)
+        assertEquals("back", FastTaskMatchers.match("go back")?.params?.get("key"))
+        assertEquals("up", FastTaskMatchers.match("volume up")?.params?.get("action"))
+    }
 }
