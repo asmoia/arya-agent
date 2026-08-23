@@ -3,7 +3,7 @@ package io.agents.arya.ui.chat
 import android.content.Context
 import io.agents.arya.agent.AgentConfig
 import io.agents.arya.agent.llm.ChatMsg
-import io.agents.arya.agent.llm.EngineClient
+import io.agents.arya.engine.EngineClient
 import io.agents.arya.agent.llm.LlmClient
 import io.agents.arya.agent.llm.LlmClientFactory
 import io.agents.arya.agent.llm.LlmEvent

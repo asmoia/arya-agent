@@ -1,6 +1,5 @@
-import jdk.internal.net.http.common.Log.channel
-import org.jetbrains.kotlin.konan.properties.hasProperty
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -54,10 +53,10 @@ android {
         applicationId = "io.agents.arya"
         minSdk = 28
         targetSdk = 36
-        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 62)
-        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "0.6.2")
+        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 100)
+        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "1.0.0-redesign")
         buildConfigField("String", "VERSION_INFO", getVersionGit())
-        buildConfigField("String", "APP_ORIGIN", "\"آریا · BitNet + Hermes | github.com/asmoia/arya-agent\"")
+        buildConfigField("String", "APP_ORIGIN", "\"Arya · llama.cpp engine | github.com/asmoia/arya-agent\"")
         buildConfigField("String", "BUILD_FINGERPRINT", "\"${getBuildFingerprint()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -96,7 +95,7 @@ android {
         aidl = true
     }
 
-    // ---- BitNet / llama.cpp native build ----
+    // ---- llama.cpp engine (isolated :engine process) ----
     ndkVersion = "27.2.12479018"
     externalNativeBuild {
         cmake {
@@ -247,7 +246,7 @@ fun getParameter(key: String, defaultValue: String): String {
     val localProperties = Properties()
     if (localPropertiesFile.exists()) {
         localProperties.load(localPropertiesFile.inputStream())
-        val hasLocalProperty = localProperties.hasProperty(key)
+        val hasLocalProperty = localProperties.containsKey(key)
         if (hasLocalProperty) {
             val property = localProperties[key] as String?
             if (!property.isNullOrEmpty()) {

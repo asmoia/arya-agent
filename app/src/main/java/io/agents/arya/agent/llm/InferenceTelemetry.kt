@@ -113,9 +113,7 @@ object InferenceTelemetryCollector {
                 status == android.os.BatteryManager.BATTERY_STATUS_FULL
         } catch (_: Exception) { false }
 
-        val gpuAvailable = try {
-            BitNetNative.getSystemInfo()?.get("gpu_available") == true
-        } catch (_: Exception) { false }
+        val gpuAvailable = false // CPU-only engine in v1; Vulkan is a documented future option.
 
         return SystemSnapshot(
             cpuCores = Runtime.getRuntime().availableProcessors(),

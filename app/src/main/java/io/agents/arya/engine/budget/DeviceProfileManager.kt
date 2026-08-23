@@ -1,129 +1,117 @@
 package io.agents.arya.engine.budget
 
 import android.content.Context
-import com.tencent.mmkv.MMKV
+import io.agents.arya.engine.EngineNative
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
-import java.util.Random
+import java.io.RandomAccessFile
 
+/**
+ * First-run ~15s micro-bench (S3). Runs in the `:engine` process.
+ */
 class DeviceProfileManager(private val context: Context) {
-    companion object {
-        const val CURRENT_VERSION = 1
-        private const val KEY_PROFILE = "device_profile_json"
-    }
 
-    private val mmkv: MMKV by lazy { MMKV.defaultMMKV() }
-
-    fun getProfile(): MemoryBudget.DeviceProfile? {
-        val jsonStr = mmkv.decodeString(KEY_PROFILE, null) ?: return null
-        return try {
-            val json = JSONObject(jsonStr)
-            MemoryBudget.DeviceProfile(
-                version = json.optInt("version", CURRENT_VERSION),
-                bigCores = json.optInt("bigCores", 4),
-                bestThreads = json.optInt("bestThreads", 4),
-                memBwGbs = json.optDouble("memBwGbs", 10.0),
-                flashMbps = json.optDouble("flashMbps", 200.0),
-                ramClass = json.optString("ramClass", getRamClass())
-            )
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    fun getRamClass(): String {
-        val runtime = Runtime.getRuntime()
-        val totalRamMb = (runtime.totalMemory() + runtime.freeMemory()) / (1024 * 1024)
-        return when {
-            totalRamMb <= 3500 -> "3GB"
-            totalRamMb <= 5000 -> "4GB"
-            totalRamMb <= 7000 -> "6GB"
-            else -> "8GB+"
-        }
-    }
+    fun getProfile(): MemoryBudget.DeviceProfile? = DeviceProfileStore.read(context)
 
     fun runBenchIfNeeded(onProgress: (Int, String) -> Unit): MemoryBudget.DeviceProfile {
         val existing = getProfile()
-        if (existing != null && existing.version == CURRENT_VERSION) {
+        if (existing != null && existing.version == DeviceProfileStore.CURRENT_VERSION) {
             return existing
         }
+        return runBench(onProgress)
+    }
 
-        onProgress(10, "بررسی هسته‌های پردازنده...")
-        val nProcs = Runtime.getRuntime().availableProcessors()
-        val bigCores = detectBigCores(nProcs)
-        val bestThreads = kotlin.math.min(4, kotlin.math.max(1, bigCores))
+    fun runBench(onProgress: (Int, String) -> Unit): MemoryBudget.DeviceProfile {
+        onProgress(5, "Detecting CPU cores")
+        val bigCores = try {
+            val n = EngineNative.nativeDetectBigCores()
+            if (n > 0) n else detectBigCoresFallback()
+        } catch (_: Throwable) {
+            detectBigCoresFallback()
+        }
 
-        onProgress(40, "تست سرعت حافظه فلش...")
-        val flashMbps = benchFlashSpeed()
+        onProgress(25, "Measuring compute")
+        var bestThreads = minOf(4, maxOf(1, bigCores))
+        var memBw = 8.0
+        try {
+            val candidates = listOf(2, 4, 6).filter { it <= maxOf(2, bigCores + 2) }
+            var bestScore = -1.0
+            for (t in candidates) {
+                val json = EngineNative.nativeBench(t)
+                val o = JSONObject(json)
+                val gflops = o.optDouble("gflops", 0.0)
+                val bw = o.optDouble("mem_bw_gbs", 0.0)
+                if (bw > memBw) memBw = bw
+                val score = gflops / t
+                if (score > bestScore) {
+                    bestScore = score
+                    bestThreads = t
+                }
+            }
+        } catch (_: Throwable) {
+            memBw = benchMemoryBandwidthFallback()
+        }
 
-        onProgress(70, "تست پهنای باند حافظه...")
-        val memBwGbs = benchMemoryBandwidth()
+        onProgress(70, "Measuring flash speed")
+        val flash = benchFlashSpeed()
+
+        onProgress(90, "Classifying RAM")
+        val (total, _, _) = DeviceProfileStore.readDeviceRam(context)
+        val ramClass = MemoryBudget.ramClassOf(total)
 
         val profile = MemoryBudget.DeviceProfile(
-            version = CURRENT_VERSION,
+            version = DeviceProfileStore.CURRENT_VERSION,
             bigCores = bigCores,
-            bestThreads = bestThreads,
-            memBwGbs = memBwGbs,
-            flashMbps = flashMbps,
-            ramClass = getRamClass()
+            bestThreads = bestThreads.coerceIn(1, 6),
+            memBwGbs = memBw,
+            flashMbps = flash,
+            ramClass = ramClass,
         )
-
-        saveProfile(profile)
-        onProgress(100, "تست سخت‌افزار تکمیل شد")
+        DeviceProfileStore.write(profile)
+        onProgress(100, "Device profile ready")
         return profile
     }
 
-    private fun saveProfile(profile: MemoryBudget.DeviceProfile) {
-        val json = JSONObject().apply {
-            put("version", profile.version)
-            put("bigCores", profile.bigCores)
-            put("bestThreads", profile.bestThreads)
-            put("memBwGbs", profile.memBwGbs)
-            put("flashMbps", profile.flashMbps)
-            put("ramClass", profile.ramClass)
-        }
-        mmkv.encode(KEY_PROFILE, json.toString())
-    }
-
-    private fun detectBigCores(nProcs: Int): Int {
-        var bigCores = 0
-        for (i in 0 until nProcs) {
-            val freqFile = File("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq")
-            if (freqFile.exists()) {
-                try {
-                    val freq = freqFile.readText().trim().toLongOrNull() ?: 0L
-                    if (freq > 1500000) bigCores++
-                } catch (_: Exception) {}
+    private fun detectBigCoresFallback(): Int {
+        var big = 0
+        val n = Runtime.getRuntime().availableProcessors()
+        for (i in 0 until n) {
+            val f = File("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq")
+            if (f.exists()) {
+                val freq = f.readText().trim().toLongOrNull() ?: 0L
+                if (freq > 1_500_000) big++
             }
         }
-        return if (bigCores > 0) bigCores else kotlin.math.max(1, nProcs / 2)
+        return if (big > 0) big else maxOf(1, n / 2)
     }
 
     private fun benchFlashSpeed(): Double {
         return try {
-            val testFile = File(context.cacheDir, "bench_test.tmp")
-            val data = ByteArray(10 * 1024 * 1024) // 10MB
-            Random().nextBytes(data)
-            val t0 = System.currentTimeMillis()
-            FileOutputStream(testFile).use { it.write(data) }
-            val t1 = System.currentTimeMillis()
-            testFile.delete()
-            val durationSec = kotlin.math.max(0.001, (t1 - t0) / 1000.0)
-            (10.0) / durationSec
-        } catch (e: Exception) {
-            100.0
+            val test = File(context.filesDir, "bench_flash.bin")
+            val chunk = ByteArray(1024 * 1024)
+            java.util.Random(1).nextBytes(chunk)
+            val t0 = System.nanoTime()
+            RandomAccessFile(test, "rw").use { raf ->
+                repeat(64) { raf.write(chunk) }
+                raf.fd.sync()
+            }
+            val t1 = System.nanoTime()
+            test.delete()
+            val sec = ((t1 - t0) / 1e9).coerceAtLeast(0.001)
+            64.0 / sec
+        } catch (_: Exception) {
+            150.0
         }
     }
 
-    private fun benchMemoryBandwidth(): Double {
-        val size = 16 * 1024 * 1024 // 16MB
+    private fun benchMemoryBandwidthFallback(): Double {
+        val size = 32 * 1024 * 1024
         val a = ByteArray(size)
         val b = ByteArray(size)
-        val t0 = System.currentTimeMillis()
+        val t0 = System.nanoTime()
         System.arraycopy(a, 0, b, 0, size)
-        val t1 = System.currentTimeMillis()
-        val durationSec = kotlin.math.max(0.001, (t1 - t0) / 1000.0)
-        return (32.0 / (1024.0)) / durationSec // GB/s
+        val t1 = System.nanoTime()
+        val sec = ((t1 - t0) / 1e9).coerceAtLeast(1e-6)
+        return (size.toDouble() / (1024 * 1024 * 1024)) / sec
     }
 }

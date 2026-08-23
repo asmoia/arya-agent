@@ -3,15 +3,14 @@
 
 package io.agents.arya.agent
 
-enum class LlmProvider { OPENAI, ANTHROPIC, LOCAL, BITNET, LITERT }
+enum class LlmProvider { OPENAI, ANTHROPIC, LOCAL }
 
-/** All on-device providers: LOCAL (generic), BITNET (llama.cpp), LITERT (NPU/GPU via Google AI Edge). */
-val LlmProvider.isLocal: Boolean get() =
-    this == LlmProvider.LOCAL || this == LlmProvider.BITNET || this == LlmProvider.LITERT
+/** On-device provider (llama.cpp via the :engine process). */
+val LlmProvider.isLocal: Boolean get() = this == LlmProvider.LOCAL
 
 data class AgentConfig(
-    val apiKey: String,
-    val baseUrl: String,
+    val apiKey: String = "",
+    val baseUrl: String = "",
     val modelName: String = "",
     val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
     val maxIterations: Int = 60,
@@ -21,8 +20,10 @@ data class AgentConfig(
     // Hermes Bridge settings
     val hermesUrl: String? = null,
     val hermesApiKey: String? = null,
-    val hermesEnabled: Boolean = false
+    val hermesEnabled: Boolean = false,
 ) {
+    val isLocalModel: Boolean get() = provider.isLocal
+
     companion object {
         const val DEFAULT_SYSTEM_PROMPT =
             """## ROLE

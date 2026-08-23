@@ -51,7 +51,7 @@ Only output the action, nothing else. If stuck after reflection, try a different
     private val config: AgentConfig = AgentConfig(
         apiKey = "",
         baseUrl = "",
-        provider = LlmProvider.BITNET, // prefer local; user can switch to LITERT via settings
+        provider = LlmProvider.LOCAL,
         systemPrompt = SYSTEM_PROMPT
     )
     private val client = LlmClientFactory.create(config)

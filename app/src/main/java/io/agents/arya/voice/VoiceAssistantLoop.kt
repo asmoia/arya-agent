@@ -35,7 +35,7 @@ class VoiceAssistantLoop(private val context: Context) {
         apiKey = "",
         baseUrl = "",
         // Prefer local/NPU provider; fall back to cloud if configured.
-        provider = LlmProvider.BITNET,
+        provider = LlmProvider.LOCAL,
         systemPrompt = "You are Arya, a helpful on-device Android voice assistant. " +
                 "Reply concisely and in the user's language."
     )

@@ -1,7 +1,7 @@
 package io.agents.arya
 
 import io.agents.arya.agent.DefaultAgentService
-import io.agents.arya.agent.llm.EngineClient
+import io.agents.arya.engine.EngineClient
 import io.agents.arya.agent.llm.InferenceTelemetryCollector
 import io.agents.arya.base.BaseApp
 import io.agents.arya.channel.ChannelManager

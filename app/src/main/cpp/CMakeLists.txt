@@ -3,10 +3,12 @@ project(arya-engine LANGUAGES C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+# Pinned llama.cpp stable tag — recorded in PROGRESS.md
+# Tag: v0.2.0 (2026-08-21, ggml-org/llama.cpp)
 include(FetchContent)
 FetchContent_Declare(llama_cpp
-    GIT_REPOSITORY https://github.com/ggerganov/llama.cpp
-    GIT_TAG        b3800
+    GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
+    GIT_TAG        v0.2.0
     SOURCE_SUBDIR  .
 )
 

@@ -328,10 +328,16 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
         return env->NewStringUTF("{\"error\": \"prompt_exceeds_ctx\"}");
     }
 
-    // Process prompt
-    llama_batch pb = llama_batch_get_one(const_cast<llama_token*>(tokens.data()), n_prompt);
-    if (llama_decode(mc->ctx, pb) != 0) {
-        return env->NewStringUTF("{\"error\": \"decode_failed\"}");
+    if (!is_delta) {
+        llama_memory_clear(llama_get_memory(mc->ctx), true);
+        mc->current_n_past = 0;
+    }
+
+    if (n_prompt > 0) {
+        llama_batch pb = llama_batch_get_one(const_cast<llama_token*>(tokens.data()), n_prompt);
+        if (llama_decode(mc->ctx, pb) != 0) {
+            return env->NewStringUTF("{\"error\": \"decode_failed\"}");
+        }
     }
     double prompt_eval_ms = now_ms() - t_start;
 
@@ -356,19 +362,20 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     std::string finish_reason = "stop";
 
     for (int i = 0; i < max_tokens; i++) {
-        // Watchdog & cancel check
         double now = now_ms();
         if (mc->cancel_flag.load()) {
             finish_reason = "cancelled";
             break;
         }
-        if (deadline_ms > 0 && (now - t_start) > deadline_ms) {
-            finish_reason = "deadline";
-            break;
-        }
-        if (token_deadline_ms > 0 && (now - t_last_token) > token_deadline_ms) {
-            finish_reason = "token_deadline";
-            break;
+        if ((i % 8) == 0) {
+            if (deadline_ms > 0 && (now - t_start) > deadline_ms) {
+                finish_reason = "deadline";
+                break;
+            }
+            if (token_deadline_ms > 0 && gen_tokens > 0 && (now - t_last_token) > token_deadline_ms) {
+                finish_reason = "token_deadline";
+                break;
+            }
         }
 
         if (n_prompt + gen_tokens >= n_ctx - 1) {
@@ -459,5 +466,85 @@ Java_io_agents_arya_engine_EngineNative_nativeGetSystemInfo(JNIEnv * env, jobjec
     snprintf(buf, sizeof(buf), "{\"cpu_cores\":%d,\"ram_total_mb\":%ld,\"ram_avail_mb\":%ld,\"gpu_available\":%s}",
         get_nprocs_onln(), get_total_ram_mb(), get_available_ram_mb(),
         detect_gpu_available() ? "true" : "false");
+    return env->NewStringUTF(buf);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_io_agents_arya_engine_EngineNative_nativeClearKv(JNIEnv *, jobject, jlong handle) {
+    auto * mc = handle_to_ctx(handle);
+    if (!mc || !mc->ctx) return;
+    llama_memory_clear(llama_get_memory(mc->ctx), true);
+    mc->current_n_past = 0;
+    mc->loaded_prefix_key.clear();
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_io_agents_arya_engine_EngineNative_nativeModelMeta(
+    JNIEnv * env, jobject, jstring model_path)
+{
+    // Lightweight: report file size only. Full GGUF KV is parsed in Kotlin
+    // (GgufHeaderParser) so this never has to mmap the weights.
+    const char * path = env->GetStringUTFChars(model_path, nullptr);
+    if (!path) return env->NewStringUTF("{}");
+    struct stat st;
+    long size = 0;
+    if (stat(path, &st) == 0) size = (long) st.st_size;
+    env->ReleaseStringUTFChars(model_path, path);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "{\"file_bytes\":%ld}", size);
+    return env->NewStringUTF(buf);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_agents_arya_engine_EngineNative_nativeDetectBigCores(JNIEnv *, jobject) {
+    int nprocs = get_nprocs_onln();
+    int big = 0;
+    for (int i = 0; i < nprocs && i < 16; i++) {
+        char path[128];
+        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i);
+        FILE * f = fopen(path, "r");
+        if (f) {
+            long freq = 0;
+            if (fscanf(f, "%ld", &freq) == 1 && freq > 1500000) big++;
+            fclose(f);
+        }
+    }
+    return big > 0 ? big : 1;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_io_agents_arya_engine_EngineNative_nativeBench(JNIEnv * env, jobject, jint n_threads) {
+    const int N = 1024;
+    const int ITER = 64;
+    std::vector<float> a(N * N), b(N), c(N);
+    for (int i = 0; i < N * N; i++) a[i] = 0.001f * (i % 97);
+    for (int i = 0; i < N; i++) b[i] = 0.002f * (i % 53);
+
+    double t0 = now_ms();
+    // Simple GEMV proxy; thread count is advisory (single-thread loop, scaled).
+    for (int it = 0; it < ITER; it++) {
+        for (int r = 0; r < N; r++) {
+            float acc = 0.f;
+            const float * row = &a[r * N];
+            for (int k = 0; k < N; k++) acc += row[k] * b[k];
+            c[r] = acc;
+        }
+    }
+    double dt = (now_ms() - t0) / 1000.0;
+    if (dt < 1e-6) dt = 1e-6;
+    double flops = 2.0 * N * N * ITER;
+    double gflops = (flops / dt) / 1e9;
+    // memcpy bandwidth
+    std::vector<char> src(16 * 1024 * 1024), dst(16 * 1024 * 1024);
+    double b0 = now_ms();
+    memcpy(dst.data(), src.data(), src.size());
+    double bdt = (now_ms() - b0) / 1000.0;
+    if (bdt < 1e-6) bdt = 1e-6;
+    double bw = (16.0 / 1024.0) / bdt; // GB/s
+    volatile float sink = c[0];
+    (void) sink;
+    (void) n_threads;
+    char buf[192];
+    snprintf(buf, sizeof(buf), "{\"gflops\":%.3f,\"mem_bw_gbs\":%.3f,\"threads\":%d}", gflops, bw, n_threads);
     return env->NewStringUTF(buf);
 }

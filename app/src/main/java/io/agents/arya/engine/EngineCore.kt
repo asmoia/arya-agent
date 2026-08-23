@@ -1,112 +1,143 @@
 package io.agents.arya.engine
 
+import android.app.ActivityManager
 import android.content.Context
+import android.os.Build
+import io.agents.arya.engine.budget.DeviceProfileStore
 import io.agents.arya.engine.budget.MemoryBudget
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
+/**
+ * Thin JNI wrapper. Owns the "exactly one model, exactly one generation" invariant.
+ * Runs only in the `:engine` process.
+ */
 class EngineCore(private val context: Context) {
+    private val lock = ReentrantLock()
     private var handle: Long = 0L
     private var currentModelPath: String? = null
     private var currentCtxSize: Int = 2048
-    private val lock = ReentrantLock()
-    @Volatile
-    private var isGenerating = false
+    private var currentThreads: Int = 4
+    private var modelHash8: String = ""
+    private var committedPromptHash: String = ""
+    private var committedPrefixKey: String? = null
+    private var nPast: Int = 0
+    private val generating = AtomicBoolean(false)
+    private val prefixCache = PrefixCache(File(context.filesDir, "prefix-cache"))
 
     val isLoaded: Boolean
         get() = lock.withLock { handle != 0L }
 
+    val isBusy: Boolean
+        get() = generating.get()
+
     fun ensureLoaded(modelPath: String, ctxSize: Int, nThreads: Int): String {
         lock.withLock {
             if (handle != 0L && currentModelPath == modelPath && currentCtxSize == ctxSize) {
-                return stats()
+                return statsLocked()
             }
-
-            if (handle != 0L) {
-                unloadInternal()
-            }
+            if (handle != 0L) unloadLocked()
 
             val file = File(modelPath)
             if (!file.exists()) {
-                throw IllegalStateException("Model file does not exist: $modelPath")
+                throw EngineLoadException(EngineError.ERR_LOAD_FAILED, "Model file missing: $modelPath")
             }
 
-            val runtime = Runtime.getRuntime()
-            val totalRam = runtime.totalMemory() + runtime.freeMemory() // approximate fallback
-            val availRam = runtime.freeMemory()
-
-            val inputs = MemoryBudget.Inputs(
-                totalRamBytes = totalRam,
-                availRamBytes = availRam,
-                modelFileBytes = file.length(),
-                isLowRamDevice = totalRam < 3L * 1024 * 1024 * 1024
+            val mem = readDeviceRam()
+            val profile = DeviceProfileStore.read(context)
+            val meta = MemoryBudget.parseModelMeta(
+                try {
+                    EngineNative.nativeModelMeta(modelPath)
+                } catch (_: Throwable) {
+                    "{}"
+                }
+            ) ?: io.agents.arya.engine.budget.GgufHeaderParser.parse(file)?.asModelMeta()
+            val plan = MemoryBudget.plan(
+                MemoryBudget.Inputs(
+                    totalRamBytes = mem.total,
+                    availRamBytes = mem.avail,
+                    modelFileBytes = file.length(),
+                    isLowRamDevice = mem.lowRam,
+                    modelMeta = meta,
+                ),
+                profile,
             )
-
-            val plan = MemoryBudget.plan(inputs, null)
-            if (plan is MemoryBudget.Plan.Refuse) {
-                throw IllegalStateException("ERR_OOM_PREVENTED: ${plan.reasonFa}")
+            when (plan) {
+                is MemoryBudget.Plan.Refuse -> {
+                    throw EngineLoadException(EngineError.ERR_OOM_PREVENTED, plan.reasonEn)
+                }
+                is MemoryBudget.Plan.Load -> {
+                    val newHandle = EngineNative.nativeLoadModel(modelPath, plan.ctxSize, plan.nThreads)
+                    if (newHandle <= 0) {
+                        throw EngineLoadException(EngineError.ERR_LOAD_FAILED, "native load code $newHandle")
+                    }
+                    handle = newHandle
+                    currentModelPath = modelPath
+                    currentCtxSize = plan.ctxSize
+                    currentThreads = plan.nThreads
+                    modelHash8 = PrefixCache.fileHash8(file)
+                    committedPromptHash = ""
+                    committedPrefixKey = null
+                    nPast = 0
+                    prefixCache.deleteStale(modelHash8)
+                    return statsLocked()
+                }
             }
-
-            val finalCtx = if (plan is MemoryBudget.Plan.Load) plan.ctxSize else ctxSize
-            val finalThreads = if (plan is MemoryBudget.Plan.Load) plan.nThreads else nThreads
-
-            val newHandle = EngineNative.nativeLoadModel(modelPath, finalCtx, finalThreads)
-            if (newHandle <= 0) {
-                throw IllegalStateException("Native model load failed with code $newHandle")
-            }
-
-            handle = newHandle
-            currentModelPath = modelPath
-            currentCtxSize = finalCtx
-            return stats()
         }
     }
 
-    fun generateStream(
-        requestJson: String,
-        requestId: Int,
-        callback: IEngineCallback
-    ) {
+    fun generateStream(requestJson: String, requestId: Int, callback: IEngineCallback) {
         val h = lock.withLock {
             if (handle == 0L) {
-                callback.onError(requestId, 2 /* ERR_NO_MODEL */, "No model loaded")
+                safeError(callback, requestId, EngineError.ERR_NO_MODEL, EngineError.message(EngineError.ERR_NO_MODEL))
                 return
             }
-            if (isGenerating) {
-                callback.onError(requestId, 1 /* ERR_BUSY */, "Engine is busy")
+            if (!generating.compareAndSet(false, true)) {
+                safeError(callback, requestId, EngineError.ERR_BUSY, EngineError.message(EngineError.ERR_BUSY))
                 return
             }
-            isGenerating = true
             handle
         }
 
         try {
-            val json = JSONObject(requestJson)
-            val prompt = json.optString("prompt", "")
-            val promptMode = json.optString("promptMode", "full")
-            val maxTokens = json.optInt("maxTokens", 512)
-            val temp = json.optDouble("temperature", 0.3).toFloat()
-            val topP = json.optDouble("topP", 0.9).toFloat()
-            val topK = json.optInt("topK", 32)
-            val repeatPenalty = json.optDouble("repeatPenalty", 1.12).toFloat()
-            val stopArray = json.optJSONArray("stop") ?: JSONArray()
-            val stopList = ArrayList<String>()
-            for (i in 0 until stopArray.length()) {
-                stopList.add(stopArray.getString(i))
-            }
-            val stopJson = JSONArray(stopList).toString()
-            val deadlineMs = json.optLong("deadlineMs", 45000L)
-            val tokenDeadlineMs = json.optLong("tokenDeadlineMs", 4000L)
+            val req = EngineRequest.parse(requestJson)
+            val prefixKey = req.prefixKey ?: req.warmupKey
+            var mode = req.promptMode
+            var prompt = req.prompt
 
+            if (!prefixKey.isNullOrBlank()) {
+                val restored = maybeRestorePrefix(prefixKey)
+                if (restored && mode == "full") {
+                    // Prefix already in KV — treat remaining prompt as a no-op prefill
+                    // when this is a warmup (maxTokens=0) or as delta when a suffix follows.
+                    mode = if (req.maxTokens == 0) "full" else "delta"
+                }
+            }
+
+            if (mode == "delta" && committedPromptHash.isNotEmpty()) {
+                val incomingHash = PrefixCache.sha256Hex(prompt)
+                // Client may send only the suffix; if they sent a full prompt whose
+                // prefix hash does not match, fall back to a full prefill.
+                if (prompt.startsWith("HASH:")) {
+                    val claimed = prompt.removePrefix("HASH:")
+                    if (claimed != committedPromptHash) {
+                        mode = "full"
+                    } else {
+                        prompt = ""
+                    }
+                }
+            }
+
+            val stopJson = JSONArray(req.stop).toString()
             val nativeCb = object : EngineNative.NativeStreamCallback {
                 override fun onDeltaPiece(piece: String) {
                     try {
                         callback.onDelta(requestId, piece)
-                    } catch (e: Exception) {
-                        // Client binder disconnected or failed
+                    } catch (_: Exception) {
                     }
                 }
             }
@@ -114,54 +145,98 @@ class EngineCore(private val context: Context) {
             val statsJson = EngineNative.nativeGenerateStream(
                 h,
                 prompt,
-                promptMode,
-                maxTokens,
-                temp,
-                topP,
-                topK,
-                repeatPenalty,
+                mode,
+                req.maxTokens,
+                req.temperature.toFloat(),
+                req.topP.toFloat(),
+                req.topK,
+                req.repeatPenalty.toFloat(),
                 stopJson,
-                deadlineMs,
-                tokenDeadlineMs,
-                nativeCb
+                req.deadlineMs,
+                req.tokenDeadlineMs,
+                nativeCb,
             )
 
-            callback.onDone(requestId, statsJson)
-        } catch (e: Exception) {
-            callback.onError(requestId, 6 /* ERR_NATIVE */, e.message ?: "Generation error")
-        } finally {
-            lock.withLock {
-                isGenerating = false
+            val stats = JSONObject(statsJson)
+            if (stats.has("error")) {
+                val err = stats.optString("error")
+                val code = when (err) {
+                    "cancelled" -> EngineError.ERR_CANCELLED
+                    "deadline", "token_deadline" -> EngineError.ERR_DEADLINE
+                    else -> EngineError.ERR_NATIVE
+                }
+                if (err == "cancelled") {
+                    safeError(callback, requestId, EngineError.ERR_CANCELLED, EngineError.message(code, err))
+                } else if (err == "deadline" || err == "token_deadline") {
+                    safeError(callback, requestId, EngineError.ERR_DEADLINE, EngineError.message(code, err))
+                } else {
+                    safeError(callback, requestId, EngineError.ERR_NATIVE, EngineError.message(code, err))
+                }
+                return
             }
+
+            lock.withLock {
+                nPast = stats.optInt("prompt_tokens", nPast) + stats.optInt("gen_tokens", 0)
+                committedPromptHash = PrefixCache.sha256Hex(req.prompt)
+                if (!prefixKey.isNullOrBlank()) committedPrefixKey = prefixKey
+            }
+
+            val finish = stats.optString("finish_reason", "stop")
+            if (finish == "cancelled") {
+                safeError(callback, requestId, EngineError.ERR_CANCELLED, EngineError.message(EngineError.ERR_CANCELLED))
+                return
+            }
+            if (finish == "deadline" || finish == "token_deadline") {
+                safeError(callback, requestId, EngineError.ERR_DEADLINE, EngineError.message(EngineError.ERR_DEADLINE, finish))
+                return
+            }
+
+            if (req.maxTokens == 0 && !prefixKey.isNullOrBlank()) {
+                savePrefixState(prefixKey)
+            }
+
+            try {
+                callback.onDone(requestId, statsJson)
+            } catch (_: Exception) {
+            }
+        } catch (e: Exception) {
+            safeError(callback, requestId, EngineError.ERR_NATIVE, e.message ?: "generation error")
+        } finally {
+            generating.set(false)
         }
     }
 
-    fun cancel(requestId: Int) {
+    fun cancel(@Suppress("UNUSED_PARAMETER") requestId: Int) {
         lock.withLock {
-            if (handle != 0L) {
-                EngineNative.nativeCancel(handle)
-            }
+            if (handle != 0L) EngineNative.nativeCancel(handle)
         }
     }
 
     fun savePrefixState(key: String): Boolean {
         return lock.withLock {
             if (handle == 0L) return false
-            val dir = File(context.filesDir, "prefix-cache").apply { mkdirs() }
-            val stateFile = File(dir, "$key.state")
-            EngineNative.nativeSaveState(handle, stateFile.absolutePath)
+            prefixCache.root.mkdirs()
+            val state = prefixCache.stateFile(key)
+            val ok = EngineNative.nativeSaveState(handle, state.absolutePath)
+            if (!ok) return false
+            if (prefixCache.deleteIfOversized(key)) return false
+            prefixCache.writeSidecar(
+                PrefixCache.Sidecar(
+                    nPast = nPast,
+                    promptHash = committedPromptHash,
+                    modelHash = modelHash8,
+                    createdAt = System.currentTimeMillis(),
+                    sizeBytes = state.length(),
+                    key = key,
+                ),
+            )
+            prefixCache.evictLru(3)
+            committedPrefixKey = key
+            true
         }
     }
 
-    fun loadPrefixState(key: String): Boolean {
-        return lock.withLock {
-            if (handle == 0L) return false
-            val dir = File(context.filesDir, "prefix-cache")
-            val stateFile = File(dir, "$key.state")
-            if (!stateFile.exists()) return false
-            EngineNative.nativeLoadState(handle, stateFile.absolutePath)
-        }
-    }
+    fun loadPrefixState(key: String): Boolean = lock.withLock { loadPrefixLocked(key) }
 
     fun countTokens(text: String): Int {
         return lock.withLock {
@@ -170,29 +245,78 @@ class EngineCore(private val context: Context) {
         }
     }
 
-    fun stats(): String {
-        return lock.withLock {
-            if (handle == 0L) {
-                "{\"loaded\": false}"
-            } else {
-                val modelInfo = EngineNative.nativeGetModelInfo(handle)
-                val sysInfo = EngineNative.nativeGetSystemInfo()
-                "{\"loaded\": true, \"model_path\": \"${currentModelPath ?: ""}\", \"model_info\": $modelInfo, \"sys_info\": $sysInfo}"
-            }
-        }
-    }
+    fun stats(): String = lock.withLock { statsLocked() }
 
     fun unload() {
-        lock.withLock {
-            unloadInternal()
+        lock.withLock { unloadLocked() }
+    }
+
+    private fun maybeRestorePrefix(key: String): Boolean {
+        return lock.withLock {
+            if (committedPrefixKey == key && nPast > 0) return true
+            loadPrefixLocked(key)
         }
     }
 
-    private fun unloadInternal() {
+    private fun loadPrefixLocked(key: String): Boolean {
+        if (handle == 0L) return false
+        if (!prefixCache.existsAndValid(key, modelHash8)) return false
+        val ok = EngineNative.nativeLoadState(handle, prefixCache.stateFile(key).absolutePath)
+        if (!ok) return false
+        val sc = prefixCache.readSidecar(key)
+        nPast = sc?.nPast ?: 0
+        committedPromptHash = sc?.promptHash.orEmpty()
+        committedPrefixKey = key
+        return true
+    }
+
+    private fun unloadLocked() {
         if (handle != 0L) {
             EngineNative.nativeFreeModel(handle)
             handle = 0L
             currentModelPath = null
+            committedPromptHash = ""
+            committedPrefixKey = null
+            nPast = 0
         }
     }
+
+    private fun statsLocked(): String {
+        if (handle == 0L) return """{"loaded":false}"""
+        val modelInfo = EngineNative.nativeGetModelInfo(handle)
+        val sysInfo = EngineNative.nativeGetSystemInfo()
+        return JSONObject().apply {
+            put("loaded", true)
+            put("model_path", currentModelPath ?: "")
+            put("ctx", currentCtxSize)
+            put("n_threads", currentThreads)
+            put("n_past", nPast)
+            put("prefix_key", committedPrefixKey ?: "")
+            put("model_info", JSONObject(modelInfo))
+            put("sys_info", JSONObject(sysInfo))
+        }.toString()
+    }
+
+    private fun readDeviceRam(): RamSnapshot {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val info = ActivityManager.MemoryInfo()
+        if (am != null) {
+            am.getMemoryInfo(info)
+            val low = if (Build.VERSION.SDK_INT >= 19) am.isLowRamDevice else info.totalMem < 3L * 1024 * 1024 * 1024
+            return RamSnapshot(info.totalMem, info.availMem, low)
+        }
+        val rt = Runtime.getRuntime()
+        return RamSnapshot(rt.maxMemory(), rt.freeMemory(), true)
+    }
+
+    private fun safeError(cb: IEngineCallback, id: Int, code: Int, message: String) {
+        try {
+            cb.onError(id, code, message)
+        } catch (_: Exception) {
+        }
+    }
+
+    private data class RamSnapshot(val total: Long, val avail: Long, val lowRam: Boolean)
 }
+
+class EngineLoadException(val code: Int, message: String) : Exception(message)
