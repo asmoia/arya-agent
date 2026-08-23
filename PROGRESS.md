@@ -59,8 +59,12 @@ adb shell kill -9 <engine-pid>       # UI must survive; next generate rebinds
 
 ## Phase A3 — MemoryBudget + DeviceProfile
 
-- [ ] Table-driven unit tests (3/4/6/8/12 GB)
-- [ ] First-run bench once
+- [x] Table-driven unit tests (3/4/6/8/12 GB + low-ram + refuse) — 18 JVM tests green
+- [x] First-run bench once (`DeviceProfileStore.CURRENT_VERSION`, persisted)
+- [x] Catalog RAM gating (`CatalogPolicy`) + Qwen3 HF URLs
+- [x] Local Tier3 refused on <8 GB in TaskOrchestrator
+
+**JVM test log:** `test-logs/a3-jvm-unit.txt` (OK 18 tests)
 
 ## Phase B1 — TaskSessionStore
 

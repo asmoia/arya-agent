@@ -7,11 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import okhttp3.OkHttpClient
 
-enum class Channel(val displayName: String) {
-    TELEGRAM("Telegram"),
-    LOCAL("Local"),
-}
-
 object ChannelManager {
 
     private const val TAG = "ChannelManager"

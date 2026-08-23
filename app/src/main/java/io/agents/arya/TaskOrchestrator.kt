@@ -42,7 +42,8 @@ class TaskOrchestrator(
     private lateinit var agentService: AgentService
     private val pipelineRouter = PipelineRouter(ClawApplication.instance)
     private val skillExecutor = SkillExecutor()
-    val taskSessionStore = TaskSessionStore()
+    val taskSessionStore: TaskSessionStore
+        get() = ClawApplication.instance.taskSessionStore
 
     val inProgressTaskMessageId: String
         get() = taskSessionStore.snapshot().messageId
