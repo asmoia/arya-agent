@@ -149,6 +149,16 @@ class AppViewModel : ViewModel() {
                 }
                 context.startActivity(overlay)
             }
+            FloatingCircleManager.onFloatLongClick = {
+                XLog.d(TAG, "Floating circle long-press — voice overlay")
+                val context = ClawApplication.instance
+                val overlay = android.content.Intent(context, io.agents.arya.ui.chat.OverlayHostActivity::class.java).apply {
+                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("start_voice", true)
+                }
+                context.startActivity(overlay)
+            }
             FloatingCircleManager.onStopTask = {
                 XLog.i(TAG, "Stop task requested from floating pill")
                 stopTask()

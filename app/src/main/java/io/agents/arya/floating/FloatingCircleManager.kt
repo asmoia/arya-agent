@@ -122,6 +122,10 @@ object FloatingCircleManager {
                             onFloatClick()
                         }
                     }
+                    view?.setOnLongClickListener {
+                        onFloatLongClick()
+                        true
+                    }
                     // Initialize state
                     updateStateView(view, currentState)
                     // Detect position after layout to prevent the bubble from getting stuck off-screen
@@ -503,5 +507,6 @@ object FloatingCircleManager {
      * Click callback, can be set externally
      */
     var onFloatClick: () -> Unit = {}
+    var onFloatLongClick: () -> Unit = {}
     var onStopTask: () -> Unit = {}
 }

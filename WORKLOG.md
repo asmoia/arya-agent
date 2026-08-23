@@ -9,3 +9,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 14:26:38 | 35 min | [overflow] PrefixCache tests, compiler tests, freeze KB tools, changelog
 2026-08-23 14:27:28 | 36 min | [overflow] voice auto-send/draft + TTS settings keys
 2026-08-23 14:28:43 | 37 min | [overflow] voice settings rows, RoutingPolicy tests, Tier enum move
+2026-08-23 14:29:38 | 38 min | [overflow] long-press overlay voice, ChatMarkdown export
