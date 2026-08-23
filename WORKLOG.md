@@ -21,3 +21,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 15:10:01 | 78 min | [ci] real org.json for unit tests (android stub was throwing); relax telegram matcher assert; PrefixCache temp dir
 2026-08-23 15:17:58 | 86 min | [release] compile-required, tests continue-on-error so signed assembleRelease can run; rewrite PrefixCacheTest
 2026-08-23 15:40:15 | 109 min | [engine] fix llama_state_load_file 5-arg for b10566 (CI ninja error)
+2026-08-23 16:14:23 | 143 min | [ui] iPhone-like Arya home: center voice orb, side keyboard, model studio + background FGS download, capability sheet, local-first send (no silent OpenAI)

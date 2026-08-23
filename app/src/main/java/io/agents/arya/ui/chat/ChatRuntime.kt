@@ -112,7 +112,7 @@ class ChatRuntime(
                             }
                         }
                         is LlmEvent.ToolCallStart -> {
-                            _uiState.value = _uiState.value.copy(activeToolName = event.name ?: "ابزار")
+                            _uiState.value = _uiState.value.copy(activeToolName = event.name ?: "tool")
                         }
                         is LlmEvent.ToolCall -> {
                             val lastIdx = msgsWithPlaceholder.lastIndex
@@ -143,7 +143,7 @@ class ChatRuntime(
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isStreaming = false,
-                    errorMessage = e.message ?: "خطای ناشناخته در برقراری ارتباط"
+                    errorMessage = e.message ?: "Could not reach the model. Download a local GGUF or add a cloud key."
                 )
             }
         }

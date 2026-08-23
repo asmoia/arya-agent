@@ -10,7 +10,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.agents.arya.ClawApplication
 import io.agents.arya.agent.AgentConfig
-import io.agents.arya.agent.llm.ModelConfigRepository
+import io.agents.arya.agent.llm.ModelReadiness
+import io.agents.arya.agent.llm.ModelSession
 import io.agents.arya.ui.chat.ui.AssistantOverlaySheet
 import io.agents.arya.ui.chat.ui.VoiceListeningSheet
 import io.agents.arya.utils.KVUtils
@@ -61,7 +62,13 @@ class OverlayHostActivity : ComponentActivity() {
                 AssistantOverlaySheet(
                     chatUiState = chat,
                     taskState = task,
-                    onSendText = { text -> runtime.send(text, currentConfig()) },
+                    onSendText = { text ->
+                        when (val gate = ModelSession.resolve(this)) {
+                            is ModelReadiness.Local -> runtime.send(text, gate.config)
+                            is ModelReadiness.Cloud -> runtime.send(text, gate.config)
+                            is ModelReadiness.NeedsSetup -> runtime.setDraft(text)
+                        }
+                    },
                     onStartVoiceInput = { voiceCapture?.start() },
                     onRequestStopTask = { app.taskSessionStore.requestStop() },
                     onDismiss = { finish() },
@@ -86,10 +93,10 @@ class OverlayHostActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun currentConfig(): AgentConfig = try {
-        ModelConfigRepository.snapshot().toAgentConfig(0.3, 8)
-    } catch (_: Exception) {
-        AgentConfig()
+    private fun currentConfig(): AgentConfig = when (val gate = ModelSession.resolve(this)) {
+        is ModelReadiness.Local -> gate.config
+        is ModelReadiness.Cloud -> gate.config
+        is ModelReadiness.NeedsSetup -> AgentConfig()
     }
 
     companion object {

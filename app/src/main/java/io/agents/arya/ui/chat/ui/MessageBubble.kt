@@ -49,7 +49,7 @@ fun MessageBubble(
                             modifier = Modifier.padding(bottom = 6.dp)
                         ) {
                             Text(
-                                text = "در حال اجرای ابزار: ${step.toolName}",
+                                text = "Running ${step.toolName}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
