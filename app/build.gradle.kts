@@ -167,6 +167,8 @@ dependencies {
     implementation(libs.zxing)
 
     testImplementation(libs.junit)
+    // Real org.json for JVM unit tests (android.jar stubs throw RuntimeException).
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

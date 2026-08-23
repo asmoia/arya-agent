@@ -5,7 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
-import kotlin.io.path.createTempDirectory
 
 class PrefixCacheTest {
     @Test

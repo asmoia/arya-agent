@@ -18,3 +18,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 14:51:59 | 60 min | [overflow] finished-task battery estimate in status bar; offline STT settings toggle (stub backend)
 2026-08-23 14:58:09 | 67 min | [compile] fix DefaultAgentService/ChannelManager/EngineClient/PrefixCache/Theme/ChannelConfig/ComposeChat so testDebugUnitTest can compile
 2026-08-23 15:02:36 | 71 min | [compile] ChannelManager.sendFile for SendFileTool; version 1.1.1; Kotlin compile already green on CI
+2026-08-23 15:10:01 | 78 min | [ci] real org.json for unit tests (android stub was throwing); relax telegram matcher assert; PrefixCache temp dir
