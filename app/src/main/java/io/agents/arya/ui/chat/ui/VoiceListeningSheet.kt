@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,7 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.agents.arya.R
 
 @Composable
 fun VoiceListeningSheet(
@@ -84,7 +87,7 @@ fun VoiceListeningSheet(
                     IconButton(onClick = onStopListening) {
                         Icon(
                             imageVector = Icons.Default.Mic,
-                            contentDescription = "شنود",
+                            contentDescription = stringResource(R.string.voice_cd_listen),
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(32.dp)
                         )
@@ -95,7 +98,7 @@ fun VoiceListeningSheet(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = if (errorMessage != null) errorMessage else if (partialText.isNotBlank()) partialText else "در حال گوش دادن... صحبت کنید",
+                text = if (errorMessage != null) errorMessage else if (partialText.isNotBlank()) partialText else stringResource(R.string.voice_listening),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (errorMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
@@ -120,7 +123,7 @@ fun VoiceListeningSheet(
                     )
                     Spacer(modifier = Modifier.size(6.dp))
                     Text(
-                        text = "توقف شنود",
+                        text = stringResource(R.string.voice_stop),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -129,4 +132,3 @@ fun VoiceListeningSheet(
         }
     }
 }
-import androidx.compose.foundation.layout.Row

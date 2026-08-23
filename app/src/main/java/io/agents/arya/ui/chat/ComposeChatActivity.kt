@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.agents.arya.ClawApplication
+import io.agents.arya.R
 import io.agents.arya.TaskSessionStore
 import io.agents.arya.agent.AgentConfig
 import io.agents.arya.engine.EngineClient
@@ -92,7 +93,7 @@ class ComposeChatActivity : ComponentActivity() {
 
                     override fun onError(error: Int) {
                         isVoiceListening = false
-                        voiceErrorMessage = "صدایی شنیده نشد؛ دوباره امتحان کنید"
+                        voiceErrorMessage = getString(R.string.voice_no_speech)
                     }
 
                     override fun onResults(results: Bundle?) {

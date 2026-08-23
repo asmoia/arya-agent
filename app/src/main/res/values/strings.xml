@@ -227,4 +227,29 @@
     <string name="custom_local_model_url_not_set">Not set</string>
     <string name="custom_local_model_url_set">Custom URL set</string>
     <string name="custom_local_model_url_invalid">URL must start with http:// or https://</string>
+
+    <!-- Chat UI (S9) -->
+    <string name="chat_title">Arya</string>
+    <string name="chat_empty_title">Arya assistant</string>
+    <string name="chat_empty_body">How can I help? Type a message or tap the mic to speak.</string>
+    <string name="chat_input_hint">Message or command…</string>
+    <string name="chat_cd_voice">Voice input</string>
+    <string name="chat_cd_send">Send</string>
+    <string name="chat_cd_stop">Stop</string>
+    <string name="chat_cd_stop_task">Stop task</string>
+    <string name="task_status_routing">Routing…</string>
+    <string name="task_status_executing">Running: %s</string>
+    <string name="task_status_confirm">Waiting for confirmation: %s</string>
+    <string name="task_status_stopping">Stopping…</string>
+    <string name="voice_listening">Listening… speak now</string>
+    <string name="voice_stop">Stop listening</string>
+    <string name="voice_no_speech">No speech heard. Try again.</string>
+    <string name="voice_cd_listen">Listening</string>
+    <string name="overlay_title">Arya</string>
+    <string name="settings_group_permissions">Permissions</string>
+    <string name="settings_group_voice">Voice</string>
+    <string name="settings_group_advanced">Advanced</string>
+    <string name="settings_voice_auto_send">Auto-send voice transcripts</string>
+    <string name="settings_voice_tts">Speak short answers</string>
+    <string name="settings_offline_stt">Offline speech recognition</string>
 </resources>

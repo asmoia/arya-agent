@@ -22,7 +22,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.agents.arya.R
 
 @Composable
 fun InputBar(
@@ -50,7 +52,7 @@ fun InputBar(
             ) {
                 Icon(
                     imageVector = Icons.Default.Mic,
-                    contentDescription = "ورودی صوتی",
+                    contentDescription = stringResource(R.string.chat_cd_voice),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -58,7 +60,7 @@ fun InputBar(
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = { Text("پیام یا دستور خود را بنویسید...") },
+                placeholder = { Text(stringResource(R.string.chat_input_hint)) },
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 4.dp),
@@ -73,7 +75,7 @@ fun InputBar(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Stop,
-                        contentDescription = "توقف",
+                        contentDescription = stringResource(R.string.chat_cd_stop),
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
@@ -89,7 +91,7 @@ fun InputBar(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Send,
-                        contentDescription = "ارسال",
+                        contentDescription = stringResource(R.string.chat_cd_send),
                         tint = if (text.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                     )
                 }

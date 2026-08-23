@@ -14,8 +14,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import io.agents.arya.R
 
 @Composable
 fun EmptyState(
@@ -37,7 +39,7 @@ fun EmptyState(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "دستیار هوشمند آریا",
+            text = stringResource(R.string.chat_empty_title),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -45,7 +47,7 @@ fun EmptyState(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "چگونه می‌توانم به شما کمک کنم؟ برای شروع، پیام خود را ارسال یا با صدای خود صحبت کنید.",
+            text = stringResource(R.string.chat_empty_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center

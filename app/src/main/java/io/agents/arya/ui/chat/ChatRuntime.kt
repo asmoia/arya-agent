@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 
 data class ChatUiState(
     val conversationId: String = "default",
-    val title: String = "آریا",
+    val title: String = "Arya",
     val messages: List<ChatMessage> = emptyList(),
     val isStreaming: Boolean = false,
     val streamingReasoning: String? = null,

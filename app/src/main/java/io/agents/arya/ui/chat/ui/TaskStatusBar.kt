@@ -15,7 +15,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.agents.arya.R
 import io.agents.arya.TaskState
 
 @Composable
@@ -65,7 +67,7 @@ fun TaskStatusBar(
             IconButton(onClick = onRequestStop, modifier = Modifier.size(32.dp)) {
                 Icon(
                     imageVector = Icons.Default.Stop,
-                    contentDescription = "توقف کار",
+                    contentDescription = stringResource(R.string.chat_cd_stop_task),
                     tint = MaterialTheme.colorScheme.error
                 )
             }
