@@ -51,13 +51,14 @@ object DeviceProfileStore {
     }
 
     fun readDeviceRam(context: Context): Triple<Long, Long, Boolean> {
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val info = ActivityManager.MemoryInfo()
-        if (am != null) {
-            am.getMemoryInfo(info)
-            val low = if (Build.VERSION.SDK_INT >= 19) am.isLowRamDevice else info.totalMem < 3L * 1024 * 1024 * 1024
-            return Triple(info.totalMem, info.availMem, low)
+        am.getMemoryInfo(info)
+        val low = if (Build.VERSION.SDK_INT >= 19) {
+            am.isLowRamDevice
+        } else {
+            info.totalMem < 3L * 1024 * 1024 * 1024
         }
-        return Triple(4L * 1024 * 1024 * 1024, 2L * 1024 * 1024 * 1024, false)
+        return Triple(info.totalMem, info.availMem, low)
     }
 }

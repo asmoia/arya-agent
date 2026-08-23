@@ -298,15 +298,18 @@ class EngineCore(private val context: Context) {
     }
 
     private fun readDeviceRam(): RamSnapshot {
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        // Device RAM — NEVER JVM heap (Runtime.totalMemory is ~256 MB and
+        // makes MemoryBudget refuse every GGUF). Use ActivityManager from
+        // the :engine Service context.
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val info = ActivityManager.MemoryInfo()
-        if (am != null) {
-            am.getMemoryInfo(info)
-            val low = if (Build.VERSION.SDK_INT >= 19) am.isLowRamDevice else info.totalMem < 3L * 1024 * 1024 * 1024
-            return RamSnapshot(info.totalMem, info.availMem, low)
+        am.getMemoryInfo(info)
+        val low = if (Build.VERSION.SDK_INT >= 19) {
+            am.isLowRamDevice
+        } else {
+            info.totalMem < 3L * 1024 * 1024 * 1024
         }
-        val rt = Runtime.getRuntime()
-        return RamSnapshot(rt.maxMemory(), rt.freeMemory(), true)
+        return RamSnapshot(info.totalMem, info.availMem, low)
     }
 
     private fun safeError(cb: IEngineCallback, id: Int, code: Int, message: String) {

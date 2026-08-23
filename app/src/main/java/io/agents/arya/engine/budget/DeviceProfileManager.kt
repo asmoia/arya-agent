@@ -1,6 +1,8 @@
 package io.agents.arya.engine.budget
 
+import android.app.ActivityManager
 import android.content.Context
+import android.os.Build
 import io.agents.arya.engine.EngineNative
 import org.json.JSONObject
 import java.io.File
@@ -20,7 +22,7 @@ class DeviceProfileManager(private val context: Context) {
         }
         // Never block first chat on a 64 MB flash write. Persist a conservative
         // profile now; a later idle pass can refine it.
-        val (total, _, _) = DeviceProfileStore.readDeviceRam(context)
+        val total = readPhysicalRamBytes()
         val fallback = MemoryBudget.DeviceProfile(
             version = DeviceProfileStore.CURRENT_VERSION,
             bigCores = detectBigCoresFallback(),
@@ -72,7 +74,7 @@ class DeviceProfileManager(private val context: Context) {
         val flash = benchFlashSpeed()
 
         onProgress(90, "Classifying RAM")
-        val (total, _, _) = DeviceProfileStore.readDeviceRam(context)
+        val total = readPhysicalRamBytes()
         val ramClass = MemoryBudget.ramClassOf(total)
 
         val profile = MemoryBudget.DeviceProfile(
@@ -86,6 +88,17 @@ class DeviceProfileManager(private val context: Context) {
         DeviceProfileStore.write(profile)
         onProgress(100, "Device profile ready")
         return profile
+    }
+
+    /**
+     * Physical device RAM via ActivityManager.MemoryInfo (Service context).
+     * Never read the JVM heap as if it were device RAM.
+     */
+    private fun readPhysicalRamBytes(): Long {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val info = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        return info.totalMem
     }
 
     private fun detectBigCoresFallback(): Int {
