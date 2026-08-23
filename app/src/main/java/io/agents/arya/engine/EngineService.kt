@@ -279,14 +279,7 @@ class EngineService : Service() {
         } else {
             "Starting local engine"
         }
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Arya")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .build()
-        startForeground(1001, notification)
+        updateForeground(text)
     }
 
     private fun callbackFor(requestId: Int): IEngineCallback? =
@@ -301,6 +294,23 @@ class EngineService : Service() {
             callbackFor(requestId)?.onLoadProgress(pct, phase)
         } catch (_: RemoteException) {
         }
+        val text = if (pct in 1..99) "$phase ($pct%)" else phase.ifBlank {
+            if (engineCore.isLoaded) "Local model is ready" else "Starting local engine"
+        }
+        updateForeground(text)
+    }
+
+    private fun updateForeground(text: String) {
+        val channelId = "arya_engine_channel"
+        val notification: Notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("Arya")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        startForeground(1001, notification)
     }
 
     private fun touch() {
