@@ -306,6 +306,22 @@ class TaskOrchestrator(
         // above have already returned, so a fast task never pays model startup.
         val requestedConfig = agentConfigProvider()
         if (requestedConfig.provider.isLocal &&
+            route is PipelineRouter.Route.AgentLoop &&
+            !io.agents.arya.agent.llm.CatalogPolicy.canRunLocalTier3(
+                io.agents.arya.engine.budget.DeviceProfileStore.read(null)?.ramClass ?: "4GB"
+            )
+        ) {
+            val message = io.agents.arya.agent.llm.CatalogPolicy.refuseLocalTier3Message()
+            XLog.w(TAG, message)
+            taskEventCallback?.invoke(TaskEvent.Failed(message))
+            ChannelManager.sendMessage(channel, "✗ $message", messageID)
+            releaseTask()
+            ForegroundService.resetToIdle(ClawApplication.instance)
+            FloatingCircleManager.setErrorState()
+            onTaskFinished()
+            return
+        }
+        if (requestedConfig.provider.isLocal &&
             LocalModelManager.isRetiredHeavyLocalModel(requestedConfig.baseUrl)
         ) {
             val message = "Large local models are disabled in Fast Local mode. Use a deterministic command or configure optional Cloud AI."

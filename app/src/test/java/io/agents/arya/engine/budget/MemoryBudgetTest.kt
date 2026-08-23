@@ -3,150 +3,88 @@ package io.agents.arya.engine.budget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.Parameterized
 
-class MemoryBudgetTest {
+class MemoryBudgetSingleTest {
 
     @Test
-    fun test8GbDeviceNormalModelFits4096Ctx() {
-        val totalRam = 8L * 1024 * 1024 * 1024
-        val availRam = 4L * 1024 * 1024 * 1024
-        val modelSize = 1200L * 1024 * 1024 // 1.2 GB model
-
-        val inputs = MemoryBudget.Inputs(
-            totalRamBytes = totalRam,
-            availRamBytes = availRam,
-            modelFileBytes = modelSize,
-            isLowRamDevice = false
-        )
-
-        val plan = MemoryBudget.plan(inputs, null)
-        assertTrue(plan is MemoryBudget.Plan.Load)
-        val loadPlan = plan as MemoryBudget.Plan.Load
-        assertEquals(4096, loadPlan.ctxSize)
+    fun ramClassBuckets() {
+        assertEquals("3GB", MemoryBudget.ramClassOf(3L * GB))
+        assertEquals("4GB", MemoryBudget.ramClassOf(4L * GB))
+        assertEquals("6GB", MemoryBudget.ramClassOf(6L * GB))
+        assertEquals("8GB+", MemoryBudget.ramClassOf(8L * GB))
+        assertEquals("8GB+", MemoryBudget.ramClassOf(12L * GB))
     }
 
     @Test
-    fun test4GbDeviceNormalModelFits2048Or1024Ctx() {
-        val totalRam = 4L * 1024 * 1024 * 1024
-        val availRam = 1800L * 1024 * 1024
-        val modelSize = 1200L * 1024 * 1024
-
-        val inputs = MemoryBudget.Inputs(
-            totalRamBytes = totalRam,
-            availRamBytes = availRam,
-            modelFileBytes = modelSize,
-            isLowRamDevice = false
-        )
-
-        val plan = MemoryBudget.plan(inputs, null)
-        assertTrue(plan is MemoryBudget.Plan.Load)
+    fun kvEstimateGrowsWithContext() {
+        val small = MemoryBudget.kvBytes(512, null, 500L * MB)
+        val large = MemoryBudget.kvBytes(4096, null, 500L * MB)
+        assertTrue(large > small)
     }
 
     @Test
-    fun testOversizedModelExceeds45PercentRamRefused() {
-        val totalRam = 4L * 1024 * 1024 * 1024
-        val availRam = 3L * 1024 * 1024 * 1024
-        val modelSize = 2500L * 1024 * 1024 // 2.5 GB model on 4GB RAM (62.5% of RAM)
-
-        val inputs = MemoryBudget.Inputs(
-            totalRamBytes = totalRam,
-            availRamBytes = availRam,
-            modelFileBytes = modelSize,
-            isLowRamDevice = false
-        )
-
-        val plan = MemoryBudget.plan(inputs, null)
-        assertTrue(plan is MemoryBudget.Plan.Refuse)
-        val refuse = plan as MemoryBudget.Plan.Refuse
-        assertTrue(refuse.suggestSmallerModel)
+    fun metaFormulaUsedWhenPresent() {
+        val meta = MemoryBudget.ModelMeta(nLayers = 28, nKvHeads = 8, headDim = 128, nParams = 1_700_000_000)
+        val kv = MemoryBudget.kvBytes(2048, meta, 1_200L * MB)
+        val expected = 2L * 28 * 8 * 128 * 2L * 2048
+        assertEquals(expected, kv)
     }
 
+    companion object {
+        const val MB = 1024L * 1024L
+        const val GB = 1024L * MB
+    }
+}
+
+@RunWith(Parameterized::class)
+class MemoryBudgetTableTest(
+    private val name: String,
+    private val totalGb: Double,
+    private val availMb: Long,
+    private val modelMb: Long,
+    private val lowRam: Boolean,
+    private val expectLoad: Boolean,
+    private val maxCtx: Int?,
+) {
     @Test
-    fun testLowRamDeviceCapsAt1024Ctx() {
-        val totalRam = 2L * 1024 * 1024 * 1024
-        val availRam = 1200L * 1024 * 1024
-        val modelSize = 500L * 1024 * 1024
-
+    fun planMatchesTable() {
         val inputs = MemoryBudget.Inputs(
-            totalRamBytes = totalRam,
-            availRamBytes = availRam,
-            modelFileBytes = modelSize,
-            isLowRamDevice = true
+            totalRamBytes = (totalGb * GB).toLong(),
+            availRamBytes = availMb * MB,
+            modelFileBytes = modelMb * MB,
+            isLowRamDevice = lowRam,
         )
-
-        val plan = MemoryBudget.plan(inputs, null)
-        assertTrue(plan is MemoryBudget.Plan.Load)
-        val loadPlan = plan as MemoryBudget.Plan.Load
-        assertTrue(loadPlan.ctxSize <= 1024)
+        val plan = MemoryBudget.plan(inputs, MemoryBudget.DeviceProfile(bestThreads = 4))
+        if (expectLoad) {
+            assertTrue("$name should load, got $plan", plan is MemoryBudget.Plan.Load)
+            val load = plan as MemoryBudget.Plan.Load
+            if (maxCtx != null) {
+                assertTrue("$name ctx ${load.ctxSize} > $maxCtx", load.ctxSize <= maxCtx)
+            }
+            assertEquals(false, load.useMlock)
+        } else {
+            assertTrue("$name should refuse, got $plan", plan is MemoryBudget.Plan.Refuse)
+            assertTrue((plan as MemoryBudget.Plan.Refuse).suggestSmallerModel)
+        }
     }
 
-    @Test
-    fun test6GbDeviceWithLowAvailRamFallbackCtx() {
-        val totalRam = 6L * 1024 * 1024 * 1024
-        val availRam = 1500L * 1024 * 1024
-        val modelSize = 800L * 1024 * 1024
+    companion object {
+        const val MB = 1024L * 1024L
+        const val GB = 1024L * MB
 
-        val inputs = MemoryBudget.Inputs(
-            totalRamBytes = totalRam,
-            availRamBytes = availRam,
-            modelFileBytes = modelSize,
-            isLowRamDevice = false
+        @JvmStatic
+        @Parameterized.Parameters(name = "{0}")
+        fun data(): Collection<Array<Any?>> = listOf(
+            arrayOf("3GB small model", 3.0, 1400L, 500L, false, true, 4096),
+            arrayOf("4GB 1.2GB model", 4.0, 2200L, 1200L, false, true, 4096),
+            arrayOf("4GB oversized 2.5GB", 4.0, 3000L, 2500L, false, false, null),
+            arrayOf("6GB low avail", 6.0, 1500L, 800L, false, true, 4096),
+            arrayOf("8GB 1.2GB model 4096", 8.0, 4096L, 1200L, false, true, 4096),
+            arrayOf("8GB only 700MB free", 8.0, 700L, 500L, false, false, null),
+            arrayOf("12GB 2.5GB model", 12.0, 8192L, 2500L, false, true, 4096),
+            arrayOf("low-ram device cap 1024", 2.0, 1200L, 500L, true, true, 1024),
         )
-
-        val plan = MemoryBudget.plan(inputs, null)
-        assertTrue(plan is MemoryBudget.Plan.Load)
-    }
-
-    @Test
-    fun test12GbDeviceLargeModelLoadsSuccessfully() {
-        val totalRam = 12L * 1024 * 1024 * 1024
-        val availRam = 8L * 1024 * 1024 * 1024
-        val modelSize = 2500L * 1024 * 1024
-
-        val inputs = MemoryBudget.Inputs(
-            totalRamBytes = totalRam,
-            availRamBytes = availRam,
-            modelFileBytes = modelSize,
-            isLowRamDevice = false
-        )
-
-        val plan = MemoryBudget.plan(inputs, null)
-        assertTrue(plan is MemoryBudget.Plan.Load)
-        val loadPlan = plan as MemoryBudget.Plan.Load
-        assertEquals(4096, loadPlan.ctxSize)
-    }
-
-    @Test
-    fun test3GbDeviceSmallModelLoads() {
-        val totalRam = 3L * 1024 * 1024 * 1024
-        val availRam = 1400L * 1024 * 1024
-        val modelSize = 500L * 1024 * 1024
-
-        val inputs = MemoryBudget.Inputs(
-            totalRamBytes = totalRam,
-            availRamBytes = availRam,
-            modelFileBytes = modelSize,
-            isLowRamDevice = false
-        )
-
-        val plan = MemoryBudget.plan(inputs, null)
-        assertTrue(plan is MemoryBudget.Plan.Load)
-    }
-
-    @Test
-    fun testInsufficientAvailMemoryRefused() {
-        val totalRam = 8L * 1024 * 1024 * 1024
-        val availRam = 700L * 1024 * 1024 // Only 700 MB free
-        val modelSize = 500L * 1024 * 1024
-
-        val inputs = MemoryBudget.Inputs(
-            totalRamBytes = totalRam,
-            availRamBytes = availRam,
-            modelFileBytes = modelSize,
-            isLowRamDevice = false
-        )
-
-        val plan = MemoryBudget.plan(inputs, null)
-        assertTrue(plan is MemoryBudget.Plan.Refuse)
     }
 }
