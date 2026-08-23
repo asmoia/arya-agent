@@ -43,9 +43,9 @@ class LocalLlmClient(
             ) + messages
         }
         try {
-            emit(LlmEvent.Status("Starting local engine…"))
+            emit(LlmEvent.Status("Starting local engine… 0%"))
             XLog.i(TAG, "ensureLoaded $modelPath")
-            withTimeout(90_000L) {
+            withTimeout(120_000L) {
                 engineClient.ensureLoaded(modelPath)
             }
             emit(LlmEvent.Status("Model ready. Writing…"))

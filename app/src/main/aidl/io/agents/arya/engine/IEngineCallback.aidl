@@ -5,4 +5,5 @@ oneway interface IEngineCallback {
     void onDone(int requestId, String statsJson);
     void onError(int requestId, int code, String message);
     void onLoadProgress(int pct, String phase);
+    void onLoadResult(int requestId, String infoJson);
 }

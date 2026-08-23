@@ -75,18 +75,51 @@ class EngineService : Service() {
 
         override fun ensureLoaded(modelPath: String, ctxSize: Int, nThreads: Int): String {
             touch()
-            val existing = profileManager.getProfile()
-            if (existing == null) {
-                profileManager.runBenchIfNeeded { pct, phase ->
-                    emitProgress(pct, phase)
-                }
+            // Binder-thread fast path only. Full mmap + bench must go through requestLoad.
+            if (engineCore.isLoaded) {
+                val stats = engineCore.stats()
+                if (stats.contains(modelPath)) return stats
             }
-            return try {
-                val info = engineCore.ensureLoaded(modelPath, ctxSize, nThreads)
-                startForegroundIfNeeded()
-                info
-            } catch (e: EngineLoadException) {
-                throw RemoteException(EngineError.message(e.code, e.message))
+            throw RemoteException("use requestLoad")
+        }
+
+        override fun requestLoad(modelPath: String, ctxSize: Int, nThreads: Int, requestId: Int) {
+            touch()
+            val cb = callback
+            if (cb == null) return
+            inferenceHandler.post {
+                try {
+                    emitProgress(5, "Preparing engine")
+                    if (profileManager.getProfile() == null) {
+                        profileManager.runBenchIfNeeded { pct, phase ->
+                            emitProgress((5 + pct * 0.15).toInt().coerceIn(5, 20), phase)
+                        }
+                    }
+                    emitProgress(25, "Loading GGUF")
+                    val info = engineCore.ensureLoaded(modelPath, ctxSize, nThreads)
+                    startForegroundIfNeeded()
+                    emitProgress(100, "Model ready")
+                    try {
+                        cb.onLoadResult(requestId, info)
+                    } catch (_: RemoteException) {
+                    }
+                } catch (e: EngineLoadException) {
+                    try {
+                        cb.onError(requestId, e.code, EngineError.message(e.code, e.message))
+                    } catch (_: RemoteException) {
+                    }
+                } catch (e: Exception) {
+                    try {
+                        cb.onError(
+                            requestId,
+                            EngineError.ERR_LOAD_FAILED,
+                            EngineError.message(EngineError.ERR_LOAD_FAILED, e.message),
+                        )
+                    } catch (_: RemoteException) {
+                    }
+                } finally {
+                    touch()
+                }
             }
         }
 

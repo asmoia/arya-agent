@@ -26,6 +26,7 @@ data class ChatUiState(
     val errorMessage: String? = null,
     val draftText: String = "",
     val statusLine: String? = null,
+    val loadPercent: Int? = null,
 )
 
 class ChatRuntime(
@@ -65,10 +66,23 @@ class ChatRuntime(
             streamingReasoning = null,
             activeToolName = null,
             draftText = "",
-            statusLine = "Starting…",
+            statusLine = "Starting local engine…",
+            loadPercent = 0,
         )
 
         historyStore.saveConversation(conversationId, userText.take(20), updatedMsgs)
+
+        val progressJob = scope.launch {
+            engineClient.loadProgress.collect { p ->
+                val line = if (p.phase.isBlank()) null
+                else if (p.pct in 0..100) "${p.phase} (${p.pct}%)"
+                else p.phase
+                _uiState.value = _uiState.value.copy(
+                    statusLine = line ?: _uiState.value.statusLine,
+                    loadPercent = p.pct.coerceIn(0, 100),
+                )
+            }
+        }
 
         streamJob = scope.launch(Dispatchers.IO) {
             try {
@@ -110,7 +124,11 @@ class ChatRuntime(
                                 updated[lastIdx] = placeholderMsg.copy(
                                     content = ChatNoise.sanitizeAssistant(currentAssistantText),
                                 )
-                                _uiState.value = _uiState.value.copy(messages = updated)
+                                _uiState.value = _uiState.value.copy(
+                                    messages = updated,
+                                    statusLine = if (currentAssistantText.isNotBlank()) null else _uiState.value.statusLine,
+                                    loadPercent = if (currentAssistantText.isNotBlank()) null else _uiState.value.loadPercent,
+                                )
                             }
                         }
                         is LlmEvent.ToolCallStart -> {
@@ -126,16 +144,23 @@ class ChatRuntime(
                             )
                             _uiState.value = _uiState.value.copy(messages = updated)
                         }
+                        is LlmEvent.Status -> {
+                            _uiState.value = _uiState.value.copy(statusLine = event.message)
+                        }
                         is LlmEvent.Error -> {
                             _uiState.value = _uiState.value.copy(
                                 isStreaming = false,
-                                errorMessage = event.message
+                                errorMessage = event.message,
+                                statusLine = null,
+                                loadPercent = null,
                             )
                         }
                         is LlmEvent.Finished -> {
                             _uiState.value = _uiState.value.copy(
                                 isStreaming = false,
-                                activeToolName = null
+                                activeToolName = null,
+                                statusLine = null,
+                                loadPercent = null,
                             )
                             historyStore.saveConversation(conversationId, userText.take(20), _uiState.value.messages)
                         }
@@ -145,8 +170,12 @@ class ChatRuntime(
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isStreaming = false,
-                    errorMessage = e.message ?: "Could not reach the model. Download a local GGUF or add a cloud key."
+                    errorMessage = e.message ?: "Could not reach the model. Download a local GGUF or add a cloud key.",
+                    statusLine = null,
+                    loadPercent = null,
                 )
+            } finally {
+                progressJob.cancel()
             }
         }
     }
@@ -157,7 +186,9 @@ class ChatRuntime(
             isStreaming = false,
             activeToolName = null,
             statusLine = null,
+            loadPercent = null,
         )
+        streamJob = null
     }
 
     fun setDraft(text: String) {

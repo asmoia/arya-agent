@@ -31,11 +31,17 @@ object EngineError {
 sealed interface EngineState {
     data object Disconnected : EngineState
     data object Connecting : EngineState
+    data class Loading(val pct: Int, val phase: String) : EngineState
     data class Ready(val modelPath: String) : EngineState
     data object Busy : EngineState
     data class Crashed(val reason: String) : EngineState
     data class Quarantined(val modelPath: String) : EngineState
 }
+
+data class EngineLoadProgress(
+    val pct: Int = 0,
+    val phase: String = "",
+)
 
 sealed interface EngineEvent {
     data class Delta(val text: String) : EngineEvent

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -26,6 +27,9 @@ class EngineClient(private val app: Context) {
     private val _state = MutableStateFlow<EngineState>(EngineState.Disconnected)
     val state: StateFlow<EngineState> = _state.asStateFlow()
 
+    private val _loadProgress = MutableStateFlow(EngineLoadProgress())
+    val loadProgress: StateFlow<EngineLoadProgress> = _loadProgress.asStateFlow()
+
     @Volatile
     private var engineBinder: IEngine? = null
     @Volatile
@@ -33,6 +37,7 @@ class EngineClient(private val app: Context) {
 
     private val crashTimestamps = ConcurrentHashMap<String, MutableList<Long>>()
     private val quarantinedModels = ConcurrentHashMap.newKeySet<String>()
+    private val nextLoadRequestId = AtomicInteger(1)
 
     private val deathRecipient = IBinder.DeathRecipient {
         _state.value = EngineState.Crashed("Engine process died")
@@ -77,11 +82,59 @@ class EngineClient(private val app: Context) {
         }
         activeModelPath = modelPath
         val binder = getOrBindService()
-        return try {
-            withTimeout(90_000L) {
-                val json = binder.ensureLoaded(modelPath, ctxSize, nThreads)
+        // Already resident? skip the async round-trip.
+        try {
+            val existing = binder.ensureLoaded(modelPath, ctxSize, nThreads)
+            if (existing.contains("\"loaded\":true") || existing.contains("\"loaded\": true")) {
                 _state.value = EngineState.Ready(modelPath)
-                json
+                _loadProgress.value = EngineLoadProgress(100, "Model ready")
+                return existing
+            }
+        } catch (_: Exception) {
+            // expected: service throws "use requestLoad" when not yet mapped
+        }
+        val requestId = nextLoadRequestId.getAndIncrement()
+        _state.value = EngineState.Loading(0, "Starting local engine…")
+        _loadProgress.value = EngineLoadProgress(0, "Starting local engine…")
+        return try {
+            withTimeout(120_000L) {
+                suspendCancellableCoroutine { cont ->
+                    val cb = object : IEngineCallback.Stub() {
+                        override fun onDelta(id: Int, textDelta: String?) {}
+                        override fun onDone(id: Int, statsJson: String?) {}
+                        override fun onError(id: Int, code: Int, message: String?) {
+                            if (id != requestId && id != 0) return
+                            if (cont.isActive) {
+                                cont.resumeWithException(
+                                    IllegalStateException(message ?: EngineError.message(code)),
+                                )
+                            }
+                        }
+                        override fun onLoadProgress(pct: Int, phase: String?) {
+                            val p = EngineLoadProgress(pct, phase.orEmpty())
+                            _loadProgress.value = p
+                            _state.value = EngineState.Loading(pct, phase.orEmpty())
+                        }
+                        override fun onLoadResult(id: Int, infoJson: String?) {
+                            if (id != requestId && id != 0) return
+                            _loadProgress.value = EngineLoadProgress(100, "Model ready")
+                            _state.value = EngineState.Ready(modelPath)
+                            if (cont.isActive) cont.resume(infoJson ?: "{}")
+                        }
+                    }
+                    try {
+                        binder.registerCallback(cb)
+                        binder.requestLoad(modelPath, ctxSize, nThreads, requestId)
+                    } catch (e: Exception) {
+                        if (cont.isActive) cont.resumeWithException(e)
+                    }
+                    cont.invokeOnCancellation {
+                        try {
+                            binder.cancel(requestId)
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
             }
         } catch (e: Exception) {
             throw IllegalStateException("Model load failed or timed out: ${e.message}", e)

@@ -174,6 +174,19 @@ fun AryaHomeScreen(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                 )
             }
+            val loadPct = chatUiState.loadPercent
+            if (loadPct != null && chatUiState.isStreaming && chatUiState.messages.none { it.role == io.agents.arya.ui.chat.ChatMessage.Role.ASSISTANT && it.content.isNotBlank() }) {
+                LinearProgressIndicator(
+                    progress = { (loadPct.coerceIn(0, 100)) / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp)
+                        .height(4.dp)
+                        .clip(CircleShape),
+                    color = palette.accent,
+                    trackColor = palette.surface,
+                )
+            }
 
             TaskStatusBar(taskState = taskState, onRequestStop = onRequestStopTask)
 
