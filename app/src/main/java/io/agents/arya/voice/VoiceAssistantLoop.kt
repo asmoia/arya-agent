@@ -31,7 +31,7 @@ class VoiceAssistantLoop(private val context: Context) {
     private val speech: SpeechPipeline = SpeechPipelineFactory.create(context)
     private val tts: TtsEngine = AndroidTtsEngine(context)
 
-    // Reuse the same local model the chat uses (Phase 0 backend: BitNet/LITERT).
+    // Reuse the same local model the chat uses (llama.cpp via :engine).
     // Note: The LLM used here should match the user's configured provider.
     private val config: AgentConfig = AgentConfig(
         apiKey = "",
