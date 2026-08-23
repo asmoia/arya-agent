@@ -85,4 +85,24 @@ class StreamAssemblerTest {
         assertEquals("در حال بررسی درخواست کاربر...", reasoningTexts.joinToString("") { it.delta })
         assertEquals("پاسخ آماده است.", plainTexts.joinToString("") { it.delta })
     }
+
+    @Test
+    fun stopStringSplitAcrossThreeDeltas() {
+        val a = StreamAssembler(stopStrings = listOf("<|im_end|>"))
+        val ev = a.feed("hi <|im") + a.feed("_en") + a.feed("d|> more") + a.finish()
+        val text = ev.filterIsInstance<LlmEvent.Text>().joinToString("") { it.delta }
+        assertTrue(text.contains("hi"))
+        assertTrue(ev.any { it is LlmEvent.Finished })
+    }
+
+    @Test
+    fun persianZwnjSplitDoesNotCrash() {
+        val a = StreamAssembler()
+        val s = "می‌خواهم تلگرام را باز کنم"
+        val ev = mutableListOf<LlmEvent>()
+        for (ch in s) ev += a.feed(ch.toString())
+        ev += a.finish()
+        val text = ev.filterIsInstance<LlmEvent.Text>().filter { !it.isReasoning }.joinToString("") { it.delta }
+        assertEquals(s, text)
+    }
 }
