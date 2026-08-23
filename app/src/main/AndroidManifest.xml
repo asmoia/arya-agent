@@ -76,15 +76,6 @@
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize" />
         <activity
-            android:name=".ui.settings.ChannelConfigActivity"
-            android:exported="false"
-            android:screenOrientation="portrait"
-            android:windowSoftInputMode="adjustResize" />
-        <activity
-            android:name=".ui.web.WebActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-        <activity
             android:name=".tool.impl.ClipboardReaderActivity"
             android:exported="false"
             android:excludeFromRecents="true"
@@ -182,6 +173,15 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
+
+        <service
+            android:name=".engine.EngineService"
+            android:process=":engine"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                      android:value="on_device_llm_inference"/>
+        </service>
 
         <!-- 定时守护 -->
         <service

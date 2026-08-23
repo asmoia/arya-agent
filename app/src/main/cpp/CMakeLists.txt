@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
-project(bitnet-jni LANGUAGES C CXX)
+project(arya-engine LANGUAGES C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
 include(FetchContent)
 FetchContent_Declare(llama_cpp
     GIT_REPOSITORY https://github.com/ggerganov/llama.cpp
-    GIT_TAG        b9999
+    GIT_TAG        b3800
     SOURCE_SUBDIR  .
 )
 
@@ -23,19 +23,19 @@ set(GGML_RPC OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(llama_cpp)
 
-add_library(bitnet-jni SHARED bitnet_jni.cpp)
+add_library(arya-engine SHARED engine_jni.cpp)
 
-target_include_directories(bitnet-jni PRIVATE
+target_include_directories(arya-engine PRIVATE
     ${llama_cpp_SOURCE_DIR}/include
     ${llama_cpp_SOURCE_DIR}/ggml/include
 )
 
-target_link_libraries(bitnet-jni llama ggml log)
+target_link_libraries(arya-engine llama ggml log)
 
 if(ANDROID_ABI STREQUAL "arm64-v8a")
-    target_compile_options(bitnet-jni PRIVATE -O3 -fvisibility=hidden -march=armv8.2-a+fp16+dotprod -ffunction-sections -fdata-sections)
-    target_link_options(bitnet-jni PRIVATE -Wl,--gc-sections)
+    target_compile_options(arya-engine PRIVATE -O3 -fvisibility=hidden -march=armv8.2-a+fp16+dotprod -ffunction-sections -fdata-sections)
+    target_link_options(arya-engine PRIVATE -Wl,--gc-sections)
 else()
-    target_compile_options(bitnet-jni PRIVATE -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)
-    target_link_options(bitnet-jni PRIVATE -Wl,--gc-sections)
+    target_compile_options(arya-engine PRIVATE -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)
+    target_link_options(arya-engine PRIVATE -Wl,--gc-sections)
 endif()
