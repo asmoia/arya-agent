@@ -23,7 +23,8 @@ data class ChatUiState(
     val isStreaming: Boolean = false,
     val streamingReasoning: String? = null,
     val activeToolName: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val draftText: String = "",
 )
 
 class ChatRuntime(
@@ -151,6 +152,10 @@ class ChatRuntime(
             isStreaming = false,
             activeToolName = null
         )
+    }
+
+    fun setDraft(text: String) {
+        _uiState.value = _uiState.value.copy(draftText = text)
     }
 
     fun retry(agentConfig: AgentConfig) {

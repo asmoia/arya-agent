@@ -420,4 +420,13 @@ object KVUtils {
     fun getCustomLocalModelUrl(): String = getString(KEY_CUSTOM_LOCAL_MODEL_URL, "")
     fun setCustomLocalModelUrl(value: String) = putString(KEY_CUSTOM_LOCAL_MODEL_URL, value)
     fun hasCustomLocalModelUrl(): Boolean = getCustomLocalModelUrl().isNotBlank()
+
+    // ==================== Voice (time-contract) ====================
+    private const val KEY_VOICE_AUTO_SEND = "KEY_VOICE_AUTO_SEND"
+    private const val KEY_VOICE_TTS = "KEY_VOICE_TTS"
+
+    fun isVoiceAutoSend(): Boolean = getBoolean(KEY_VOICE_AUTO_SEND, false)
+    fun setVoiceAutoSend(enabled: Boolean) = putBoolean(KEY_VOICE_AUTO_SEND, enabled)
+    fun isVoiceTtsEnabled(): Boolean = getBoolean(KEY_VOICE_TTS, true)
+    fun setVoiceTtsEnabled(enabled: Boolean) = putBoolean(KEY_VOICE_TTS, enabled)
 }

@@ -32,9 +32,13 @@ fun InputBar(
     onStartVoiceInput: () -> Unit,
     isStreaming: Boolean,
     onStopStreaming: () -> Unit,
+    initialText: String = "",
     modifier: Modifier = Modifier
 ) {
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf(initialText) }
+    androidx.compose.runtime.LaunchedEffect(initialText) {
+        if (initialText.isNotBlank()) text = initialText
+    }
 
     Surface(
         modifier = modifier.fillMaxWidth(),

@@ -73,7 +73,8 @@ fun ChatScreen(
                     onSendText = onSendText,
                     onStartVoiceInput = onStartVoiceInput,
                     isStreaming = chatUiState.isStreaming,
-                    onStopStreaming = onStopStreaming
+                    onStopStreaming = onStopStreaming,
+                    initialText = chatUiState.draftText,
                 )
             }
         },

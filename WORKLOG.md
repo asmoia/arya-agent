@@ -7,3 +7,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 14:23:50 | 32 min | [overflow] SSE parser tests, settings search, battery estimate, overlay host, +10 matchers, structure matchers, 27+4 JVM tests
 2026-08-23 14:25:32 | 34 min | [overflow] Qwen3 catalog wired into LocalModelManager; CloudLlmClient retry; onboarding composable
 2026-08-23 14:26:38 | 35 min | [overflow] PrefixCache tests, compiler tests, freeze KB tools, changelog
+2026-08-23 14:27:28 | 36 min | [overflow] voice auto-send/draft + TTS settings keys

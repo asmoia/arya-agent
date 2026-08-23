@@ -17,6 +17,7 @@ import io.agents.arya.R
 import io.agents.arya.TaskSessionStore
 import io.agents.arya.agent.AgentConfig
 import io.agents.arya.engine.EngineClient
+import io.agents.arya.utils.KVUtils
 import java.util.Locale
 
 class ComposeChatActivity : ComponentActivity() {
@@ -49,6 +50,7 @@ class ComposeChatActivity : ComponentActivity() {
         )
 
         initSpeechRecognizer()
+        isTtsEnabled = KVUtils.isVoiceTtsEnabled()
         initTts()
 
         setContent {
@@ -101,7 +103,11 @@ class ComposeChatActivity : ComponentActivity() {
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         val transcript = matches?.firstOrNull() ?: ""
                         if (transcript.isNotBlank()) {
-                            chatRuntime.send(transcript, AgentConfig())
+                            if (KVUtils.isVoiceAutoSend()) {
+                                chatRuntime.send(transcript, AgentConfig())
+                            } else {
+                                chatRuntime.setDraft(transcript)
+                            }
                         }
                     }
 
