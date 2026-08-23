@@ -1,115 +1,60 @@
-# ARCHITECTURE.md — Arya Agent (آریا) Target Architecture
+# Arya architecture (redesign/v1)
 
-## 1. System Process Architecture
-
-Arya uses a strict **two-process architecture** to isolate heavy native inference and safeguard the main UI process against native memory crashes or OOMs.
+This document describes the **actual** tree after the redesign. It replaces the old reconstruction notes.
 
 ```
-+-------------------------------------------------------------------+
-|                        Main Process (:main)                       |
-|                                                                   |
-|  +-----------------------+     +-------------------------------+  |
-|  | ComposeChatActivity   |     | AssistantOverlaySheet / Floating |
-|  +-----------+-----------+     +---------------+---------------+  |
-|              |                                 |                  |
-|              v                                 v                  |
-|  +-------------------------------------------------------------+  |
-|  |                       ChatRuntime                           |  |
-|  +-----------------------------+-------------------------------+  |
-|                                |                                  |
-|                                v                                  |
-|  +-------------------------------------------------------------+  |
-|  |                    TaskSessionStore                         |  |
-|  |            (Single Source of Task State)                    |  |
-|  +-----------------------------+-------------------------------+  |
-|                                |                                  |
-|                                v                                  |
-|  +-------------------------------------------------------------+  |
-|  |                    EngineClient (Binder)                    |  |
-|  +-----------------------------+-------------------------------+  |
-+--------------------------------|----------------------------------+
-                                 |  AIDL (IPC)
-                                 v
-+-------------------------------------------------------------------+
-|                       Engine Process (:engine)                    |
-|                                                                   |
-|  +-------------------------------------------------------------+  |
-|  |                      EngineService                          |  |
-|  +-----------------------------+-------------------------------+  |
-|                                |                                  |
-|                                v                                  |
-|  +-------------------------------------------------------------+  |
-|  |                      EngineCore                             |  |
-|  |   - Mutex (Single Generation Invariant)                        |  |
-|  |   - MemoryBudget / DeviceProfile check                         |  |
-|  |   - Prefix/State Cache (llama_state_save_file/load_file)       |  |
-|  +-----------------------------+-------------------------------+  |
-|                                |                                  |
-|                                v                                  |
-|  +-------------------------------------------------------------+  |
-|  |                  JNI Bridge (libarya-engine.so)             |  |
-|  |   - llama.cpp native inference                                 |  |
-|  |   - Atomic cancel flag                                         |  |
-|  |   - UTF-8 boundary detokenization guard                        |  |
-|  +-------------------------------------------------------------+  |
-+-------------------------------------------------------------------+
+┌───────────────────────── MAIN PROCESS (io.agents.arya) ─────────────────────────┐
+│  UI (Compose)                                                                    │
+│    ComposeChatActivity ── ChatScreen (stateless)                                 │
+│    SettingsActivity / LlmConfigActivity / ThemeActivity                          │
+│                                                                                  │
+│  Runtime                                                                         │
+│    ChatRuntime + ChatHistoryStore + ChatRuntimeRegistry                          │
+│    TaskSessionStore   — THE task state machine (MMKV snapshot)                   │
+│    TaskOrchestrator   — route → execute → observe → finish                       │
+│    PipelineRouter     — Tier1 compiler/matchers → skills → agent loop            │
+│    PermissionTruth + PermissionRouter                                            │
+│    DefaultAgentService — single agent loop over LlmClient                        │
+│                                                                                  │
+│  Tools                                                                           │
+│    ToolRegistry + Accessibility / Notification / SensitiveActionGate             │
+│                                                                                  │
+│  LLM                                                                             │
+│    LlmClient ── LocalLlmClient (EngineClient AIDL)                               │
+│              ── CloudLlmClient (OkHttp + SSE, OpenAI/Anthropic)                  │
+│    StreamAssembler ── tool-call / stop-string / think-tag parser                 │
+└───────────────┬─────────────────────────────────────────────────────────────────┘
+                │ AIDL IEngine / IEngineCallback (oneway deltas)
+┌───────────────▼──────────── ENGINE PROCESS (:engine) ───────────────────────────┐
+│  EngineService (FGS specialUse)                                                  │
+│    EngineCore — one model, one generation, MemoryBudget refuse                   │
+│    DeviceProfileManager — first-run bench                                        │
+│    PrefixCache — llama.cpp state save/load                                       │
+│  libarya-engine.so  llama.cpp v0.2.0, CPU, arm64-v8a + x86_64                    │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+## Process contract
 
-## 2. AIDL Contract
+- Main process never calls `System.loadLibrary`. Only `EngineNative` (engine process) does.
+- Engine crash → `DeathRecipient` → `EngineState.Crashed`. Task state survives in `TaskSessionStore`.
+- 3 native crashes / 10 min for one model → quarantine until process restart.
 
-`IEngineCallback.aidl`:
-```aidl
-package io.agents.arya.engine;
-
-oneway interface IEngineCallback {
-    void onDelta(int requestId, String textDelta);
-    void onDone(int requestId, String statsJson);
-    void onError(int requestId, int code, String message);
-    void onLoadProgress(int pct, String phase);
-}
-```
-
-`IEngine.aidl`:
-```aidl
-package io.agents.arya.engine;
-
-import io.agents.arya.engine.IEngineCallback;
-
-interface IEngine {
-    void registerCallback(IEngineCallback cb);
-    String ensureLoaded(String modelPath, int ctxSize, int nThreads);
-    int generate(String requestJson);
-    void cancel(int requestId);
-    String stats();
-    void unload();
-    boolean savePrefixState(String key);
-    boolean loadPrefixState(String key);
-    int countTokens(String text);
-}
-```
-
----
-
-## 3. Task Session State Machine (TaskSessionStore)
+## Task state
 
 ```
-IDLE ──start(task)──▶ ROUTING ──routed──▶ EXECUTING(stepIndex, stepDesc)
-ROUTING ──tier1Done──▶ FINISHED(result)
-EXECUTING ──needsConfirm──▶ CONFIRM_PENDING(action)
-CONFIRM_PENDING ──approve──▶ EXECUTING   │──deny──▶ CANCELLED(byUser=true)
-EXECUTING ──stepDone──▶ EXECUTING(step+1) │──done──▶ FINISHED(result)
-ANY-NON-TERMINAL ──requestStop()──▶ STOPPING ──stopped──▶ CANCELLED
-ANY-NON-TERMINAL ──error──▶ FAILED(reason, lastStep)
-(process death) ──restore──▶ FAILED(reason="restored", lastStep)
+IDLE → ROUTING → EXECUTING ⇄ CONFIRM_PENDING → FINISHED
+any non-terminal → STOPPING → CANCELLED
+any non-terminal → FAILED
+process death restore → FAILED("restored")
 ```
 
-Transitions are persisted synchronously to MMKV (`task.snapshot`). On process relaunch after crash or kill, non-terminal states restore automatically to `FAILED("restored")`.
+Only `TaskOrchestrator` calls `transition()`. Anyone may `requestStop()`.
 
----
+## Deleted / archived
 
-## 4. Perceived Speed & Caching
+LiteRT-LM, LangChain4j, WeChat/Discord runtimes, ConfigServer, Hermes agent/cron/MCP/voice (see `archive/`).
 
-- **Prefix Cache (S4)**: Static system prompts are prefilled and snapshotted using `llama_state_save_file`. Warm requests load prefill state in milliseconds skipping multi-second CPU prefill.
-- **StreamAssembler (S5)**: Consumes native token deltas and performs stop-string holdback, Qwen ChatML `<tool_call>` detection, and UTF-8/Persian combining character protection.
+## Future (not in v1)
+
+Vulkan backend, speculative decoding, whisper.cpp offline STT (AIDL sketched in overflow).

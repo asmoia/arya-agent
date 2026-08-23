@@ -44,3 +44,18 @@ Arya is a fast, local-first Persian Android AI agent built on a 3-tier routing a
 - **Prefix Caching**: Sub-second prefill for system prompts using llama.cpp state persistence.
 - **Siri-like Voice Input**: Native Persian speech recognition (`fa-IR`) and TTS support.
 - **Zero Heavy Dependencies**: Removed LiteRT-LM, LangChain4j, and legacy channels in favor of lean OkHttp SSE and custom JNI bridges.
+
+### What was removed
+LiteRT-LM / MediaPipe LLM, LangChain4j, WeChat + Discord runtimes, embedded HTTP config server, Hermes parallel agent/cron/MCP (archived under `archive/`). Telegram *automation via Accessibility* is kept.
+
+### Build (Android Studio)
+```
+./gradlew :app:assembleDebug
+./gradlew :app:test
+```
+This redesign environment does **not** run the Android/NDK toolchain. See `PROGRESS.md` for the owner checklist.
+
+### Docs
+- `ARCHITECTURE.md` — processes, AIDL, state machine
+- `MODELS.md` — GGUF URLs and RAM policy
+- `training/arya_lora.ipynb` — optional Colab LoRA (you run it)

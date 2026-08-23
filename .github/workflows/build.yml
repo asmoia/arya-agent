@@ -2,9 +2,9 @@ name: Build Arya APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'redesign/v1' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'redesign/v1' ]
   workflow_dispatch:
 
 jobs:
