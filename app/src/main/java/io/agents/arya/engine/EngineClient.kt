@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
+import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +17,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -38,6 +40,7 @@ class EngineClient(private val app: Context) {
     private val crashTimestamps = ConcurrentHashMap<String, MutableList<Long>>()
     private val quarantinedModels = ConcurrentHashMap.newKeySet<String>()
     private val nextLoadRequestId = AtomicInteger(1)
+    private val pendingBind = AtomicReference<CancellableContinuation<IEngine>?>(null)
 
     private val deathRecipient = IBinder.DeathRecipient {
         _state.value = EngineState.Crashed("Engine process died")
@@ -50,21 +53,33 @@ class EngineClient(private val app: Context) {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             try {
                 service?.linkToDeath(deathRecipient, 0)
-                engineBinder = IEngine.Stub.asInterface(service)
+                val bound = IEngine.Stub.asInterface(service)
+                engineBinder = bound
                 val model = activeModelPath
                 _state.value = if (model.isNullOrBlank()) {
                     EngineState.Ready("")
                 } else {
                     EngineState.Ready(model)
                 }
+                pendingBind.getAndSet(null)?.let { waiter ->
+                    if (waiter.isActive) waiter.resume(bound)
+                }
             } catch (e: Exception) {
                 _state.value = EngineState.Crashed("Failed to attach: ${e.message}")
+                pendingBind.getAndSet(null)?.let { waiter ->
+                    if (waiter.isActive) waiter.resumeWithException(e)
+                }
             }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             engineBinder = null
             _state.value = EngineState.Disconnected
+            pendingBind.getAndSet(null)?.let { waiter ->
+                if (waiter.isActive) {
+                    waiter.resumeWithException(IllegalStateException("EngineService disconnected"))
+                }
+            }
         }
     }
 
@@ -173,7 +188,12 @@ class EngineClient(private val app: Context) {
             }
 
             override fun onLoadProgress(pct: Int, phase: String?) {
+                _loadProgress.value = EngineLoadProgress(pct, phase.orEmpty())
                 trySend(EngineEvent.LoadProgress(pct, phase.orEmpty()))
+            }
+
+            override fun onLoadResult(requestId: Int, infoJson: String?) {
+                // generate path does not use load-result
             }
         }
 
@@ -226,32 +246,33 @@ class EngineClient(private val app: Context) {
 
         _state.value = EngineState.Connecting
         val intent = Intent(app, EngineService::class.java)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                app.startForegroundService(intent)
-            } else {
-                app.startService(intent)
-            }
-        } catch (_: Exception) {
+        // Start BEFORE bind so EngineService.startForeground() is legal on Android 12+.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            app.startForegroundService(intent)
+        } else {
+            app.startService(intent)
         }
-        app.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
 
-        return withTimeout(8_000L) {
+        return withTimeout(15_000L) {
             suspendCancellableCoroutine { cont ->
-                val start = System.currentTimeMillis()
-                fun poll() {
-                    val b = engineBinder
-                    if (b != null && b.asBinder().isBinderAlive) {
-                        if (cont.isActive) cont.resume(b)
-                    } else if (System.currentTimeMillis() - start > 7_500) {
-                        if (cont.isActive) {
-                            cont.resumeWithException(IllegalStateException("EngineService binding timeout"))
-                        }
-                    } else {
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ poll() }, 80)
-                    }
+                pendingBind.set(cont)
+                val already = engineBinder
+                if (already != null && already.asBinder().isBinderAlive) {
+                    pendingBind.compareAndSet(cont, null)
+                    if (cont.isActive) cont.resume(already)
+                    return@suspendCancellableCoroutine
                 }
-                poll()
+                val ok = app.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+                if (!ok) {
+                    pendingBind.compareAndSet(cont, null)
+                    if (cont.isActive) {
+                        cont.resumeWithException(IllegalStateException("bindService returned false"))
+                    }
+                    return@suspendCancellableCoroutine
+                }
+                cont.invokeOnCancellation {
+                    pendingBind.compareAndSet(cont, null)
+                }
             }
         }
     }
