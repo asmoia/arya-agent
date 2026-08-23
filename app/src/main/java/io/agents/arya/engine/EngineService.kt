@@ -14,6 +14,7 @@ import android.os.Looper
 import android.os.RemoteException
 import androidx.core.app.NotificationCompat
 import io.agents.arya.engine.budget.DeviceProfileManager
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -29,7 +30,8 @@ class EngineService : Service() {
     private val watchdogHandler = Handler(Looper.getMainLooper())
 
     @Volatile
-    private var callback: IEngineCallback? = null
+    private var sessionCallback: IEngineCallback? = null
+    private val callbacks = ConcurrentHashMap<Int, IEngineCallback>()
     @Volatile
     private var lastActivityMs: Long = System.currentTimeMillis()
     @Volatile
@@ -70,7 +72,7 @@ class EngineService : Service() {
 
     private val binder = object : IEngine.Stub() {
         override fun registerCallback(cb: IEngineCallback?) {
-            callback = cb
+            sessionCallback = cb
         }
 
         override fun ensureLoaded(modelPath: String, ctxSize: Int, nThreads: Int): String {
@@ -85,32 +87,33 @@ class EngineService : Service() {
 
         override fun requestLoad(modelPath: String, ctxSize: Int, nThreads: Int, requestId: Int) {
             touch()
-            val cb = callback
+            val cb = sessionCallback
             if (cb == null) return
+            callbacks[requestId] = cb
             inferenceHandler.post {
                 try {
-                    emitProgress(5, "Preparing engine")
+                    emitProgress(requestId, 5, "Preparing engine")
                     if (profileManager.getProfile() == null) {
                         profileManager.runBenchIfNeeded { pct, phase ->
-                            emitProgress((5 + pct * 0.15).toInt().coerceIn(5, 20), phase)
+                            emitProgress(requestId, (5 + pct * 0.15).toInt().coerceIn(5, 20), phase)
                         }
                     }
-                    emitProgress(25, "Loading GGUF")
+                    emitProgress(requestId, 25, "Loading GGUF")
                     val info = engineCore.ensureLoaded(modelPath, ctxSize, nThreads)
                     startForegroundIfNeeded()
-                    emitProgress(100, "Model ready")
+                    emitProgress(requestId, 100, "Model ready")
                     try {
-                        cb.onLoadResult(requestId, info)
+                        callbackFor(requestId)?.onLoadResult(requestId, info)
                     } catch (_: RemoteException) {
                     }
                 } catch (e: EngineLoadException) {
                     try {
-                        cb.onError(requestId, e.code, EngineError.message(e.code, e.message))
+                        callbackFor(requestId)?.onError(requestId, e.code, EngineError.message(e.code, e.message))
                     } catch (_: RemoteException) {
                     }
                 } catch (e: Exception) {
                     try {
-                        cb.onError(
+                        callbackFor(requestId)?.onError(
                             requestId,
                             EngineError.ERR_LOAD_FAILED,
                             EngineError.message(EngineError.ERR_LOAD_FAILED, e.message),
@@ -118,6 +121,7 @@ class EngineService : Service() {
                     } catch (_: RemoteException) {
                     }
                 } finally {
+                    dropCallback(requestId)
                     touch()
                 }
             }
@@ -125,7 +129,7 @@ class EngineService : Service() {
 
         override fun generate(requestJson: String): Int {
             touch()
-            val cb = callback
+            val cb = sessionCallback
             if (cb == null) return -1
             if (engineCore.isBusy) {
                 try {
@@ -155,7 +159,7 @@ class EngineService : Service() {
                 override fun onDelta(id: Int, textDelta: String?) {
                     lastTokenMs = System.currentTimeMillis()
                     try {
-                        cb.onDelta(id, textDelta)
+                        callbackFor(requestId)?.onDelta(id, textDelta)
                     } catch (_: RemoteException) {
                     }
                 }
@@ -163,26 +167,37 @@ class EngineService : Service() {
                 override fun onDone(id: Int, statsJson: String?) {
                     stopWatchdog()
                     try {
-                        cb.onDone(id, statsJson)
+                        callbackFor(requestId)?.onDone(id, statsJson)
                     } catch (_: RemoteException) {
                     }
+                    dropCallback(requestId)
                 }
 
                 override fun onError(id: Int, code: Int, message: String?) {
                     stopWatchdog()
                     try {
-                        cb.onError(id, code, message)
+                        callbackFor(requestId)?.onError(id, code, message)
                     } catch (_: RemoteException) {
                     }
+                    dropCallback(requestId)
                 }
 
                 override fun onLoadProgress(pct: Int, phase: String?) {
                     try {
-                        cb.onLoadProgress(pct, phase)
+                        callbackFor(requestId)?.onLoadProgress(pct, phase)
                     } catch (_: RemoteException) {
                     }
                 }
+
+                override fun onLoadResult(id: Int, infoJson: String?) {
+                    try {
+                        callbackFor(requestId)?.onLoadResult(id, infoJson)
+                    } catch (_: RemoteException) {
+                    }
+                    dropCallback(requestId)
+                }
             }
+            callbacks[requestId] = cb
             startWatchdog()
             inferenceHandler.post {
                 engineCore.generateStream(requestJson, requestId, wrapped)
@@ -193,6 +208,7 @@ class EngineService : Service() {
 
         override fun cancel(requestId: Int) {
             engineCore.cancel(requestId)
+            dropCallback(requestId)
         }
 
         override fun stats(): String = engineCore.stats()
@@ -233,7 +249,7 @@ class EngineService : Service() {
             if (engineCore.isLoaded) {
                 engineCore.unload()
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                emitProgress(0, "unloaded_low_memory")
+                emitProgress(0, 0, "unloaded_low_memory")
             }
         }
     }
@@ -273,9 +289,16 @@ class EngineService : Service() {
         startForeground(1001, notification)
     }
 
-    private fun emitProgress(pct: Int, phase: String) {
+    private fun callbackFor(requestId: Int): IEngineCallback? =
+        callbacks[requestId] ?: sessionCallback
+
+    private fun dropCallback(requestId: Int) {
+        callbacks.remove(requestId)
+    }
+
+    private fun emitProgress(requestId: Int, pct: Int, phase: String) {
         try {
-            callback?.onLoadProgress(pct, phase)
+            callbackFor(requestId)?.onLoadProgress(pct, phase)
         } catch (_: RemoteException) {
         }
     }
