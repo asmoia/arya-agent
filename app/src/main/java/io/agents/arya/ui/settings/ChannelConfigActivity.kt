@@ -21,8 +21,11 @@ class ChannelConfigActivity : ComponentActivity() {
                 ActivityResultContracts.StartActivityForResult(),
             ) { onResult(null) }
             return object : ActivityResultLauncher<ChannelType>() {
-                override fun launch(input: ChannelType, options: androidx.activity.result.ActivityOptionsCompat?) {
+                override fun launch(input: ChannelType) {
                     // No-op: remote channel config is archived.
+                }
+                override fun launch(input: ChannelType, options: androidx.core.app.ActivityOptionsCompat?) {
+                    launch(input)
                 }
                 override fun unregister() {
                     launcher.unregister()

@@ -108,6 +108,23 @@ object ThemeManager {
         return themes[id] ?: themes["ember_dark"]!!
     }
 
+    data class PokeclawColors(
+        val background: androidx.compose.ui.graphics.Color,
+        val surface: androidx.compose.ui.graphics.Color,
+        val userBubble: androidx.compose.ui.graphics.Color,
+        val userText: androidx.compose.ui.graphics.Color,
+        val aiBubble: androidx.compose.ui.graphics.Color,
+        val aiBubbleBorder: androidx.compose.ui.graphics.Color,
+        val aiText: androidx.compose.ui.graphics.Color,
+        val avatar: androidx.compose.ui.graphics.Color,
+        val accent: androidx.compose.ui.graphics.Color,
+        val textPrimary: androidx.compose.ui.graphics.Color,
+        val textSecondary: androidx.compose.ui.graphics.Color,
+        val textTertiary: androidx.compose.ui.graphics.Color,
+        val divider: androidx.compose.ui.graphics.Color,
+        val inputBorder: androidx.compose.ui.graphics.Color,
+    )
+
     fun ChatColors.toComposeColors(): PokeclawColors {
         val dark = isDark()
         return PokeclawColors(

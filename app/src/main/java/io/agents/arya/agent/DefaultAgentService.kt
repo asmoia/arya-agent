@@ -410,7 +410,7 @@ class DefaultAgentService : AgentService {
         return listOf("open ", "send ", "tap ", "باز ", "بفرست", "تلگرام", "واتساپ").any { l.contains(it) }
     }
 
-    private fun enrichWithScreenIfTask(raw: String, parsed: TaskPromptEnvelope): String {
+    private fun enrichWithScreenIfTask(raw: String, parsed: ParsedTaskPrompt): String {
         val base = if (parsed.hasChatHistory || parsed.hasBackgroundState) {
             buildString {
                 parsed.backgroundState?.let { append("Current background status:\n$it\n\n") }

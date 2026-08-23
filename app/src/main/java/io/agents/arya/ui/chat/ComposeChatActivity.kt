@@ -31,7 +31,7 @@ class ComposeChatActivity : ComponentActivity() {
     private var isTtsEnabled by mutableStateOf(true)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate()
+        super.onCreate(savedInstanceState)
 
         val app = application as ClawApplication
         engineClient = app.engineClient
@@ -116,7 +116,7 @@ class ComposeChatActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        speechRecognizer?.destroy()
+        voiceCapture?.destroy()
         textToSpeech?.shutdown()
         super.onDestroy()
     }

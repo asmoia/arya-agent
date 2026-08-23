@@ -18,6 +18,11 @@ object LocalBackendHealth {
     fun currentDeviceKey(): String = "cpu"
     fun debugDeviceDescriptor(): String = "cpu-only"
     fun isConservativeCpuModeSuggested(): Boolean = true
+    fun debugForceCpuSafe(@Suppress("UNUSED_PARAMETER") reason: String) {}
+    fun debugClearCpuSafeMode() {}
+    fun debugMarkPendingGpuInit(@Suppress("UNUSED_PARAMETER") modelPath: String) {}
+    fun debugClearPendingGpuInit() {}
+    fun recoverPendingGpuCrashIfNeeded(): Boolean = false
 }
 
 object LocalInferenceCoordinator {

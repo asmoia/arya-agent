@@ -64,7 +64,8 @@ class EngineClient(private val app: Context) {
     }
 
     suspend fun ensureLoaded(model: ModelRef): EngineInfo {
-        return ensureLoaded(model.path, model.ctxSize, model.nThreads)
+        val json = ensureLoaded(model.path, model.ctxSize, model.nThreads)
+        return EngineInfo.parse(json)
     }
 
     suspend fun ensureLoaded(modelPath: String, ctxSize: Int = 2048, nThreads: Int = 4): String {

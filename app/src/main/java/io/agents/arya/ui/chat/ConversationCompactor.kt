@@ -46,7 +46,7 @@ object ConversationCompactor {
      * @return the digest text, or null if compaction not needed/failed
      */
     fun compact(
-        @Suppress("UNUSED_PARAMETER") engine: Engine,
+        @Suppress("UNUSED_PARAMETER") engine: Any?,
         messages: List<ChatMessage>,
         context: Context,
         conversationId: String

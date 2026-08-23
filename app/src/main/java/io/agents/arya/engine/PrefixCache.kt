@@ -9,6 +9,7 @@ import java.security.MessageDigest
  * Lives in the engine process' own filesDir.
  */
 class PrefixCache(private val root: File) {
+    fun ensureRoot(): Boolean = root.mkdirs() || root.isDirectory
 
     data class Sidecar(
         val nPast: Int,

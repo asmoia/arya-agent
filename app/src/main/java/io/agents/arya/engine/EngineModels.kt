@@ -105,7 +105,24 @@ data class EngineInfo(
     val ctxSize: Int,
     val nThreads: Int,
     val rawJson: String,
-)
+) {
+    companion object {
+        fun parse(json: String): EngineInfo {
+            return try {
+                val o = org.json.JSONObject(json)
+                EngineInfo(
+                    loaded = o.optBoolean("loaded", json.isNotBlank()),
+                    modelPath = o.optString("model_path").ifBlank { null },
+                    ctxSize = o.optInt("ctx", 0),
+                    nThreads = o.optInt("n_threads", 0),
+                    rawJson = json,
+                )
+            } catch (_: Exception) {
+                EngineInfo(loaded = json.isNotBlank(), modelPath = null, ctxSize = 0, nThreads = 0, rawJson = json)
+            }
+        }
+    }
+}
 
 data class EngineStats(
     val rawJson: String,

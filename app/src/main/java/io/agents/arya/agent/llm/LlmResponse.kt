@@ -4,7 +4,11 @@ data class TokenUsage(
     val inputTokens: Int = 0,
     val outputTokens: Int = 0,
     val totalTokens: Int = 0
-)
+) {
+    fun inputTokenCount(): Int = inputTokens
+    fun outputTokenCount(): Int = outputTokens
+    fun totalTokenCount(): Int = if (totalTokens > 0) totalTokens else inputTokens + outputTokens
+}
 
 data class InferenceTelemetry(
     val promptEvalMs: Double = 0.0,

@@ -215,7 +215,7 @@ class EngineCore(private val context: Context) {
     fun savePrefixState(key: String): Boolean {
         return lock.withLock {
             if (handle == 0L) return false
-            prefixCache.root.mkdirs()
+            prefixCache.ensureRoot()
             val state = prefixCache.stateFile(key)
             val ok = EngineNative.nativeSaveState(handle, state.absolutePath)
             if (!ok) return false

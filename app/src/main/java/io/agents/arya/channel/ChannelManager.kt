@@ -29,8 +29,13 @@ object ChannelManager {
     @JvmStatic
     @JvmOverloads
     fun init(
-        telegramBotToken: String? = null
+        telegramBotToken: String? = null,
+        discordBotToken: String? = null,
+        wechatBotToken: String? = null,
+        wechatApiBaseUrl: String? = null,
     ) {
+        @Suppress("UNUSED_VARIABLE")
+        val ignoredRemote = Triple(discordBotToken, wechatBotToken, wechatApiBaseUrl)
         handlers[Channel.TELEGRAM] = TelegramChannelHandler(
             scope, httpClient,
             telegramBotToken?.takeIf { it.isNotEmpty() } ?: "",
