@@ -42,7 +42,7 @@ class FastTaskMatchersTest {
     fun opensSinglePersianAppCommandWithoutModel() {
         val match = requireNotNull(FastTaskMatchers.match("تلگرامو باز کن"))
         assertEquals("open_app", match.toolName)
-        assertEquals("تلگرامو", match.params["app_name"])
+        assertEquals("تلگرام", match.params["app_name"])
     }
 
     @Test
@@ -53,5 +53,14 @@ class FastTaskMatchersTest {
     @Test
     fun keepsAmbiguousMessageOutOfFastPath() {
         assertNull(FastTaskMatchers.match("به علی یه پیام خوب بده"))
+    }
+
+    @Test
+    fun round2BatteryAndClipboard() {
+        assertEquals("get_device_info", FastTaskMatchers.match("how much battery")?.toolName)
+        assertEquals("clipboard", FastTaskMatchers.match("read clipboard")?.toolName)
+        assertEquals("get_notifications", FastTaskMatchers.match("show notifications")?.toolName)
+        assertEquals("open_app", FastTaskMatchers.match("open settings")?.toolName)
+        assertEquals("system_setting", FastTaskMatchers.match("airplane mode on")?.toolName)
     }
 }

@@ -101,6 +101,29 @@ object FastTaskMatchers {
                 ToolMatch("open_app", mapOf("app_name" to "Camera"), "باز کردن دوربین")
             "ماشین حساب رو باز کن" ->
                 ToolMatch("open_app", mapOf("app_name" to "Calculator"), "باز کردن ماشین حساب")
+            // Round-2 deterministic patterns (C3)
+            "وای فای رو قطع کن", "اینترنت رو خاموش کن" ->
+                ToolMatch("system_setting", mapOf("setting" to "wifi", "action" to "off"), "خاموش کردن وای‌فای")
+            "حالت پرواز رو روشن کن", "airplane mode on" ->
+                ToolMatch("system_setting", mapOf("setting" to "airplane", "action" to "on"), "روشن کردن حالت پرواز")
+            "حالت پرواز رو خاموش کن", "airplane mode off" ->
+                ToolMatch("system_setting", mapOf("setting" to "airplane", "action" to "off"), "خاموش کردن حالت پرواز")
+            "تنظیمات رو باز کن", "open settings" ->
+                ToolMatch("open_app", mapOf("app_name" to "Settings"), "باز کردن تنظیمات")
+            "گالری رو باز کن", "open gallery", "photos رو باز کن" ->
+                ToolMatch("open_app", mapOf("app_name" to "Gallery"), "باز کردن گالری")
+            "نوتیفیکیشن‌ها رو نشون بده", "اعلان‌ها رو بخون", "show notifications" ->
+                ToolMatch("get_notifications", emptyMap(), "خواندن اعلان‌ها")
+            "باتری چقدره", "شارژ چقدره", "how much battery" ->
+                ToolMatch("get_device_info", mapOf("category" to "battery"), "وضعیت باتری")
+            "ساعت چنده", "what time is it" ->
+                ToolMatch("get_device_info", mapOf("category" to "time"), "ساعت دستگاه")
+            "کلیپ بورد رو بخون", "clipboard رو بخون", "read clipboard" ->
+                ToolMatch("clipboard", mapOf("action" to "get"), "خواندن کلیپ‌بورد")
+            "قفل صفحه", "lock screen" ->
+                ToolMatch("system_key", mapOf("key" to "lock"), "قفل صفحه")
+            "اسکرین شات بفرست", "take a screenshot" ->
+                ToolMatch("take_screenshot", emptyMap(), "گرفتن اسکرین‌شات")
             else -> null
         }
     }
