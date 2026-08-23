@@ -9,20 +9,23 @@ import java.io.File
 class PrefixCacheTest {
     @Test
     fun lruKeepsThreeNewest() {
-        val dir = createTempDirectory("pc").toFile()
-        val cache = PrefixCache(dir)
-        repeat(5) { i ->
-            val key = "k$i"
-            cache.stateFile(key).writeText("state-$i")
-            cache.writeSidecar(
-                PrefixCache.Sidecar(i, "p", "m", System.currentTimeMillis() + i, 10, key),
-            )
-            Thread.sleep(5)
+        val dir = File(System.getProperty("java.io.tmpdir"), "pc-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            val cache = PrefixCache(dir)
+            repeat(5) { i ->
+                val key = "k$i"
+                cache.stateFile(key).writeText("state-$i")
+                cache.writeSidecar(
+                    PrefixCache.Sidecar(i, "p", "m", System.currentTimeMillis() + i, 10, key),
+                )
+                Thread.sleep(5)
+            }
+            cache.evictLru(3)
+            val left = dir.listFiles()?.count { it.extension == "state" } ?: 0
+            assertEquals(3, left)
+        } finally {
+            dir.deleteRecursively()
         }
-        cache.evictLru(3)
-        val left = dir.listFiles { f -> f.extension == "state" }!!.size
-        assertEquals(3, left)
-        dir.deleteRecursively()
     }
 
     @Test

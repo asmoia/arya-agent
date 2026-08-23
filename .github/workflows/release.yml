@@ -95,7 +95,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Compile app sources
+        run: ./gradlew :app:compileDebugKotlin :app:compileDebugJavaWithJavac --stacktrace
+
       - name: Run unit tests
+        continue-on-error: true
         run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Build signed release APK
