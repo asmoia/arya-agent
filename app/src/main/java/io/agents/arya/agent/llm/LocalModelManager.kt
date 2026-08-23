@@ -81,24 +81,16 @@ object LocalModelManager {
      * BitNet GGUF (i2_s) is also supported but requires bitnet.cpp kernels.
      * Any GGUF model works as a custom local model.
      */
-    val AVAILABLE_MODELS: List<ModelInfo> = listOf(
+    val AVAILABLE_MODELS: List<ModelInfo> = ModelCatalog.MODELS.map { m ->
         ModelInfo(
-            id = "qwen25-1.5b-instruct-q4km",
-            displayName = "Qwen 2.5 1.5B Instruct (Q4_K_M)",
-            url = "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
-            fileName = "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
-            sizeBytes = 986_048_768L,  // 940 MB
-            minRamGb = 4,
-        ),
-        ModelInfo(
-            id = "bitnet-b158-2b4t-i2s",
-            displayName = "BitNet 2B (1.58-bit, i2_s)",
-            url = "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf",
-            fileName = "ggml-model-i2_s.gguf",
-            sizeBytes = 3_032_273_312L,  // ~2.9 GB
-            minRamGb = 6,
-        ),
-    )
+            id = m.id,
+            displayName = m.nameEn,
+            url = m.downloadUrl,
+            fileName = m.fileName,
+            sizeBytes = m.sizeMb * 1_000_000L,
+            minRamGb = m.minRamGb,
+        )
+    }
 
     fun recommendedModel(context: Context): ModelInfo? {
         val deviceRamGb = getDeviceRamGb(context)

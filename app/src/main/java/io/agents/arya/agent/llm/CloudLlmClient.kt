@@ -52,63 +52,71 @@ class CloudLlmClient(private val config: CloudConfig) : LlmClient {
             return@callbackFlow
         }
 
-        val call = client.newCall(request)
+        var active: Call = client.newCall(request)
         val assembler = StreamAssembler()
+        var receivedDelta = false
+        var attempt = 0
 
-        call.enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                trySend(LlmEvent.Error(500, "خطای ارتباط با سرویس ابری: ${e.message}"))
-                close()
-            }
-
-            override fun onResponse(call: Call, response: Response) {
-                if (!response.isSuccessful) {
-                    val errorBody = response.body?.string() ?: ""
-                    trySend(LlmEvent.Error(response.code, "خطای سرویس ابری (${response.code}): ${errorBody.take(200)}"))
+        fun enqueue(c: Call) {
+            active = c
+            c.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (CloudRetry.shouldRetry(receivedDelta, attempt, true)) {
+                        attempt++
+                        enqueue(client.newCall(request))
+                        return
+                    }
+                    trySend(LlmEvent.Error(500, "Cloud service error: ${e.message}"))
                     close()
-                    return
                 }
 
-                val body = response.body
-                if (body == null) {
-                    trySend(LlmEvent.Error(500, "محتوایی از سرویس دریافت نشد"))
-                    close()
-                    return
-                }
-
-                try {
-                    val reader = BufferedReader(InputStreamReader(body.byteStream()))
-                    var line: String?
-
-                    while (reader.readLine().also { line = it } != null) {
-                        val currentLine = line!!.trim()
-                        if (currentLine.isEmpty()) continue
-
-                        if (currentLine.startsWith("data:")) {
-                            val data = currentLine.substring(5).trim()
-                            val events = if (config.dialect == CloudDialect.ANTHROPIC) {
-                                SseParser.parseAnthropicDataLine(data, assembler)
-                            } else {
-                                SseParser.parseOpenAiDataLine(data, assembler)
+                override fun onResponse(call: Call, response: Response) {
+                    if (!response.isSuccessful) {
+                        val errorBody = response.body?.string() ?: ""
+                        trySend(LlmEvent.Error(response.code, "Cloud service error (${response.code}): ${errorBody.take(200)}"))
+                        close()
+                        return
+                    }
+                    val body = response.body
+                    if (body == null) {
+                        trySend(LlmEvent.Error(500, "Empty cloud response"))
+                        close()
+                        return
+                    }
+                    try {
+                        val reader = BufferedReader(InputStreamReader(body.byteStream()))
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            val currentLine = line!!.trim()
+                            if (currentLine.isEmpty()) continue
+                            if (currentLine.startsWith("data:")) {
+                                val data = currentLine.substring(5).trim()
+                                val events = if (config.dialect == CloudDialect.ANTHROPIC) {
+                                    SseParser.parseAnthropicDataLine(data, assembler)
+                                } else {
+                                    SseParser.parseOpenAiDataLine(data, assembler)
+                                }
+                                for (event in events) {
+                                    if (event is LlmEvent.Text || event is LlmEvent.ToolCallStart) {
+                                        receivedDelta = true
+                                    }
+                                    trySend(event)
+                                }
                             }
-                            for (event in events) trySend(event)
                         }
+                        for (event in assembler.finish()) trySend(event)
+                    } catch (e: Exception) {
+                        trySend(LlmEvent.Error(500, "Stream parse error: ${e.message}"))
+                    } finally {
+                        close()
                     }
-
-                    val finalEvents = assembler.finish()
-                    for (event in finalEvents) {
-                        trySend(event)
-                    }
-                } catch (e: Exception) {
-                    trySend(LlmEvent.Error(500, "خطای پردازش جریان پاسخ: ${e.message}"))
-                } finally {
-                    close()
                 }
-            }
-        })
+            })
+        }
+        enqueue(active)
 
         awaitClose {
-            call.cancel()
+            active.cancel()
         }
     }
 
@@ -241,68 +249,5 @@ class CloudLlmClient(private val config: CloudConfig) : LlmClient {
             .addHeader("Content-Type", "application/json")
             .post(json.toString().toRequestBody("application/json".toMediaType()))
             .build()
-    }
-
-    private fun handleOpenAiSseLine(
-        line: String,
-        assembler: StreamAssembler,
-        emitter: (LlmEvent) -> Unit
-    ) {
-        if (!line.startsWith("data:")) return
-        val data = line.substring(5).trim()
-        if (data == "[DONE]") return
-
-        try {
-            val json = JSONObject(data)
-            val choices = json.optJSONArray("choices") ?: return
-            if (choices.length() == 0) return
-            val deltaObj = choices.getJSONObject(0).optJSONObject("delta") ?: return
-
-            val content = deltaObj.optString("content", "")
-            if (content.isNotEmpty()) {
-                val events = assembler.feed(content)
-                for (ev in events) emitter(ev)
-            }
-
-            val toolCalls = deltaObj.optJSONArray("tool_calls")
-            if (toolCalls != null && toolCalls.length() > 0) {
-                val tc = toolCalls.getJSONObject(0)
-                val func = tc.optJSONObject("function")
-                if (func != null) {
-                    val name = func.optString("name", "")
-                    val args = func.optString("arguments", "")
-                    if (name.isNotEmpty()) {
-                        emitter(LlmEvent.ToolCallStart(name))
-                    }
-                    if (args.isNotEmpty()) {
-                        emitter(LlmEvent.ToolCallArgsDelta(args))
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-    }
-
-    private fun handleAnthropicSseLine(
-        line: String,
-        assembler: StreamAssembler,
-        emitter: (LlmEvent) -> Unit
-    ) {
-        if (!line.startsWith("data:")) return
-        val data = line.substring(5).trim()
-
-        try {
-            val json = JSONObject(data)
-            val type = json.optString("type")
-            if (type == "content_block_delta") {
-                val delta = json.optJSONObject("delta")
-                if (delta != null && delta.optString("type") == "text_delta") {
-                    val text = delta.optString("text", "")
-                    if (text.isNotEmpty()) {
-                        val events = assembler.feed(text)
-                        for (ev in events) emitter(ev)
-                    }
-                }
-            }
-        } catch (_: Exception) {}
     }
 }
