@@ -88,6 +88,11 @@ object ChannelManager {
     }
 
     @JvmStatic
+    fun sendFile(channel: Channel, file: java.io.File, messageID: String) {
+        handlers[channel]?.sendFile(file, messageID)
+    }
+
+    @JvmStatic
     fun flushMessages(channel: Channel?) {
         channel ?: return
         handlers[channel]?.flushMessages()
