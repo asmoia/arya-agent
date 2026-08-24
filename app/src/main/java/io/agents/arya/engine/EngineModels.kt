@@ -60,8 +60,8 @@ data class EngineRequest(
     val topK: Int = 32,
     val repeatPenalty: Double = 1.12,
     val stop: List<String> = listOf("<|im_end|>", "</tool_call>"),
-    val deadlineMs: Long = 45_000L,
-    val tokenDeadlineMs: Long = 4_000L,
+    val deadlineMs: Long = 90_000L,
+    val tokenDeadlineMs: Long = 12_000L,
     val warmupKey: String? = null,
 ) {
     fun toJson(): String = JSONObject().apply {
@@ -97,8 +97,8 @@ data class EngineRequest(
                 topK = o.optInt("topK", 32),
                 repeatPenalty = o.optDouble("repeatPenalty", 1.12),
                 stop = if (stops.isEmpty()) listOf("<|im_end|>", "</tool_call>") else stops,
-                deadlineMs = o.optLong("deadlineMs", 45_000L),
-                tokenDeadlineMs = o.optLong("tokenDeadlineMs", 4_000L),
+                deadlineMs = o.optLong("deadlineMs", 90_000L),
+                tokenDeadlineMs = o.optLong("tokenDeadlineMs", 12_000L),
                 warmupKey = o.optString("warmupKey").ifBlank { null },
             )
         }

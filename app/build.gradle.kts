@@ -53,8 +53,8 @@ android {
         applicationId = "io.agents.arya"
         minSdk = 28
         targetSdk = 36
-        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 106)
-        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "1.2.3")
+        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 107)
+        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "1.2.4")
         buildConfigField("String", "VERSION_INFO", getVersionGit())
         buildConfigField("String", "APP_ORIGIN", "\"Arya · llama.cpp engine | github.com/asmoia/arya-agent\"")
         buildConfigField("String", "BUILD_FINGERPRINT", "\"${getBuildFingerprint()}\"")
@@ -80,6 +80,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Phone-only ABI: skip x86_64 so signed CI does not compile llama twice.
+            ndk {
+                abiFilters.clear()
+                abiFilters += "arm64-v8a"
+            }
         }
 
     }
@@ -113,6 +118,7 @@ android {
                     "-DCMAKE_BUILD_TYPE=Release",
                     "-DGGML_NATIVE=OFF",
                     "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                    "-DCMAKE_BUILD_PARALLEL_LEVEL=4",
                 )
             }
         }

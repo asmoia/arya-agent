@@ -45,10 +45,10 @@ class LocalLlmClient(
         try {
             emit(LlmEvent.Status("Starting local engine… 0%"))
             XLog.i(TAG, "ensureLoaded $modelPath")
-            withTimeout(120_000L) {
+            withTimeout(240_000L) {
                 engineClient.ensureLoaded(modelPath)
             }
-            emit(LlmEvent.Status("Model ready. Writing…"))
+            emit(LlmEvent.Status("Model mapped. Writing…"))
         } catch (e: Exception) {
             XLog.e(TAG, "ensureLoaded failed", e)
             emit(LlmEvent.Error(3, "Failed to load local model: ${e.message}"))
@@ -65,11 +65,11 @@ class LocalLlmClient(
             temperature = 0.2,
             topP = 0.9,
             topK = 20,
-            deadlineMs = 25_000L,
-            tokenDeadlineMs = 6_000L,
+            deadlineMs = 90_000L,
+            tokenDeadlineMs = 12_000L,
         )
         try {
-            withTimeout(40_000L) {
+            withTimeout(120_000L) {
                 engineClient.generate(req).collect { engineEv ->
                     when (engineEv) {
                         is EngineEvent.Delta -> assembler.feed(engineEv.text).forEach { emit(it) }

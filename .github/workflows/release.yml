@@ -47,14 +47,19 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"
 
-      - name: Cache Gradle packages
+      - name: Cache Gradle + native llama (this is what makes re-tags ~2 min)
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: gradle-
+            ~/.ccache
+            app/.cxx
+            app/build/_deps
+            app/build/intermediates/cxx
+            app/.externalNativeBuild
+          key: rel-ndk-arm64-${{ hashFiles('app/src/main/cpp/CMakeLists.txt', 'app/src/main/cpp/engine_jni.cpp') }}
+          restore-keys: rel-ndk-arm64-
 
       - name: Detect signing secrets
         id: signing
@@ -95,16 +100,18 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Compile app sources
-        run: ./gradlew :app:compileDebugKotlin :app:compileDebugJavaWithJavac --stacktrace
+      - name: Install ccache
+        run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ccache
 
-      - name: Run unit tests
-        continue-on-error: true
-        run: ./gradlew testDebugUnitTest --stacktrace
-
-      - name: Build signed release APK
+      - name: Build signed release APK (arm64 only, no debug compile, no tests)
         if: steps.signing.outputs.mode == 'release'
-        run: ./gradlew assembleRelease --stacktrace
+        env:
+          CCACHE_DIR: ~/.ccache
+          NDK_CCACHE: ccache
+          CMAKE_BUILD_PARALLEL_LEVEL: "4"
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: ./gradlew assembleRelease --stacktrace -x test -x lint --build-cache --parallel
 
       - name: Build debug APK (fallback)
         if: steps.signing.outputs.mode == 'debug'

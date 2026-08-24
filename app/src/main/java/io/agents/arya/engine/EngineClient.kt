@@ -102,9 +102,9 @@ class EngineClient(private val app: Context) {
         // Already resident? skip the async round-trip.
         try {
             val existing = binder.ensureLoaded(modelPath, ctxSize, nThreads)
-            if (existing.contains("\"loaded\":true") || existing.contains("\"loaded\": true")) {
+            if (isReallyLoaded(existing)) {
                 _state.value = EngineState.Ready(modelPath)
-                _loadProgress.value = EngineLoadProgress(100, "Model ready")
+                _loadProgress.value = EngineLoadProgress(100, "Model mapped")
                 return existing
             }
         } catch (_: Exception) {
@@ -114,7 +114,7 @@ class EngineClient(private val app: Context) {
         _state.value = EngineState.Loading(0, "Starting local engine…")
         _loadProgress.value = EngineLoadProgress(0, "Starting local engine…")
         return try {
-            withTimeout(120_000L) {
+            withTimeout(240_000L) {
                 suspendCancellableCoroutine { cont ->
                     val cb = object : IEngineCallback.Stub() {
                         override fun onDelta(id: Int, textDelta: String?) {}
@@ -242,6 +242,19 @@ class EngineClient(private val app: Context) {
     }
 
     fun isQuarantined(modelPath: String): Boolean = quarantinedModels.contains(modelPath)
+
+    private fun isReallyLoaded(json: String): Boolean {
+        if (json.isBlank()) return false
+        return try {
+            val o = org.json.JSONObject(json)
+            if (!o.optBoolean("loaded", false)) return false
+            val sizeMb = o.optJSONObject("model_info")?.optDouble("model_size_mb", 0.0) ?: 0.0
+            // Real GGUF reports hundreds of MB. ~70 MB is an empty process / failed mmap.
+            sizeMb >= 80.0
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     private suspend fun getOrBindService(): IEngine {
         val existing = engineBinder

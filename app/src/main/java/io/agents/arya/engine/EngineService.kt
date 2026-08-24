@@ -61,7 +61,7 @@ class EngineService : Service() {
             val overdue = requestDeadlineMs > 0 && now > requestDeadlineMs
             val stalled = lastTokenMs > 0 && tokenGap > 6_000L
             val noFirstToken = lastTokenMs == 0L && generateStartedMs > 0L &&
-                now - generateStartedMs > 15_000L
+                now - generateStartedMs > 90_000L
             if (overdue || stalled || noFirstToken) {
                 engineCore.cancel(activeRequestId)
             } else {
@@ -98,15 +98,19 @@ class EngineService : Service() {
             callbacks[requestId] = cb
             inferenceHandler.post {
                 try {
-                    emitProgress(requestId, 5, "Preparing engine")
+                    emitProgress(requestId, 3, "Preparing engine")
                     if (profileManager.getProfile() == null) {
                         profileManager.runBenchIfNeeded { pct, phase ->
-                            emitProgress(requestId, (5 + pct * 0.15).toInt().coerceIn(5, 20), phase)
+                            emitProgress(requestId, (3 + pct * 0.07).toInt().coerceIn(3, 10), phase)
                         }
                     }
-                    emitProgress(requestId, 25, "Loading GGUF")
-                    EngineLog.i("EngineService", "native ensureLoaded begin id=$requestId")
-                    val info = engineCore.ensureLoaded(modelPath, ctxSize, nThreads)
+                    val src = java.io.File(modelPath)
+                    val fast = ModelFileLocalizer.ensureFastPath(this@EngineService, src) { pct, phase ->
+                        emitProgress(requestId, 10 + (pct * 0.45).toInt(), phase)
+                    }
+                    emitProgress(requestId, 58, "Mapping GGUF into RAM")
+                    EngineLog.i("EngineService", "native ensureLoaded begin id=$requestId path=${fast.absolutePath}")
+                    val info = engineCore.ensureLoaded(fast.absolutePath, ctxSize, nThreads)
                     EngineLog.i("EngineService", "native ensureLoaded ok id=$requestId info=${info.take(240)}")
                     startForegroundIfNeeded()
                     emitProgress(requestId, 100, "Model ready")
