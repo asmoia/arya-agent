@@ -61,6 +61,37 @@ HEAD-verified GGUF sizes: 484220320 / 1282439584 / 2497280736.
 
 ---
 
+## Live lab (GitHub Actions only) — 2026-08-24
+
+T0 `/tmp/arya_lab_t0`. Workflows: `.github/workflows/live-lab.yml`, `.github/workflows/smoke.yml` (dispatch `mode=lab` for tmate+puppet). Branch `lab-control` drives puppet commands.
+
+### Reproduction (API 31 x86_64 emulator, run 32704776544 / artifact `local-smoke`)
+
+```
+SMOKE_CHAT_SENT t=1787559558
+SMOKE_FAIL no LAB_FIRST_TOKEN within 90s
+adb shell dumpsys meminfo io.agents.arya:engine
+  → No process found for: io.agents.arya:engine   (before AND after chat)
+adb shell ps -A | grep arya
+  → only io.agents.arya (main), RSS ~207 MB
+```
+
+Screenshot `lab-artifacts/smoke.png`: home UI **“Choose a model / Download Qwen3 to chat offline”**.
+
+True cause of *this* run (not yet a native mmap failure):
+
+1. Implicit `am broadcast -a io.agents.arya.DEBUG_TASK` did not activate local config (no DebugTaskReceiver lines in logcat).
+2. Model file was not visible to `ModelSession.resolve` → `NeedsSetup` → `ChatRuntime.send` never called → `:engine` never spawned → RSS cannot grow.
+
+Follow-up failures while tightening the harness:
+
+- `run-as` cannot read `/sdcard` on API 31 (`cp: bad '/sdcard/…gguf': Permission denied`).
+- `handleDebugProbe` was referenced before the function existed (compile break, fixed).
+
+Fixes in tree: explicit `-n io.agents.arya/.debug.DebugTaskReceiver`, `adb push` into app external-files `models/`, `findAnyGguf()` heal, `EngineLog` rolling file + debug ZIP, `DEBUG_TASK --es chat`.
+
+---
+
 ## Phase A1 — `:engine` process + AIDL + EngineService
 
 **Accept (source-ready; device items → USER ACTION REQUIRED):**
