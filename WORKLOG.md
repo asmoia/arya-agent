@@ -27,3 +27,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 17:00:47 | 189 min | [fix] engine process no longer boots full app; /no_think; load timeout+status; PTT voice; live permission refresh
 2026-08-23 19:45:33 | 14 min | [F1-F8] llama.cpp b10603, RAM via ActivityManager, async requestLoad, bind via onServiceConnected, RECORD_AUDIO runtime, hold-to-talk tryAwaitRelease, callback map, Qwen3 catalog; JVM 62/62
 2026-08-23 19:47:27 | 16 min | [verify] F1-F8 acceptance greps PASS; FGS load percent; changelog; dual-root lookup; STT fallback
+2026-08-24 08:06:05 | 4 min | [lab] EngineLog + debug chat + live-lab.yml/smoke.yml drafted

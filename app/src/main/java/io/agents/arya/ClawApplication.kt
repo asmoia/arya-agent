@@ -37,6 +37,7 @@ class ClawApplication : BaseApp() {
                 com.tencent.mmkv.MMKV.initialize(this)
             } catch (_: Exception) {
             }
+            io.agents.arya.engine.EngineLog.init(this)
             return
         }
         AppCapabilityCoordinator.markProcessStart()
@@ -53,6 +54,7 @@ class ClawApplication : BaseApp() {
         }
 
         // Singletons for redesign architecture
+        io.agents.arya.engine.EngineLog.init(this)
         engineClient = EngineClient(this)
         taskSessionStore = TaskSessionStore()
         permissionTruth = PermissionTruth(this)

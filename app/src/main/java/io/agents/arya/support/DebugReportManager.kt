@@ -41,6 +41,7 @@ object DebugReportManager {
             addText(zip, "bug-report-template.txt", buildBugReportTemplate(context))
             collectLogcat().takeIf { it.isNotBlank() }?.let { addText(zip, "app-logcat.txt", it) }
             addRecentAppLogs(zip, context)
+            addEngineLogs(zip, context)
             addRecentHttpLogs(zip, context.cacheDir)
         }
 
@@ -161,6 +162,7 @@ object DebugReportManager {
             appendLine()
             appendLine("Artifacts")
             appendLine("- App rolling logs present: $appLogs")
+            appendLine("- Engine rolling logs present: ${io.agents.arya.engine.EngineLog.listFiles(context).size}")
             appendLine("- HTTP log files present: $httpLogs")
         }
     }
@@ -207,6 +209,11 @@ object DebugReportManager {
                 "LocalBackendHealth:V",
                 "LocalModelManager:V",
                 "EngineHolder:V",
+                "AryaEngineLog:V",
+                "AryaEngineJNI:V",
+                "EngineService:V",
+                "EngineClient:V",
+                "LocalLlmClient:V",
                 "LocalModelRuntime:V",
                 "LocalInferenceCoordinator:V",
                 "ChatSessionController:V",

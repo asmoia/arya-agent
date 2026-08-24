@@ -71,7 +71,10 @@ class EngineCore(private val context: Context) {
                     throw EngineLoadException(EngineError.ERR_OOM_PREVENTED, plan.reasonEn)
                 }
                 is MemoryBudget.Plan.Load -> {
+                    EngineLog.i("EngineCore", "nativeLoadModel begin path=$modelPath ctx=${plan.ctxSize} threads=${plan.nThreads} fileBytes=${file.length()}")
+                    val t0 = System.currentTimeMillis()
                     val newHandle = EngineNative.nativeLoadModel(modelPath, plan.ctxSize, plan.nThreads)
+                    EngineLog.i("EngineCore", "nativeLoadModel done handle=$newHandle ms=${System.currentTimeMillis() - t0}")
                     if (newHandle <= 0) {
                         throw EngineLoadException(EngineError.ERR_LOAD_FAILED, "native load code $newHandle")
                     }

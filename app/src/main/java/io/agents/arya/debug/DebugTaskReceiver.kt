@@ -45,11 +45,17 @@ class DebugTaskReceiver : BroadcastReceiver() {
         val backendAction = intent.getStringExtra("backend_action")?.trim().orEmpty()
         val supportAction = intent.getStringExtra("support_action")?.trim().orEmpty()
         val simulateMessage = intent.getStringExtra("simulate_message")?.trim().orEmpty()
+        val chatPrompt = intent.getStringExtra("chat")?.trim().orEmpty()
         val task = intent.getStringExtra("task") ?: "open my camera"
         breadcrumb(
             context,
             "received tool=$directTool backend_action=$backendAction support_action=$supportAction simulate_contact=${intent.getStringExtra("simulate_contact").orEmpty()} simulate_message=$simulateMessage task=$task"
         )
+        if (chatPrompt.isNotEmpty() || task.startsWith("chat:")) {
+            val text = chatPrompt.ifEmpty { task.removePrefix("chat:").trim() }
+            handleDebugChat(context, text)
+            return
+        }
         if (backendAction.isNotEmpty()) {
             handleLocalBackendDebug(intent, backendAction)
             return
@@ -263,6 +269,38 @@ class DebugTaskReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             XLog.e("DebugTaskReceiver", "Failed backend_action=$action", e)
             breadcrumb(io.agents.arya.ClawApplication.instance, "backend exception action=$action error=${e.message}")
+        }
+    }
+
+    private fun handleDebugChat(context: Context, text: String) {
+        runAsync("debug-chat") {
+            try {
+                val app = context.applicationContext as io.agents.arya.ClawApplication
+                val gate = io.agents.arya.agent.llm.ModelSession.resolve(context)
+                XLog.i("DebugTaskReceiver", "debug chat prompt='$text' gate=$gate")
+                io.agents.arya.engine.EngineLog.i("DebugChat", "prompt='$text' gate=$gate")
+                val runtime = io.agents.arya.ui.chat.ChatRuntimeRegistry.getOrCreate(
+                    context = context,
+                    conversationId = "lab-debug",
+                    engineClient = app.engineClient,
+                    historyStore = io.agents.arya.ui.chat.ChatHistoryStore(context),
+                )
+                when (gate) {
+                    is io.agents.arya.agent.llm.ModelReadiness.Local -> {
+                        XLog.i("DebugTaskReceiver", "debug chat LOCAL path=${gate.path}")
+                        runtime.send(text, gate.config)
+                    }
+                    is io.agents.arya.agent.llm.ModelReadiness.Cloud -> {
+                        XLog.i("DebugTaskReceiver", "debug chat CLOUD ${gate.label}")
+                        runtime.send(text, gate.config)
+                    }
+                    is io.agents.arya.agent.llm.ModelReadiness.NeedsSetup -> {
+                        XLog.e("DebugTaskReceiver", "debug chat NeedsSetup ${gate.reason}")
+                    }
+                }
+            } catch (e: Exception) {
+                XLog.e("DebugTaskReceiver", "debug chat failed", e)
+            }
         }
     }
 

@@ -87,8 +87,12 @@ class EngineService : Service() {
 
         override fun requestLoad(modelPath: String, ctxSize: Int, nThreads: Int, requestId: Int) {
             touch()
+            EngineLog.i("EngineService", "requestLoad id=$requestId path=$modelPath ctx=$ctxSize threads=$nThreads cb=${sessionCallback != null}")
             val cb = sessionCallback
-            if (cb == null) return
+            if (cb == null) {
+                EngineLog.e("EngineService", "requestLoad id=$requestId aborted: no callback registered")
+                return
+            }
             callbacks[requestId] = cb
             inferenceHandler.post {
                 try {
@@ -99,7 +103,9 @@ class EngineService : Service() {
                         }
                     }
                     emitProgress(requestId, 25, "Loading GGUF")
+                    EngineLog.i("EngineService", "native ensureLoaded begin id=$requestId")
                     val info = engineCore.ensureLoaded(modelPath, ctxSize, nThreads)
+                    EngineLog.i("EngineService", "native ensureLoaded ok id=$requestId info=${info.take(240)}")
                     startForegroundIfNeeded()
                     emitProgress(requestId, 100, "Model ready")
                     try {
@@ -107,11 +113,13 @@ class EngineService : Service() {
                     } catch (_: RemoteException) {
                     }
                 } catch (e: EngineLoadException) {
+                    EngineLog.e("EngineService", "requestLoad EngineLoadException id=$requestId code=${e.code} ${e.message}", e)
                     try {
                         callbackFor(requestId)?.onError(requestId, e.code, EngineError.message(e.code, e.message))
                     } catch (_: RemoteException) {
                     }
                 } catch (e: Exception) {
+                    EngineLog.e("EngineService", "requestLoad failed id=$requestId", e)
                     try {
                         callbackFor(requestId)?.onError(
                             requestId,
@@ -157,7 +165,11 @@ class EngineService : Service() {
             requestDeadlineMs = System.currentTimeMillis() + req.deadlineMs
             val wrapped = object : IEngineCallback.Stub() {
                 override fun onDelta(id: Int, textDelta: String?) {
+                    val first = lastTokenMs == 0L
                     lastTokenMs = System.currentTimeMillis()
+                    if (first) {
+                        EngineLog.i("EngineService", "LAB_FIRST_TOKEN id=$requestId chars=${textDelta?.length ?: 0}")
+                    }
                     try {
                         callbackFor(requestId)?.onDelta(id, textDelta)
                     } catch (_: RemoteException) {
@@ -228,11 +240,14 @@ class EngineService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        EngineLog.init(this)
+        EngineLog.i("EngineService", "onCreate pid=${android.os.Process.myPid()}")
         engineCore = EngineCore(this)
         profileManager = DeviceProfileManager(this)
         inferenceThread = HandlerThread("inference").apply { start() }
         inferenceHandler = Handler(inferenceThread.looper)
         startForegroundIfNeeded()
+        EngineLog.i("EngineService", "onCreate done foreground=started thread=${inferenceThread.id}")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

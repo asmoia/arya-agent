@@ -1,0 +1,129 @@
+name: Live Lab
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: tmate, puppet, or both
+        required: false
+        default: both
+        type: choice
+        options:
+          - both
+          - tmate
+          - puppet
+      hold_minutes:
+        description: Keep emulator + tmate alive (minutes)
+        required: false
+        default: "240"
+
+concurrency:
+  group: live-lab
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  lab:
+    name: Live emulator lab
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      LAB_MODE: ${{ github.event.inputs.mode || 'both' }}
+      LAB_HOLD_SECS: ${{ github.event.inputs.hold_minutes && format('{0}', github.event.inputs.hold_minutes) || '240' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: redesign/v1
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install NDK + CMake
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"
+
+      - name: Cache Gradle + CMake/llama
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            app/.cxx
+            app/build/_deps
+            app/build/intermediates/cxx
+          key: lab-ndk-${{ hashFiles('app/src/main/cpp/CMakeLists.txt', '**/*.gradle*') }}
+          restore-keys: lab-ndk-
+
+      - name: Cache Qwen3-0.6B GGUF
+        id: gguf
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/arya-models
+          key: qwen3-06b-q4km-484220320
+
+      - name: Download GGUF if missing
+        run: |
+          mkdir -p ~/.cache/arya-models
+          DEST=~/.cache/arya-models/Qwen_Qwen3-0.6B-Q4_K_M.gguf
+          if [ ! -f "$DEST" ] || [ "$(stat -c%s "$DEST")" -lt 400000000 ]; then
+            curl -L --retry 5 -o "$DEST" \
+              "https://huggingface.co/bartowski/Qwen_Qwen3-0.6B-GGUF/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.gguf"
+          fi
+          ls -lh "$DEST"
+          test "$(stat -c%s "$DEST")" -gt 400000000
+
+      - name: Grant execute
+        run: chmod +x gradlew scripts/*.sh
+
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Convert hold minutes
+        run: |
+          # workflow input is minutes; script wants seconds
+          MINS="${{ github.event.inputs.hold_minutes || '240' }}"
+          echo "LAB_HOLD_SECS=$(( MINS * 60 ))" >> "$GITHUB_ENV"
+          echo "LAB_MODE=${{ github.event.inputs.mode || 'both' }}" >> "$GITHUB_ENV"
+
+      - name: Boot emulator + live session
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODEL_CACHE: ${{ github.workspace }}/../.cache-notused
+        with:
+          api-level: 31
+          target: default
+          arch: x86_64
+          force-avd-creation: true
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim -camera-back none
+          script: export MODEL_CACHE="$HOME/.cache/arya-models" LAB_OUT="$GITHUB_WORKSPACE/lab-out" && bash scripts/live-lab-boot.sh && bash scripts/live-lab-hold.sh
+
+      - name: Upload lab artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-lab
+          path: |
+            lab-out/**
+            app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+          retention-days: 5

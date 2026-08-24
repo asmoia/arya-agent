@@ -96,7 +96,9 @@ class EngineClient(private val app: Context) {
             )
         }
         activeModelPath = modelPath
+        EngineLog.i("EngineClient", "ensureLoaded begin path=$modelPath ctx=$ctxSize")
         val binder = getOrBindService()
+        EngineLog.i("EngineClient", "ensureLoaded bound alive=${binder.asBinder().isBinderAlive}")
         // Already resident? skip the async round-trip.
         try {
             val existing = binder.ensureLoaded(modelPath, ctxSize, nThreads)
@@ -139,6 +141,7 @@ class EngineClient(private val app: Context) {
                     }
                     try {
                         binder.registerCallback(cb)
+                        EngineLog.i("EngineClient", "requestLoad dispatch id=$requestId")
                         binder.requestLoad(modelPath, ctxSize, nThreads, requestId)
                     } catch (e: Exception) {
                         if (cont.isActive) cont.resumeWithException(e)
