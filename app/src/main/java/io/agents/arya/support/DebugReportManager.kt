@@ -243,6 +243,13 @@ object DebugReportManager {
         }
     }
 
+    private fun addEngineLogs(zip: ZipOutputStream, context: Context) {
+        val files = io.agents.arya.engine.EngineLog.listFiles(context)
+        for (file in files) {
+            addFile(zip, "engine_logs/${file.name}", file)
+        }
+    }
+
     private fun addText(zip: ZipOutputStream, entryName: String, content: String) {
         zip.putNextEntry(ZipEntry(entryName))
         zip.write(content.toByteArray(Charsets.UTF_8))
