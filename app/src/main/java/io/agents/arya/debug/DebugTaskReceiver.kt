@@ -51,6 +51,10 @@ class DebugTaskReceiver : BroadcastReceiver() {
             context,
             "received tool=$directTool backend_action=$backendAction support_action=$supportAction simulate_contact=${intent.getStringExtra("simulate_contact").orEmpty()} simulate_message=$simulateMessage task=$task"
         )
+        if (task.startsWith("probe:")) {
+            handleDebugProbe(context)
+            return
+        }
         if (chatPrompt.isNotEmpty() || task.startsWith("chat:")) {
             val text = chatPrompt.ifEmpty { task.removePrefix("chat:").trim() }
             handleDebugChat(context, text)
