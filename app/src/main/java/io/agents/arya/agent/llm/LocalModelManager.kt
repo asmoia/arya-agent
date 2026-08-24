@@ -402,6 +402,19 @@ object LocalModelManager {
      * Look in the active dir first, then the other storage root. The Huawei 0.6B
      * already lives under external files/models — never hide it if preference flips.
      */
+    /** Any GGUF already on disk (internal or external), used to heal NeedsSetup. */
+    fun findAnyGguf(context: Context): File? {
+        val dirs = linkedSetOf<File>()
+        runCatching { dirs += getModelDir(context) }
+        context.getExternalFilesDir(null)?.let { dirs += File(it, "models") }
+        dirs += File(context.filesDir, "models")
+        return dirs.flatMap { dir ->
+            dir.listFiles()?.filter { it.isFile && it.name.endsWith(".gguf", true) && it.length() > 1_048_576L }
+                .orEmpty()
+                .asIterable()
+        }.maxByOrNull { it.length() }
+    }
+
     fun findExistingModelFile(context: Context, model: ModelInfo): File? {
         val candidates = linkedSetOf<File>()
         runCatching { candidates += File(getModelDir(context), model.fileName) }

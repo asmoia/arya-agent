@@ -33,6 +33,16 @@ object ModelSession {
         val downloaded = LocalModelManager.catalog(context)
             .filter { it.isDownloaded && it.isSupported }
             .maxByOrNull { it.model.minRamGb }
+            ?: LocalModelManager.findAnyGguf(context)?.let { found ->
+                LocalModelManager.CatalogEntry(
+                    model = LocalModelManager.AVAILABLE_MODELS.firstOrNull {
+                        found.name.contains(it.fileName.substringBefore(".gguf"), ignoreCase = true)
+                    } ?: LocalModelManager.AVAILABLE_MODELS.first(),
+                    isDownloaded = true,
+                    isSupported = true,
+                    path = found.absolutePath,
+                )
+            }
         if (downloaded?.path != null) {
             ModelConfigRepository.saveLocalDefault(
                 modelPath = downloaded.path,
