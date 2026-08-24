@@ -29,3 +29,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-23 19:47:27 | 16 min | [verify] F1-F8 acceptance greps PASS; FGS load percent; changelog; dual-root lookup; STT fallback
 2026-08-24 08:06:05 | 4 min | [lab] EngineLog + debug chat + live-lab.yml/smoke.yml drafted
 2026-08-24 08:34:43 | 32 min | [lab] reproduced NeedsSetup on API31: no :engine, UI Choose a model; implicit broadcast + path miss; adding run-as + explicit recv + findAnyGguf
+2026-08-24 08:50:15 | 48 min | [lab] run-as cannot read /sdcard on API31; switch to adb push external-files + explicit -n receiver
