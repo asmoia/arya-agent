@@ -90,6 +90,29 @@ Follow-up failures while tightening the harness:
 
 Fixes in tree: explicit `-n io.agents.arya/.debug.DebugTaskReceiver`, `adb push` into app external-files `models/`, `findAnyGguf()` heal, `EngineLog` rolling file + debug ZIP, `DEBUG_TASK --es chat`.
 
+### Proof — smoke PASS (run [32708352655](https://github.com/asmoia/arya-agent/actions/runs/32708352655), HEAD `4a08473`)
+
+```
+SMOKE_PASS first_token_s=19
+
+u0_a105  1701  ... S io.agents.arya
+u0_a105  2246  ... S io.agents.arya:engine     # RSS 744468 KB after load
+
+meminfo :engine BEFORE: No process found
+meminfo :engine AFTER:  TOTAL PSS 662358 KB / RSS 746632 KB  (Other mmap 467083 KB ≈ GGUF)
+
+08-24 09:01:25.016 I/DebugTaskReceiver(1701): debug chat LOCAL path=.../Qwen_Qwen3-0.6B-Q4_K_M.gguf
+08-24 09:01:25.022 I/LocalLlmClient(1701): ensureLoaded .../Qwen_Qwen3-0.6B-Q4_K_M.gguf
+08-24 09:01:25.039 I/ActivityManager(535): Start proc 2246:io.agents.arya:engine ... EngineService
+08-24 09:01:25.378 I/AryaEngineLog(2246): EngineService onCreate pid=2246
+08-24 09:01:25.405 I/AryaEngineLog(2246): EngineService requestLoad id=1 ... cb=true
+08-24 09:01:25.542 I/AryaEngineJNI(2246): Loading model: .../Qwen_Qwen3-0.6B-Q4_K_M.gguf n_ctx=1024 n_threads=4
+08-24 09:01:26.613 I/AryaEngineLog(2246): EngineCore nativeLoadModel done handle=... ms=1067
+08-24 09:01:42.282 I/AryaEngineLog(2246): EngineService LAB_FIRST_TOKEN id=1 chars=7
+```
+
+Same PASS on [32708327358](https://github.com/asmoia/arya-agent/actions/runs/32708327358) (`b037020`). Artifacts: `test-logs/lab-smoke-pass/`. `smoke.yml` now runs this on every `redesign/v1` push.
+
 ---
 
 ## Phase A1 — `:engine` process + AIDL + EngineService

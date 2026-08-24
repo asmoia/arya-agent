@@ -30,3 +30,4 @@ Sun Aug 23 13:51:05 UTC 2026
 2026-08-24 08:06:05 | 4 min | [lab] EngineLog + debug chat + live-lab.yml/smoke.yml drafted
 2026-08-24 08:34:43 | 32 min | [lab] reproduced NeedsSetup on API31: no :engine, UI Choose a model; implicit broadcast + path miss; adding run-as + explicit recv + findAnyGguf
 2026-08-24 08:50:15 | 48 min | [lab] run-as cannot read /sdcard on API31; switch to adb push external-files + explicit -n receiver
+2026-08-24 09:07:22 | 65 min | [lab] SMOKE_PASS first_token=19s :engine RSS 744MB LAB_FIRST_TOKEN chars=7 runs 32708352655 + 32708327358

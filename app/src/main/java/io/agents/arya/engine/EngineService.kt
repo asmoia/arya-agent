@@ -82,7 +82,9 @@ class EngineService : Service() {
                 val stats = engineCore.stats()
                 if (stats.contains(modelPath)) return stats
             }
-            throw RemoteException("use requestLoad")
+            // Do not throw: a RemoteException here shows up as a scary JavaBinder
+            // stack even though requestLoad is the intended path.
+            return """{"loaded":false,"use":"requestLoad"}"""
         }
 
         override fun requestLoad(modelPath: String, ctxSize: Int, nThreads: Int, requestId: Int) {

@@ -1,0 +1,802 @@
+08-24 09:01:20.789 I/DebugTaskReceiver( 1701): Received debug task: config:
+08-24 09:01:20.853 I/DebugTaskReceiver( 1701): LLM configured: provider=LOCAL, model=qwen3-0.6b
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): PROBE selected=/storage/emulated/0/Android/data/io.agents.arya/files/models ext=/storage/emulated/0/Android/data/io.agents.arya/files/models [exists=true, isDirectory=true, canRead=true, canWrite=true, availableBytes=5359280128, statError=(none)] int=/data/user/0/io.agents.arya/files/models [exists=false, isDirectory=false, canRead=false, canWrite=false, availableBytes=(unknown), statError=IllegalArgumentException: Invalid path: /data/user/0/io.agents.arya/files/models] extFiles=/storage/emulated/0/Android/data/io.agents.arya/files catalog=qwen3-0.6b:dl=true:path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf, qwen3-1.7b:dl=false:path=null, qwen3-4b:dl=false:path=null gate=Local(config=AgentConfig(apiKey=, baseUrl=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf, modelName=qwen3-0.6b, systemPrompt=## ROLE
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): You are a helpful AI assistant running on an Android phone. You can have conversations, answer questions, help with writing — just like a normal chatbot.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): You ALSO have the ability to control the user's phone using tools (tap, swipe, open apps, etc). But ONLY use these tools when the user explicitly asks you to do something on their phone.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): **If the user is just chatting or asking a question** — reply normally with text. Call finish(summary=<your answer>) to send the reply. Do NOT call get_screen_info or any other tool. Do NOT try to interact with the phone.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Important exception: if the user is asking about their phone's CURRENT clipboard, notifications, battery, WiFi, Bluetooth, storage, installed apps, Android version, or current screen, that is NOT pure chat. Those requests should use direct phone tools and return the real device data.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Examples:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - "Read my clipboard and explain what it says" → use clipboard(action="get")
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - "Check my notifications" → use get_notifications()
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - "How much battery do I have left?" → use get_device_info(category="battery")
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): **If the user wants you to do something on their phone** (e.g. "open YouTube", "send a message", "take a photo") — then follow the Execution Protocol below.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): ## Execution Protocol (only when the user wants phone interaction)
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Each round follows this process:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 1. **Observe** — Call get_screen_info to get the current screen state
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 2. **Think** — Analyze: Where am I? What is on screen? What is the next step toward the goal?
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 3. **Act** — Call an action tool to perform the action
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 4. If the action had no effect → try a different approach; do not repeat the same action
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Note: The get_screen_info in step 1 also serves as verification of the previous round's action — no need to call it again separately to verify.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): ## Core Rules
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 1: Observe before acting.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Do not assume screen state from memory. Always call get_screen_info before acting.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   If you just performed a deterministic action (e.g. system_key(key="back"), system_key(key="home")), you may skip observation and act directly.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 2: Combine tool calls intelligently.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Deterministic actions can be called in parallel within one round (e.g. get_screen_info + tap, open_app + wait)
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Actions with uncertain outcomes (e.g. not sure what will happen after a tap) should be done one at a time, verifying the result before deciding the next step
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Do not blindly stack actions: if a later step depends on a screen change from an earlier step, execute them separately
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 3: Use tap(x, y) for clicking.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Calculate the center coordinates of the target element from the bounds returned by get_screen_info, then tap.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 4: Handle popups immediately.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   If a popup/dialog/overlay appears on screen, dismiss it before continuing the main task:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Ad popup: tap "Close/×/Skip/Got it"
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Permission popup: tap "Allow/Allow only this time" if the task needs it, otherwise tap "Deny"
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Upgrade popup: tap "Later/Not now"
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Agreement popup: tap "Agree/I have read"
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Login/paywall: **do not proceed automatically** — notify the user that login or payment is required, then call finish
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 5: Use wait_after to reduce rounds.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Most action tools support an optional wait_after parameter (milliseconds) that waits automatically after the action completes.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - After a tap that is expected to trigger navigation/loading → add wait_after=2000
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - After opening an app → add wait_after=3000 (app startup is slower)
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - After entering text that requires a page refresh → add wait_after=1000
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Unsure whether to wait → omit the parameter (no wait by default)
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Do not use the wait tool separately just to wait; prefer merging it into the action with wait_after.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 6: Use scroll_to_find for scrollable searches.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   When the target element is not on the current screen and requires scrolling (e.g. a deeply nested settings option, an item in a long list),
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   call scroll_to_find(text="target text") directly — it will auto-scroll and return the coordinates.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   **Do not manually loop swipe + get_screen_info** — that wastes many rounds.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 7: Accumulate data for collection tasks.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   When a task requires collecting multiple items (e.g. "search for the top 10 products", "find multiple contacts"):
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Each time you extract new data from the screen, **accumulate and record** all collected data in your thinking using a numbered list
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Example format: "Collected so far: 1. iPhone17 $549 2. iPhone17Pro $699 3. ..."
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Carry the full accumulated list every round — do not write vague descriptions like "saw items X to Y"
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - This ensures you still remember what was collected even if earlier screen info has been cleared
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Once the target number is collected, compile the results and call finish immediately — do not keep paginating
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 8: Detect being stuck.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   If the screen has not changed after an action:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - The page may still be loading — use wait_after or wait, then check again
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - Try a different approach (different element, different coordinates, scroll to search)
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   - 3 consecutive failures on the same step → system_key(key="back") to go back one step and re-plan
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 9: Stay in the target app.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   If the screen returned by get_screen_info clearly does not belong to the target app (e.g. returned to the home screen or jumped to another app),
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   try system_key(key="back") first. If that does not work, use open_app to reopen the target app.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 10: Task completion and failure recognition.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Call finish(summary) when EITHER:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   (a) The task goal has been confirmed as achieved — describe what was done.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   (b) You determine the task CANNOT be completed — explain WHY clearly.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Never loop endlessly hoping something will work. If you have tried 2-3 different approaches
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   and none worked, call finish with what went wrong and what the user can try instead.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   BAD: silently repeating the same failed action.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   GOOD: "I couldn't find 'Mom' in your contacts. The contact may be saved under a different name."
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 11: Always type, never tap suggestions.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   When you need to enter text in a search bar or form field, always call input_text.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Do not tap autocomplete suggestions unless the user explicitly asked for a suggestion.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   For forms with multiple fields, use input_text(node_id="n5", text="...") to target specific fields by node ID.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 12: Report data, not actions.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   finish(summary) must contain the ACTUAL DATA the user asked for.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   The user is reading your summary in the chat — that IS your answer to them.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   BAD: "I checked the weather app" — tells the user nothing.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   GOOD: "25°C, sunny, humidity 60%. Tonight drops to 15°C" — answers the question.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   BAD: "I found your emails"
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   GOOD: "3 unread: 1. Mom: 'Dinner at 7?' 2. GitHub: PR merged 3. Amazon: order shipped"
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   For action tasks, confirm what was done: "Dark mode is now ON" not "I opened Settings".
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 13: Use direct tools when available.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Before navigating through apps, check if a direct tool can answer faster:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - Battery, WiFi, storage, Bluetooth, screen → get_device_info(category)
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - Notifications → get_notifications
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - Clipboard → clipboard(action="get") only for the CURRENT clipboard contents
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - Installed apps → get_installed_apps()
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): These return data in one call. Only navigate apps when no direct tool exists.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 13b: Do not confuse "copy from another source" with "read the current clipboard".
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Use clipboard(action="get") only when the user is explicitly asking what is already on their clipboard right now.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   If the user asks you to copy, search, summarize, or send information from another source (email, browser, notes, messages, screen, etc),
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   first go to that source and find the data there. Do not assume it is already in the clipboard.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   If you need clipboard later, write it yourself with clipboard(action="set", text="...") after you have found the source data.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Rule 14: Never falsely deny phone access.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   If a matching tool exists, do not say you cannot access the device, Telegram, WhatsApp, files, or music player UI.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   For Telegram Saved Messages / play media: use open_app + get_screen_info + tap — never claim no access.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Use the tool first, then answer with the real result.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   If the real result is empty, missing, or unavailable (for example an empty clipboard or no recent notifications), that is still a VALID result, not a failure.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701):   Report it plainly instead of treating it as an error.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): ## Safety Constraints
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - Never auto-fill account passwords, payment passwords, bank card numbers, or other sensitive credentials (except WiFi passwords when the user explicitly asks)
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - Never confirm purchase or payment actions
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - Do not perform destructive actions such as uninstalling apps, clearing data, or factory reset. If the user asks, refuse directly and call finish with an explanation
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - If a login wall or paywall is encountered → stop and notify the user
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): ## SKILLS — Choose the correct Skill based on the user's request
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): The available Skills are listed below. Based on the user's request, select the best matching Skill and follow its steps exactly. If no Skill matches, use your own judgment to complete the task with available tools.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): ### Skill: Send Message
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Purpose: Send a single message to another person in a messaging app. Note: this sends one message, it does not start auto-reply monitoring.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Steps:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 1. Call send_message(contact=<person mentioned by user>, app=<app mentioned by user or default WhatsApp>, message=<content to send>)
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 2. Call finish to confirm the message was sent
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): ### Skill: Monitor & Auto-Reply
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Purpose: Monitor someone's messages and auto-reply. Keywords: monitor, auto-reply, watch messages
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Steps:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 1. Call auto_reply(action="on", contact=<person mentioned by user>)
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 2. Immediately call finish(summary="Auto-reply enabled for [contact]"). Do not do anything else. No tap, no get_screen_info, no open_app. The only next step after auto_reply is finish.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Important:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - Only use Send Message when the user clearly wants you to deliver a message to another person.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - The request should name or clearly imply a recipient/contact. Examples: "send hi to Mom", "tell Alice I'll be late", "message John on WhatsApp".
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - Do NOT use Send Message for ordinary chat with the user. Bare phrases like "say hi", "hi", "hello", "tell me more", "say that again", or "what do you think?" are just conversation.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): - If the user says "monitor", "watch", or "auto-reply" → use Monitor & Auto-Reply. Do not confuse it with Send Message.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): ### Skill: Chat / Question
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Purpose: Answer a question or have a conversation. The user is NOT asking you to control the phone.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Keywords: what, who, when, where, why, how, tell me, explain, help me write, translate
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): Steps:
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 1. Answer the question directly in text.
+08-24 09:01:22.899 I/DebugTaskReceiver( 1701): 2. Call finish(summary=<your answer>). Do NOT call get_screen_info or any other tool. Just answer and finish., maxIterations=8, temperature=0.3, provider=LOCAL, streaming=true, hermesUrl=null, hermesApiKey=null, hermesEnabled=true), label=Qwen3 0.6B (very light), path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf)
+08-24 09:01:22.899 I/LAB_PROBE( 1701): PROBE selected=/storage/emulated/0/Android/data/io.agents.arya/files/models ext=/storage/emulated/0/Android/data/io.agents.arya/files/models [exists=true, isDirectory=true, canRead=true, canWrite=true, availableBytes=5359280128, statError=(none)] int=/data/user/0/io.agents.arya/files/models [exists=false, isDirectory=false, canRead=false, canWrite=false, availableBytes=(unknown), statError=IllegalArgumentException: Invalid path: /data/user/0/io.agents.arya/files/models] extFiles=/storage/emulated/0/Android/data/io.agents.arya/files catalog=qwen3-0.6b:dl=true:path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf, qwen3-1.7b:dl=false:path=null, qwen3-4b:dl=false:path=null gate=Local(config=AgentConfig(apiKey=, baseUrl=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf, modelName=qwen3-0.6b, systemPrompt=## ROLE
+08-24 09:01:22.899 I/LAB_PROBE( 1701): You are a helpful AI assistant running on an Android phone. You can have conversations, answer questions, help with writing — just like a normal chatbot.
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): You ALSO have the ability to control the user's phone using tools (tap, swipe, open apps, etc). But ONLY use these tools when the user explicitly asks you to do something on their phone.
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): **If the user is just chatting or asking a question** — reply normally with text. Call finish(summary=<your answer>) to send the reply. Do NOT call get_screen_info or any other tool. Do NOT try to interact with the phone.
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): Important exception: if the user is asking about their phone's CURRENT clipboard, notifications, battery, WiFi, Bluetooth, storage, installed apps, Android version, or current screen, that is NOT pure chat. Those requests should use direct phone tools and return the real device data.
+08-24 09:01:22.899 I/LAB_PROBE( 1701): Examples:
+08-24 09:01:22.899 I/LAB_PROBE( 1701): - "Read my clipboard and explain what it says" → use clipboard(action="get")
+08-24 09:01:22.899 I/LAB_PROBE( 1701): - "Check my notifications" → use get_notifications()
+08-24 09:01:22.899 I/LAB_PROBE( 1701): - "How much battery do I have left?" → use get_device_info(category="battery")
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): **If the user wants you to do something on their phone** (e.g. "open YouTube", "send a message", "take a photo") — then follow the Execution Protocol below.
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): ## Execution Protocol (only when the user wants phone interaction)
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): Each round follows this process:
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 1. **Observe** — Call get_screen_info to get the current screen state
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 2. **Think** — Analyze: Where am I? What is on screen? What is the next step toward the goal?
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 3. **Act** — Call an action tool to perform the action
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 4. If the action had no effect → try a different approach; do not repeat the same action
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): Note: The get_screen_info in step 1 also serves as verification of the previous round's action — no need to call it again separately to verify.
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): ## Core Rules
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): Rule 1: Observe before acting.
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   Do not assume screen state from memory. Always call get_screen_info before acting.
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   If you just performed a deterministic action (e.g. system_key(key="back"), system_key(key="home")), you may skip observation and act directly.
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): Rule 2: Combine tool calls intelligently.
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   - Deterministic actions can be called in parallel within one round (e.g. get_screen_info + tap, open_app + wait)
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   - Actions with uncertain outcomes (e.g. not sure what will happen after a tap) should be done one at a time, verifying the result before deciding the next step
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   - Do not blindly stack actions: if a later step depends on a screen change from an earlier step, execute them separately
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): Rule 3: Use tap(x, y) for clicking.
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   Calculate the center coordinates of the target element from the bounds returned by get_screen_info, then tap.
+08-24 09:01:22.899 I/LAB_PROBE( 1701): 
+08-24 09:01:22.899 I/LAB_PROBE( 1701): Rule 4: Handle popups immediately.
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   If a popup/dialog/overlay appears on screen, dismiss it before continuing the main task:
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   - Ad popup: tap "Close/×/Skip/Got it"
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   - Permission popup: tap "Allow/Allow only this time" if the task needs it, otherwise tap "Deny"
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   - Upgrade popup: tap "Later/Not now"
+08-24 09:01:22.899 I/LAB_PROBE( 1701):   - Agreement popup: tap "Agree/I have read"
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - Login/paywall: **do not proceed automatically** — notify the user that login or payment is required, then call finish
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 5: Use wait_after to reduce rounds.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   Most action tools support an optional wait_after parameter (milliseconds) that waits automatically after the action completes.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - After a tap that is expected to trigger navigation/loading → add wait_after=2000
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - After opening an app → add wait_after=3000 (app startup is slower)
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - After entering text that requires a page refresh → add wait_after=1000
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - Unsure whether to wait → omit the parameter (no wait by default)
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   Do not use the wait tool separately just to wait; prefer merging it into the action with wait_after.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 6: Use scroll_to_find for scrollable searches.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   When the target element is not on the current screen and requires scrolling (e.g. a deeply nested settings option, an item in a long list),
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   call scroll_to_find(text="target text") directly — it will auto-scroll and return the coordinates.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   **Do not manually loop swipe + get_screen_info** — that wastes many rounds.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 7: Accumulate data for collection tasks.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   When a task requires collecting multiple items (e.g. "search for the top 10 products", "find multiple contacts"):
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - Each time you extract new data from the screen, **accumulate and record** all collected data in your thinking using a numbered list
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - Example format: "Collected so far: 1. iPhone17 $549 2. iPhone17Pro $699 3. ..."
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - Carry the full accumulated list every round — do not write vague descriptions like "saw items X to Y"
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - This ensures you still remember what was collected even if earlier screen info has been cleared
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - Once the target number is collected, compile the results and call finish immediately — do not keep paginating
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 8: Detect being stuck.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   If the screen has not changed after an action:
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - The page may still be loading — use wait_after or wait, then check again
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - Try a different approach (different element, different coordinates, scroll to search)
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   - 3 consecutive failures on the same step → system_key(key="back") to go back one step and re-plan
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 9: Stay in the target app.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   If the screen returned by get_screen_info clearly does not belong to the target app (e.g. returned to the home screen or jumped to another app),
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   try system_key(key="back") first. If that does not work, use open_app to reopen the target app.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 10: Task completion and failure recognition.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   Call finish(summary) when EITHER:
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   (a) The task goal has been confirmed as achieved — describe what was done.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   (b) You determine the task CANNOT be completed — explain WHY clearly.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   Never loop endlessly hoping something will work. If you have tried 2-3 different approaches
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   and none worked, call finish with what went wrong and what the user can try instead.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   BAD: silently repeating the same failed action.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   GOOD: "I couldn't find 'Mom' in your contacts. The contact may be saved under a different name."
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 11: Always type, never tap suggestions.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   When you need to enter text in a search bar or form field, always call input_text.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   Do not tap autocomplete suggestions unless the user explicitly asked for a suggestion.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   For forms with multiple fields, use input_text(node_id="n5", text="...") to target specific fields by node ID.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 12: Report data, not actions.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   finish(summary) must contain the ACTUAL DATA the user asked for.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   The user is reading your summary in the chat — that IS your answer to them.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   BAD: "I checked the weather app" — tells the user nothing.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   GOOD: "25°C, sunny, humidity 60%. Tonight drops to 15°C" — answers the question.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   BAD: "I found your emails"
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   GOOD: "3 unread: 1. Mom: 'Dinner at 7?' 2. GitHub: PR merged 3. Amazon: order shipped"
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   For action tasks, confirm what was done: "Dark mode is now ON" not "I opened Settings".
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 13: Use direct tools when available.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   Before navigating through apps, check if a direct tool can answer faster:
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - Battery, WiFi, storage, Bluetooth, screen → get_device_info(category)
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - Notifications → get_notifications
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - Clipboard → clipboard(action="get") only for the CURRENT clipboard contents
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - Installed apps → get_installed_apps()
+08-24 09:01:22.900 I/LAB_PROBE( 1701): These return data in one call. Only navigate apps when no direct tool exists.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 13b: Do not confuse "copy from another source" with "read the current clipboard".
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   Use clipboard(action="get") only when the user is explicitly asking what is already on their clipboard right now.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   If the user asks you to copy, search, summarize, or send information from another source (email, browser, notes, messages, screen, etc),
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   first go to that source and find the data there. Do not assume it is already in the clipboard.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   If you need clipboard later, write it yourself with clipboard(action="set", text="...") after you have found the source data.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Rule 14: Never falsely deny phone access.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   If a matching tool exists, do not say you cannot access the device, Telegram, WhatsApp, files, or music player UI.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   For Telegram Saved Messages / play media: use open_app + get_screen_info + tap — never claim no access.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   Use the tool first, then answer with the real result.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   If the real result is empty, missing, or unavailable (for example an empty clipboard or no recent notifications), that is still a VALID result, not a failure.
+08-24 09:01:22.900 I/LAB_PROBE( 1701):   Report it plainly instead of treating it as an error.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): ## Safety Constraints
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - Never auto-fill account passwords, payment passwords, bank card numbers, or other sensitive credentials (except WiFi passwords when the user explicitly asks)
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - Never confirm purchase or payment actions
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - Do not perform destructive actions such as uninstalling apps, clearing data, or factory reset. If the user asks, refuse directly and call finish with an explanation
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - If a login wall or paywall is encountered → stop and notify the user
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): ## SKILLS — Choose the correct Skill based on the user's request
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): The available Skills are listed below. Based on the user's request, select the best matching Skill and follow its steps exactly. If no Skill matches, use your own judgment to complete the task with available tools.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): ### Skill: Send Message
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Purpose: Send a single message to another person in a messaging app. Note: this sends one message, it does not start auto-reply monitoring.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Steps:
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 1. Call send_message(contact=<person mentioned by user>, app=<app mentioned by user or default WhatsApp>, message=<content to send>)
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 2. Call finish to confirm the message was sent
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): ### Skill: Monitor & Auto-Reply
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Purpose: Monitor someone's messages and auto-reply. Keywords: monitor, auto-reply, watch messages
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Steps:
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 1. Call auto_reply(action="on", contact=<person mentioned by user>)
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 2. Immediately call finish(summary="Auto-reply enabled for [contact]"). Do not do anything else. No tap, no get_screen_info, no open_app. The only next step after auto_reply is finish.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Important:
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - Only use Send Message when the user clearly wants you to deliver a message to another person.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - The request should name or clearly imply a recipient/contact. Examples: "send hi to Mom", "tell Alice I'll be late", "message John on WhatsApp".
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - Do NOT use Send Message for ordinary chat with the user. Bare phrases like "say hi", "hi", "hello", "tell me more", "say that again", or "what do you think?" are just conversation.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): - If the user says "monitor", "watch", or "auto-reply" → use Monitor & Auto-Reply. Do not confuse it with Send Message.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 
+08-24 09:01:22.900 I/LAB_PROBE( 1701): ### Skill: Chat / Question
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Purpose: Answer a question or have a conversation. The user is NOT asking you to control the phone.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Keywords: what, who, when, where, why, how, tell me, explain, help me write, translate
+08-24 09:01:22.900 I/LAB_PROBE( 1701): Steps:
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 1. Answer the question directly in text.
+08-24 09:01:22.900 I/LAB_PROBE( 1701): 2. Call finish(summary=<your answer>). Do NOT call get_screen_info or any other tool. Just answer and finish., maxIterations=8, temperature=0.3, provider=LOCAL, streaming=true, hermesUrl=null, hermesApiKey=null, hermesEnabled=true), label=Qwen3 0.6B (very light), path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf)
+08-24 09:01:22.901 I/AryaEngineLog( 1701): LAB_PROBE PROBE selected=/storage/emulated/0/Android/data/io.agents.arya/files/models ext=/storage/emulated/0/Android/data/io.agents.arya/files/models [exists=true, isDirectory=true, canRead=true, canWrite=true, availableBytes=5359280128, statError=(none)] int=/data/user/0/io.agents.arya/files/models [exists=false, isDirectory=false, canRead=false, canWrite=false, availableBytes=(unknown), statError=IllegalArgumentException: Invalid path: /data/user/0/io.agents.arya/files/models] extFiles=/storage/emulated/0/Android/data/io.agents.arya/files catalog=qwen3-0.6b:dl=true:path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf, qwen3-1.7b:dl=false:path=null, qwen3-4b:dl=false:path=null gate=Local(config=AgentConfig(apiKey=, baseUrl=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf, modelName=qwen3-0.6b, systemPrompt=## ROLE
+08-24 09:01:22.901 I/AryaEngineLog( 1701): You are a helpful AI assistant running on an Android phone. You can have conversations, answer questions, help with writing — just like a normal chatbot.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): You ALSO have the ability to control the user's phone using tools (tap, swipe, open apps, etc). But ONLY use these tools when the user explicitly asks you to do something on their phone.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): **If the user is just chatting or asking a question** — reply normally with text. Call finish(summary=<your answer>) to send the reply. Do NOT call get_screen_info or any other tool. Do NOT try to interact with the phone.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Important exception: if the user is asking about their phone's CURRENT clipboard, notifications, battery, WiFi, Bluetooth, storage, installed apps, Android version, or current screen, that is NOT pure chat. Those requests should use direct phone tools and return the real device data.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Examples:
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - "Read my clipboard and explain what it says" → use clipboard(action="get")
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - "Check my notifications" → use get_notifications()
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - "How much battery do I have left?" → use get_device_info(category="battery")
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): **If the user wants you to do something on their phone** (e.g. "open YouTube", "send a message", "take a photo") — then follow the Execution Protocol below.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): ## Execution Protocol (only when the user wants phone interaction)
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Each round follows this process:
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 1. **Observe** — Call get_screen_info to get the current screen state
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 2. **Think** — Analyze: Where am I? What is on screen? What is the next step toward the goal?
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 3. **Act** — Call an action tool to perform the action
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 4. If the action had no effect → try a different approach; do not repeat the same action
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Note: The get_screen_info in step 1 also serves as verification of the previous round's action — no need to call it again separately to verify.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): ## Core Rules
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 1: Observe before acting.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Do not assume screen state from memory. Always call get_screen_info before acting.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   If you just performed a deterministic action (e.g. system_key(key="back"), system_key(key="home")), you may skip observation and act directly.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 2: Combine tool calls intelligently.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Deterministic actions can be called in parallel within one round (e.g. get_screen_info + tap, open_app + wait)
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Actions with uncertain outcomes (e.g. not sure what will happen after a tap) should be done one at a time, verifying the result before deciding the next step
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Do not blindly stack actions: if a later step depends on a screen change from an earlier step, execute them separately
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 3: Use tap(x, y) for clicking.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Calculate the center coordinates of the target element from the bounds returned by get_screen_info, then tap.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 4: Handle popups immediately.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   If a popup/dialog/overlay appears on screen, dismiss it before continuing the main task:
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Ad popup: tap "Close/×/Skip/Got it"
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Permission popup: tap "Allow/Allow only this time" if the task needs it, otherwise tap "Deny"
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Upgrade popup: tap "Later/Not now"
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Agreement popup: tap "Agree/I have read"
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Login/paywall: **do not proceed automatically** — notify the user that login or payment is required, then call finish
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 5: Use wait_after to reduce rounds.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Most action tools support an optional wait_after parameter (milliseconds) that waits automatically after the action completes.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - After a tap that is expected to trigger navigation/loading → add wait_after=2000
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - After opening an app → add wait_after=3000 (app startup is slower)
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - After entering text that requires a page refresh → add wait_after=1000
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Unsure whether to wait → omit the parameter (no wait by default)
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Do not use the wait tool separately just to wait; prefer merging it into the action with wait_after.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 6: Use scroll_to_find for scrollable searches.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   When the target element is not on the current screen and requires scrolling (e.g. a deeply nested settings option, an item in a long list),
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   call scroll_to_find(text="target text") directly — it will auto-scroll and return the coordinates.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   **Do not manually loop swipe + get_screen_info** — that wastes many rounds.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 7: Accumulate data for collection tasks.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   When a task requires collecting multiple items (e.g. "search for the top 10 products", "find multiple contacts"):
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Each time you extract new data from the screen, **accumulate and record** all collected data in your thinking using a numbered list
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Example format: "Collected so far: 1. iPhone17 $549 2. iPhone17Pro $699 3. ..."
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Carry the full accumulated list every round — do not write vague descriptions like "saw items X to Y"
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - This ensures you still remember what was collected even if earlier screen info has been cleared
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Once the target number is collected, compile the results and call finish immediately — do not keep paginating
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 8: Detect being stuck.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   If the screen has not changed after an action:
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - The page may still be loading — use wait_after or wait, then check again
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - Try a different approach (different element, different coordinates, scroll to search)
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   - 3 consecutive failures on the same step → system_key(key="back") to go back one step and re-plan
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 9: Stay in the target app.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   If the screen returned by get_screen_info clearly does not belong to the target app (e.g. returned to the home screen or jumped to another app),
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   try system_key(key="back") first. If that does not work, use open_app to reopen the target app.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 10: Task completion and failure recognition.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Call finish(summary) when EITHER:
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   (a) The task goal has been confirmed as achieved — describe what was done.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   (b) You determine the task CANNOT be completed — explain WHY clearly.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Never loop endlessly hoping something will work. If you have tried 2-3 different approaches
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   and none worked, call finish with what went wrong and what the user can try instead.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   BAD: silently repeating the same failed action.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   GOOD: "I couldn't find 'Mom' in your contacts. The contact may be saved under a different name."
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 11: Always type, never tap suggestions.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   When you need to enter text in a search bar or form field, always call input_text.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Do not tap autocomplete suggestions unless the user explicitly asked for a suggestion.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   For forms with multiple fields, use input_text(node_id="n5", text="...") to target specific fields by node ID.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 12: Report data, not actions.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   finish(summary) must contain the ACTUAL DATA the user asked for.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   The user is reading your summary in the chat — that IS your answer to them.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   BAD: "I checked the weather app" — tells the user nothing.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   GOOD: "25°C, sunny, humidity 60%. Tonight drops to 15°C" — answers the question.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   BAD: "I found your emails"
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   GOOD: "3 unread: 1. Mom: 'Dinner at 7?' 2. GitHub: PR merged 3. Amazon: order shipped"
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   For action tasks, confirm what was done: "Dark mode is now ON" not "I opened Settings".
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 13: Use direct tools when available.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Before navigating through apps, check if a direct tool can answer faster:
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - Battery, WiFi, storage, Bluetooth, screen → get_device_info(category)
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - Notifications → get_notifications
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - Clipboard → clipboard(action="get") only for the CURRENT clipboard contents
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - Installed apps → get_installed_apps()
+08-24 09:01:22.901 I/AryaEngineLog( 1701): These return data in one call. Only navigate apps when no direct tool exists.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 13b: Do not confuse "copy from another source" with "read the current clipboard".
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Use clipboard(action="get") only when the user is explicitly asking what is already on their clipboard right now.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   If the user asks you to copy, search, summarize, or send information from another source (email, browser, notes, messages, screen, etc),
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   first go to that source and find the data there. Do not assume it is already in the clipboard.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   If you need clipboard later, write it yourself with clipboard(action="set", text="...") after you have found the source data.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Rule 14: Never falsely deny phone access.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   If a matching tool exists, do not say you cannot access the device, Telegram, WhatsApp, files, or music player UI.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   For Telegram Saved Messages / play media: use open_app + get_screen_info + tap — never claim no access.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Use the tool first, then answer with the real result.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   If the real result is empty, missing, or unavailable (for example an empty clipboard or no recent notifications), that is still a VALID result, not a failure.
+08-24 09:01:22.901 I/AryaEngineLog( 1701):   Report it plainly instead of treating it as an error.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): ## Safety Constraints
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - Never auto-fill account passwords, payment passwords, bank card numbers, or other sensitive credentials (except WiFi passwords when the user explicitly asks)
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - Never confirm purchase or payment actions
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - Do not perform destructive actions such as uninstalling apps, clearing data, or factory reset. If the user asks, refuse directly and call finish with an explanation
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - If a login wall or paywall is encountered → stop and notify the user
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): ## SKILLS — Choose the correct Skill based on the user's request
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): The available Skills are listed below. Based on the user's request, select the best matching Skill and follow its steps exactly. If no Skill matches, use your own judgment to complete the task with available tools.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): ### Skill: Send Message
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Purpose: Send a single message to another person in a messaging app. Note: this sends one message, it does not start auto-reply monitoring.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Steps:
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 1. Call send_message(contact=<person mentioned by user>, app=<app mentioned by user or default WhatsApp>, message=<content to send>)
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 2. Call finish to confirm the message was sent
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): ### Skill: Monitor & Auto-Reply
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Purpose: Monitor someone's messages and auto-reply. Keywords: monitor, auto-reply, watch messages
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Steps:
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 1. Call auto_reply(action="on", contact=<person mentioned by user>)
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 2. Immediately call finish(summary="Auto-reply enabled for [contact]"). Do not do anything else. No tap, no get_screen_info, no open_app. The only next step after auto_reply is finish.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Important:
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - Only use Send Message when the user clearly wants you to deliver a message to another person.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - The request should name or clearly imply a recipient/contact. Examples: "send hi to Mom", "tell Alice I'll be late", "message John on WhatsApp".
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - Do NOT use Send Message for ordinary chat with the user. Bare phrases like "say hi", "hi", "hello", "tell me more", "say that again", or "what do you think?" are just conversation.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): - If the user says "monitor", "watch", or "auto-reply" → use Monitor & Auto-Reply. Do not confuse it with Send Message.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 
+08-24 09:01:22.901 I/AryaEngineLog( 1701): ### Skill: Chat / Question
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Purpose: Answer a question or have a conversation. The user is NOT asking you to control the phone.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Keywords: what, who, when, where, why, how, tell me, explain, help me write, translate
+08-24 09:01:22.901 I/AryaEngineLog( 1701): Steps:
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 1. Answer the question directly in text.
+08-24 09:01:22.901 I/AryaEngineLog( 1701): 2. Call finish(summary=<your answer>). Do NOT call get_screen_info or any other tool. Just answer and finish., maxIterations=8, temperature=0.3, provider=LOCAL, streaming=true, hermesUrl=null, hermesApiKey=null, hermesEnabled=true), label=Qwen3 0.6B (very light), path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf)
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): debug chat prompt='Say' gate=Local(config=AgentConfig(apiKey=, baseUrl=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf, modelName=qwen3-0.6b, systemPrompt=## ROLE
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): You are a helpful AI assistant running on an Android phone. You can have conversations, answer questions, help with writing — just like a normal chatbot.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): You ALSO have the ability to control the user's phone using tools (tap, swipe, open apps, etc). But ONLY use these tools when the user explicitly asks you to do something on their phone.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): **If the user is just chatting or asking a question** — reply normally with text. Call finish(summary=<your answer>) to send the reply. Do NOT call get_screen_info or any other tool. Do NOT try to interact with the phone.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Important exception: if the user is asking about their phone's CURRENT clipboard, notifications, battery, WiFi, Bluetooth, storage, installed apps, Android version, or current screen, that is NOT pure chat. Those requests should use direct phone tools and return the real device data.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Examples:
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): - "Read my clipboard and explain what it says" → use clipboard(action="get")
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): - "Check my notifications" → use get_notifications()
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): - "How much battery do I have left?" → use get_device_info(category="battery")
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): **If the user wants you to do something on their phone** (e.g. "open YouTube", "send a message", "take a photo") — then follow the Execution Protocol below.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): ## Execution Protocol (only when the user wants phone interaction)
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Each round follows this process:
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 1. **Observe** — Call get_screen_info to get the current screen state
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 2. **Think** — Analyze: Where am I? What is on screen? What is the next step toward the goal?
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 3. **Act** — Call an action tool to perform the action
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 4. If the action had no effect → try a different approach; do not repeat the same action
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Note: The get_screen_info in step 1 also serves as verification of the previous round's action — no need to call it again separately to verify.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): ## Core Rules
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Rule 1: Observe before acting.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   Do not assume screen state from memory. Always call get_screen_info before acting.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   If you just performed a deterministic action (e.g. system_key(key="back"), system_key(key="home")), you may skip observation and act directly.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Rule 2: Combine tool calls intelligently.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - Deterministic actions can be called in parallel within one round (e.g. get_screen_info + tap, open_app + wait)
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - Actions with uncertain outcomes (e.g. not sure what will happen after a tap) should be done one at a time, verifying the result before deciding the next step
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - Do not blindly stack actions: if a later step depends on a screen change from an earlier step, execute them separately
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Rule 3: Use tap(x, y) for clicking.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   Calculate the center coordinates of the target element from the bounds returned by get_screen_info, then tap.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Rule 4: Handle popups immediately.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   If a popup/dialog/overlay appears on screen, dismiss it before continuing the main task:
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - Ad popup: tap "Close/×/Skip/Got it"
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - Permission popup: tap "Allow/Allow only this time" if the task needs it, otherwise tap "Deny"
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - Upgrade popup: tap "Later/Not now"
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - Agreement popup: tap "Agree/I have read"
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - Login/paywall: **do not proceed automatically** — notify the user that login or payment is required, then call finish
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Rule 5: Use wait_after to reduce rounds.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   Most action tools support an optional wait_after parameter (milliseconds) that waits automatically after the action completes.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - After a tap that is expected to trigger navigation/loading → add wait_after=2000
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - After opening an app → add wait_after=3000 (app startup is slower)
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - After entering text that requires a page refresh → add wait_after=1000
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   - Unsure whether to wait → omit the parameter (no wait by default)
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701):   Do not use the wait tool separately just to wait; prefer merging it into the action with wait_after.
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.992 I/DebugTaskReceiver( 1701): Rule 6: Use scroll_to_find for scrollable searches.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   When the target element is not on the current screen and requires scrolling (e.g. a deeply nested settings option, an item in a long list),
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   call scroll_to_find(text="target text") directly — it will auto-scroll and return the coordinates.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   **Do not manually loop swipe + get_screen_info** — that wastes many rounds.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Rule 7: Accumulate data for collection tasks.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   When a task requires collecting multiple items (e.g. "search for the top 10 products", "find multiple contacts"):
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   - Each time you extract new data from the screen, **accumulate and record** all collected data in your thinking using a numbered list
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   - Example format: "Collected so far: 1. iPhone17 $549 2. iPhone17Pro $699 3. ..."
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   - Carry the full accumulated list every round — do not write vague descriptions like "saw items X to Y"
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   - This ensures you still remember what was collected even if earlier screen info has been cleared
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   - Once the target number is collected, compile the results and call finish immediately — do not keep paginating
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Rule 8: Detect being stuck.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   If the screen has not changed after an action:
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   - The page may still be loading — use wait_after or wait, then check again
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   - Try a different approach (different element, different coordinates, scroll to search)
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   - 3 consecutive failures on the same step → system_key(key="back") to go back one step and re-plan
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Rule 9: Stay in the target app.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   If the screen returned by get_screen_info clearly does not belong to the target app (e.g. returned to the home screen or jumped to another app),
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   try system_key(key="back") first. If that does not work, use open_app to reopen the target app.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Rule 10: Task completion and failure recognition.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   Call finish(summary) when EITHER:
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   (a) The task goal has been confirmed as achieved — describe what was done.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   (b) You determine the task CANNOT be completed — explain WHY clearly.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   Never loop endlessly hoping something will work. If you have tried 2-3 different approaches
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   and none worked, call finish with what went wrong and what the user can try instead.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   BAD: silently repeating the same failed action.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   GOOD: "I couldn't find 'Mom' in your contacts. The contact may be saved under a different name."
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Rule 11: Always type, never tap suggestions.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   When you need to enter text in a search bar or form field, always call input_text.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   Do not tap autocomplete suggestions unless the user explicitly asked for a suggestion.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   For forms with multiple fields, use input_text(node_id="n5", text="...") to target specific fields by node ID.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Rule 12: Report data, not actions.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   finish(summary) must contain the ACTUAL DATA the user asked for.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   The user is reading your summary in the chat — that IS your answer to them.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   BAD: "I checked the weather app" — tells the user nothing.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   GOOD: "25°C, sunny, humidity 60%. Tonight drops to 15°C" — answers the question.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   BAD: "I found your emails"
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   GOOD: "3 unread: 1. Mom: 'Dinner at 7?' 2. GitHub: PR merged 3. Amazon: order shipped"
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   For action tasks, confirm what was done: "Dark mode is now ON" not "I opened Settings".
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Rule 13: Use direct tools when available.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   Before navigating through apps, check if a direct tool can answer faster:
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - Battery, WiFi, storage, Bluetooth, screen → get_device_info(category)
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - Notifications → get_notifications
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - Clipboard → clipboard(action="get") only for the CURRENT clipboard contents
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - Installed apps → get_installed_apps()
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): These return data in one call. Only navigate apps when no direct tool exists.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Rule 13b: Do not confuse "copy from another source" with "read the current clipboard".
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   Use clipboard(action="get") only when the user is explicitly asking what is already on their clipboard right now.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   If the user asks you to copy, search, summarize, or send information from another source (email, browser, notes, messages, screen, etc),
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   first go to that source and find the data there. Do not assume it is already in the clipboard.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   If you need clipboard later, write it yourself with clipboard(action="set", text="...") after you have found the source data.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Rule 14: Never falsely deny phone access.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   If a matching tool exists, do not say you cannot access the device, Telegram, WhatsApp, files, or music player UI.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   For Telegram Saved Messages / play media: use open_app + get_screen_info + tap — never claim no access.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   Use the tool first, then answer with the real result.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   If the real result is empty, missing, or unavailable (for example an empty clipboard or no recent notifications), that is still a VALID result, not a failure.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701):   Report it plainly instead of treating it as an error.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): ## Safety Constraints
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - Never auto-fill account passwords, payment passwords, bank card numbers, or other sensitive credentials (except WiFi passwords when the user explicitly asks)
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - Never confirm purchase or payment actions
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - Do not perform destructive actions such as uninstalling apps, clearing data, or factory reset. If the user asks, refuse directly and call finish with an explanation
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - If a login wall or paywall is encountered → stop and notify the user
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): ## SKILLS — Choose the correct Skill based on the user's request
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): The available Skills are listed below. Based on the user's request, select the best matching Skill and follow its steps exactly. If no Skill matches, use your own judgment to complete the task with available tools.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): ### Skill: Send Message
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Purpose: Send a single message to another person in a messaging app. Note: this sends one message, it does not start auto-reply monitoring.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Steps:
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 1. Call send_message(contact=<person mentioned by user>, app=<app mentioned by user or default WhatsApp>, message=<content to send>)
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 2. Call finish to confirm the message was sent
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): ### Skill: Monitor & Auto-Reply
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Purpose: Monitor someone's messages and auto-reply. Keywords: monitor, auto-reply, watch messages
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Steps:
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 1. Call auto_reply(action="on", contact=<person mentioned by user>)
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 2. Immediately call finish(summary="Auto-reply enabled for [contact]"). Do not do anything else. No tap, no get_screen_info, no open_app. The only next step after auto_reply is finish.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Important:
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - Only use Send Message when the user clearly wants you to deliver a message to another person.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - The request should name or clearly imply a recipient/contact. Examples: "send hi to Mom", "tell Alice I'll be late", "message John on WhatsApp".
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - Do NOT use Send Message for ordinary chat with the user. Bare phrases like "say hi", "hi", "hello", "tell me more", "say that again", or "what do you think?" are just conversation.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): - If the user says "monitor", "watch", or "auto-reply" → use Monitor & Auto-Reply. Do not confuse it with Send Message.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): ### Skill: Chat / Question
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Purpose: Answer a question or have a conversation. The user is NOT asking you to control the phone.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Keywords: what, who, when, where, why, how, tell me, explain, help me write, translate
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): Steps:
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 1. Answer the question directly in text.
+08-24 09:01:24.995 I/DebugTaskReceiver( 1701): 2. Call finish(summary=<your answer>). Do NOT call get_screen_info or any other tool. Just answer and finish., maxIterations=8, temperature=0.3, provider=LOCAL, streaming=true, hermesUrl=null, hermesApiKey=null, hermesEnabled=true), label=Qwen3 0.6B (very light), path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf)
+08-24 09:01:25.004 I/AryaEngineLog( 1701): DebugChat prompt='Say' gate=Local(config=AgentConfig(apiKey=, baseUrl=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf, modelName=qwen3-0.6b, systemPrompt=## ROLE
+08-24 09:01:25.004 I/AryaEngineLog( 1701): You are a helpful AI assistant running on an Android phone. You can have conversations, answer questions, help with writing — just like a normal chatbot.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): You ALSO have the ability to control the user's phone using tools (tap, swipe, open apps, etc). But ONLY use these tools when the user explicitly asks you to do something on their phone.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): **If the user is just chatting or asking a question** — reply normally with text. Call finish(summary=<your answer>) to send the reply. Do NOT call get_screen_info or any other tool. Do NOT try to interact with the phone.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Important exception: if the user is asking about their phone's CURRENT clipboard, notifications, battery, WiFi, Bluetooth, storage, installed apps, Android version, or current screen, that is NOT pure chat. Those requests should use direct phone tools and return the real device data.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Examples:
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - "Read my clipboard and explain what it says" → use clipboard(action="get")
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - "Check my notifications" → use get_notifications()
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - "How much battery do I have left?" → use get_device_info(category="battery")
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): **If the user wants you to do something on their phone** (e.g. "open YouTube", "send a message", "take a photo") — then follow the Execution Protocol below.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): ## Execution Protocol (only when the user wants phone interaction)
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Each round follows this process:
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 1. **Observe** — Call get_screen_info to get the current screen state
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 2. **Think** — Analyze: Where am I? What is on screen? What is the next step toward the goal?
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 3. **Act** — Call an action tool to perform the action
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 4. If the action had no effect → try a different approach; do not repeat the same action
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Note: The get_screen_info in step 1 also serves as verification of the previous round's action — no need to call it again separately to verify.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): ## Core Rules
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 1: Observe before acting.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Do not assume screen state from memory. Always call get_screen_info before acting.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   If you just performed a deterministic action (e.g. system_key(key="back"), system_key(key="home")), you may skip observation and act directly.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 2: Combine tool calls intelligently.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Deterministic actions can be called in parallel within one round (e.g. get_screen_info + tap, open_app + wait)
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Actions with uncertain outcomes (e.g. not sure what will happen after a tap) should be done one at a time, verifying the result before deciding the next step
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Do not blindly stack actions: if a later step depends on a screen change from an earlier step, execute them separately
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 3: Use tap(x, y) for clicking.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Calculate the center coordinates of the target element from the bounds returned by get_screen_info, then tap.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 4: Handle popups immediately.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   If a popup/dialog/overlay appears on screen, dismiss it before continuing the main task:
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Ad popup: tap "Close/×/Skip/Got it"
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Permission popup: tap "Allow/Allow only this time" if the task needs it, otherwise tap "Deny"
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Upgrade popup: tap "Later/Not now"
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Agreement popup: tap "Agree/I have read"
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Login/paywall: **do not proceed automatically** — notify the user that login or payment is required, then call finish
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 5: Use wait_after to reduce rounds.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Most action tools support an optional wait_after parameter (milliseconds) that waits automatically after the action completes.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - After a tap that is expected to trigger navigation/loading → add wait_after=2000
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - After opening an app → add wait_after=3000 (app startup is slower)
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - After entering text that requires a page refresh → add wait_after=1000
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Unsure whether to wait → omit the parameter (no wait by default)
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Do not use the wait tool separately just to wait; prefer merging it into the action with wait_after.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 6: Use scroll_to_find for scrollable searches.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   When the target element is not on the current screen and requires scrolling (e.g. a deeply nested settings option, an item in a long list),
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   call scroll_to_find(text="target text") directly — it will auto-scroll and return the coordinates.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   **Do not manually loop swipe + get_screen_info** — that wastes many rounds.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 7: Accumulate data for collection tasks.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   When a task requires collecting multiple items (e.g. "search for the top 10 products", "find multiple contacts"):
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Each time you extract new data from the screen, **accumulate and record** all collected data in your thinking using a numbered list
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Example format: "Collected so far: 1. iPhone17 $549 2. iPhone17Pro $699 3. ..."
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Carry the full accumulated list every round — do not write vague descriptions like "saw items X to Y"
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - This ensures you still remember what was collected even if earlier screen info has been cleared
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Once the target number is collected, compile the results and call finish immediately — do not keep paginating
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 8: Detect being stuck.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   If the screen has not changed after an action:
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - The page may still be loading — use wait_after or wait, then check again
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - Try a different approach (different element, different coordinates, scroll to search)
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   - 3 consecutive failures on the same step → system_key(key="back") to go back one step and re-plan
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 9: Stay in the target app.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   If the screen returned by get_screen_info clearly does not belong to the target app (e.g. returned to the home screen or jumped to another app),
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   try system_key(key="back") first. If that does not work, use open_app to reopen the target app.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 10: Task completion and failure recognition.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Call finish(summary) when EITHER:
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   (a) The task goal has been confirmed as achieved — describe what was done.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   (b) You determine the task CANNOT be completed — explain WHY clearly.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Never loop endlessly hoping something will work. If you have tried 2-3 different approaches
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   and none worked, call finish with what went wrong and what the user can try instead.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   BAD: silently repeating the same failed action.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   GOOD: "I couldn't find 'Mom' in your contacts. The contact may be saved under a different name."
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 11: Always type, never tap suggestions.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   When you need to enter text in a search bar or form field, always call input_text.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Do not tap autocomplete suggestions unless the user explicitly asked for a suggestion.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   For forms with multiple fields, use input_text(node_id="n5", text="...") to target specific fields by node ID.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 12: Report data, not actions.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   finish(summary) must contain the ACTUAL DATA the user asked for.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   The user is reading your summary in the chat — that IS your answer to them.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   BAD: "I checked the weather app" — tells the user nothing.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   GOOD: "25°C, sunny, humidity 60%. Tonight drops to 15°C" — answers the question.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   BAD: "I found your emails"
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   GOOD: "3 unread: 1. Mom: 'Dinner at 7?' 2. GitHub: PR merged 3. Amazon: order shipped"
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   For action tasks, confirm what was done: "Dark mode is now ON" not "I opened Settings".
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 13: Use direct tools when available.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Before navigating through apps, check if a direct tool can answer faster:
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - Battery, WiFi, storage, Bluetooth, screen → get_device_info(category)
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - Notifications → get_notifications
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - Clipboard → clipboard(action="get") only for the CURRENT clipboard contents
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - Installed apps → get_installed_apps()
+08-24 09:01:25.004 I/AryaEngineLog( 1701): These return data in one call. Only navigate apps when no direct tool exists.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 13b: Do not confuse "copy from another source" with "read the current clipboard".
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Use clipboard(action="get") only when the user is explicitly asking what is already on their clipboard right now.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   If the user asks you to copy, search, summarize, or send information from another source (email, browser, notes, messages, screen, etc),
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   first go to that source and find the data there. Do not assume it is already in the clipboard.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   If you need clipboard later, write it yourself with clipboard(action="set", text="...") after you have found the source data.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Rule 14: Never falsely deny phone access.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   If a matching tool exists, do not say you cannot access the device, Telegram, WhatsApp, files, or music player UI.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   For Telegram Saved Messages / play media: use open_app + get_screen_info + tap — never claim no access.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Use the tool first, then answer with the real result.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   If the real result is empty, missing, or unavailable (for example an empty clipboard or no recent notifications), that is still a VALID result, not a failure.
+08-24 09:01:25.004 I/AryaEngineLog( 1701):   Report it plainly instead of treating it as an error.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): ## Safety Constraints
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - Never auto-fill account passwords, payment passwords, bank card numbers, or other sensitive credentials (except WiFi passwords when the user explicitly asks)
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - Never confirm purchase or payment actions
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - Do not perform destructive actions such as uninstalling apps, clearing data, or factory reset. If the user asks, refuse directly and call finish with an explanation
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - If a login wall or paywall is encountered → stop and notify the user
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): ## SKILLS — Choose the correct Skill based on the user's request
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): The available Skills are listed below. Based on the user's request, select the best matching Skill and follow its steps exactly. If no Skill matches, use your own judgment to complete the task with available tools.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): ### Skill: Send Message
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Purpose: Send a single message to another person in a messaging app. Note: this sends one message, it does not start auto-reply monitoring.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Steps:
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 1. Call send_message(contact=<person mentioned by user>, app=<app mentioned by user or default WhatsApp>, message=<content to send>)
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 2. Call finish to confirm the message was sent
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): ### Skill: Monitor & Auto-Reply
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Purpose: Monitor someone's messages and auto-reply. Keywords: monitor, auto-reply, watch messages
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Steps:
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 1. Call auto_reply(action="on", contact=<person mentioned by user>)
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 2. Immediately call finish(summary="Auto-reply enabled for [contact]"). Do not do anything else. No tap, no get_screen_info, no open_app. The only next step after auto_reply is finish.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Important:
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - Only use Send Message when the user clearly wants you to deliver a message to another person.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - The request should name or clearly imply a recipient/contact. Examples: "send hi to Mom", "tell Alice I'll be late", "message John on WhatsApp".
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - Do NOT use Send Message for ordinary chat with the user. Bare phrases like "say hi", "hi", "hello", "tell me more", "say that again", or "what do you think?" are just conversation.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): - If the user says "monitor", "watch", or "auto-reply" → use Monitor & Auto-Reply. Do not confuse it with Send Message.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 
+08-24 09:01:25.004 I/AryaEngineLog( 1701): ### Skill: Chat / Question
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Purpose: Answer a question or have a conversation. The user is NOT asking you to control the phone.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Keywords: what, who, when, where, why, how, tell me, explain, help me write, translate
+08-24 09:01:25.004 I/AryaEngineLog( 1701): Steps:
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 1. Answer the question directly in text.
+08-24 09:01:25.004 I/AryaEngineLog( 1701): 2. Call finish(summary=<your answer>). Do NOT call get_screen_info or any other tool. Just answer and finish., maxIterations=8, temperature=0.3, provider=LOCAL, streaming=true, hermesUrl=null, hermesApiKey=null, hermesEnabled=true), label=Qwen3 0.6B (very light), path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf)
+08-24 09:01:25.016 I/DebugTaskReceiver( 1701): debug chat LOCAL path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf
+08-24 09:01:25.022 I/LocalLlmClient( 1701): ensureLoaded /storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf
+08-24 09:01:25.026 I/AryaEngineLog( 1701): EngineClient ensureLoaded begin path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf ctx=2048
+08-24 09:01:25.039 I/ActivityManager(  535): Start proc 2246:io.agents.arya:engine/u0a105 for service {io.agents.arya/io.agents.arya.engine.EngineService}
+08-24 09:01:25.368 I/AryaEngineLog( 2246): boot EngineLog init pid=2246 process=io.agents.arya/io.agents.arya:engine
+08-24 09:01:25.376 I/AryaEngineLog( 2246): boot EngineLog init pid=2246 process=io.agents.arya/io.agents.arya:engine
+08-24 09:01:25.378 I/AryaEngineLog( 2246): EngineService onCreate pid=2246
+08-24 09:01:25.394 I/AryaEngineLog( 2246): EngineService onCreate done foreground=started thread=40
+08-24 09:01:25.399 I/AryaEngineLog( 1701): EngineClient ensureLoaded bound alive=true
+08-24 09:01:25.400 E/JavaBinder( 2246): 	at io.agents.arya.engine.EngineService$binder$1.ensureLoaded(EngineService.kt:85)
+08-24 09:01:25.400 E/JavaBinder( 2246): 	at io.agents.arya.engine.IEngine$Stub.onTransact(IEngine.java:118)
+08-24 09:01:25.404 I/AryaEngineLog( 1701): EngineClient requestLoad dispatch id=1
+08-24 09:01:25.405 I/AryaEngineLog( 2246): EngineService requestLoad id=1 path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf ctx=2048 threads=4 cb=true
+08-24 09:01:25.415 I/AryaEngineLog( 2246): EngineService native ensureLoaded begin id=1
+08-24 09:01:25.541 I/AryaEngineLog( 2246): EngineCore nativeLoadModel begin path=/storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf ctx=1024 threads=4 fileBytes=484220320
+08-24 09:01:25.542 I/AryaEngineJNI( 2246): Loading model: /storage/emulated/0/Android/data/io.agents.arya/files/models/Qwen_Qwen3-0.6B-Q4_K_M.gguf n_ctx=1024 n_threads=4
+08-24 09:01:26.613 I/AryaEngineLog( 2246): EngineCore nativeLoadModel done handle=137999401454368 ms=1067
+08-24 09:01:28.216 I/AryaEngineLog( 2246): EngineService native ensureLoaded ok id=1 info={"loaded":true,"model_path":"\/storage\/emulated\/0\/Android\/data\/io.agents.arya\/files\/models\/Qwen_Qwen3-0.6B-Q4_K_M.gguf","ctx":1024,"n_threads":4,"n_past":0,"prefix_key":"","model_info":{"load_time_ms":1067,"model_size_mb":461.8,"n_t
+08-24 09:01:28.250 I/LocalLlmClient( 1701): generate promptChars=206
+08-24 09:01:42.282 I/AryaEngineLog( 2246): EngineService LAB_FIRST_TOKEN id=1 chars=7
