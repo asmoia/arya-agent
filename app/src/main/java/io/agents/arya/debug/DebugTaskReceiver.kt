@@ -276,6 +276,28 @@ class DebugTaskReceiver : BroadcastReceiver() {
         }
     }
 
+    private fun handleDebugProbe(context: Context) {
+        try {
+            val diag = io.agents.arya.agent.llm.LocalModelManager.storageDiagnostics(context)
+            val catalog = io.agents.arya.agent.llm.LocalModelManager.catalog(context)
+            val gate = io.agents.arya.agent.llm.ModelSession.resolve(context)
+            val ext = context.getExternalFilesDir(null)
+            val msg = buildString {
+                append("PROBE selected=").append(diag.selectedDir)
+                append(" ext=").append(diag.externalDir).append(" [").append(diag.externalStatus).append(']')
+                append(" int=").append(diag.internalDir).append(" [").append(diag.internalStatus).append(']')
+                append(" extFiles=").append(ext?.absolutePath)
+                append(" catalog=").append(catalog.joinToString { "${it.model.id}:dl=${it.isDownloaded}:path=${it.path}" })
+                append(" gate=").append(gate)
+            }
+            XLog.i("DebugTaskReceiver", msg)
+            android.util.Log.i("LAB_PROBE", msg)
+            io.agents.arya.engine.EngineLog.i("LAB_PROBE", msg)
+        } catch (e: Exception) {
+            XLog.e("DebugTaskReceiver", "probe failed", e)
+        }
+    }
+
     private fun handleDebugChat(context: Context, text: String) {
         runAsync("debug-chat") {
             try {
