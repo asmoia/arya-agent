@@ -32,7 +32,6 @@ jobs:
     timeout-minutes: 350
     env:
       LAB_MODE: ${{ github.event.inputs.mode || 'both' }}
-      LAB_HOLD_SECS: ${{ github.event.inputs.hold_minutes && format('{0}', github.event.inputs.hold_minutes) || '240' }}
 
     steps:
       - uses: actions/checkout@v4
