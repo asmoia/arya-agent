@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.RemoteException
 import androidx.core.app.NotificationCompat
 import io.agents.arya.engine.budget.DeviceProfileManager
@@ -32,6 +33,8 @@ class EngineService : Service() {
     @Volatile
     private var sessionCallback: IEngineCallback? = null
     private val callbacks = ConcurrentHashMap<Int, IEngineCallback>()
+    private val liveCallbacks = ConcurrentHashMap<IBinder, IEngineCallback>()
+    private var wakeLock: PowerManager.WakeLock? = null
     @Volatile
     private var lastActivityMs: Long = System.currentTimeMillis()
     @Volatile
@@ -48,6 +51,7 @@ class EngineService : Service() {
 
     private val idleRunnable = Runnable {
         if (!engineCore.isLoaded && !engineCore.isBusy) {
+            releaseWorkLock()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -72,7 +76,9 @@ class EngineService : Service() {
 
     private val binder = object : IEngine.Stub() {
         override fun registerCallback(cb: IEngineCallback?) {
+            if (cb == null) return
             sessionCallback = cb
+            liveCallbacks[cb.asBinder()] = cb
         }
 
         override fun ensureLoaded(modelPath: String, ctxSize: Int, nThreads: Int): String {
@@ -80,7 +86,7 @@ class EngineService : Service() {
             // Binder-thread fast path only. Full mmap + bench must go through requestLoad.
             if (engineCore.isLoaded) {
                 val stats = engineCore.stats()
-                if (stats.contains(modelPath)) return stats
+                if (ModelPaths.statsLooksLike(stats, modelPath)) return stats
             }
             // Do not throw: a RemoteException here shows up as a scary JavaBinder
             // stack even though requestLoad is the intended path.
@@ -98,6 +104,7 @@ class EngineService : Service() {
             callbacks[requestId] = cb
             inferenceHandler.post {
                 try {
+                    acquireWorkLock()
                     emitProgress(requestId, 3, "Preparing engine")
                     if (profileManager.getProfile() == null) {
                         profileManager.runBenchIfNeeded { pct, phase ->
@@ -106,11 +113,13 @@ class EngineService : Service() {
                     }
                     val src = java.io.File(modelPath)
                     val fast = ModelFileLocalizer.ensureFastPath(this@EngineService, src) { pct, phase ->
-                        emitProgress(requestId, 10 + (pct * 0.45).toInt(), phase)
+                        emitProgress(requestId, 10 + (pct * 0.35).toInt(), phase)
                     }
-                    emitProgress(requestId, 58, "Mapping GGUF into RAM")
+                    emitProgress(requestId, 48, "Reading weights into RAM")
                     EngineLog.i("EngineService", "native ensureLoaded begin id=$requestId path=${fast.absolutePath}")
-                    val info = engineCore.ensureLoaded(fast.absolutePath, ctxSize, nThreads)
+                    val info = engineCore.ensureLoaded(fast.absolutePath, ctxSize, nThreads) { pct, phase ->
+                        emitProgress(requestId, 48 + (pct * 0.50).toInt().coerceAtMost(50), phase)
+                    }
                     EngineLog.i("EngineService", "native ensureLoaded ok id=$requestId info=${info.take(240)}")
                     startForegroundIfNeeded()
                     emitProgress(requestId, 100, "Model ready")
@@ -143,8 +152,13 @@ class EngineService : Service() {
 
         override fun generate(requestJson: String): Int {
             touch()
+            acquireWorkLock()
             val cb = sessionCallback
-            if (cb == null) return -1
+            EngineLog.i("EngineService", "generate binder chars=${requestJson.length} loaded=${engineCore.isLoaded} busy=${engineCore.isBusy} cb=${cb != null}")
+            if (cb == null) {
+                EngineLog.e("EngineService", "generate aborted: no callback registered")
+                return -1
+            }
             if (engineCore.isBusy) {
                 try {
                     cb.onError(0, EngineError.ERR_BUSY, EngineError.message(EngineError.ERR_BUSY))
@@ -265,21 +279,18 @@ class EngineService : Service() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= TRIM_MEMORY_RUNNING_CRITICAL) {
-            if (engineCore.isBusy) return
-            if (engineCore.isLoaded) {
-                engineCore.unload()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                emitProgress(0, 0, "unloaded_low_memory")
-            }
-        }
+        EngineLog.w("EngineService", "onTrimMemory level=$level busy=${engineCore.isBusy} loaded=${engineCore.isLoaded}")
+        // Never drop a loaded GGUF just because the system is nervous.
+        // Unloading here + a concurrent generate was a use-after-free on Huawei.
     }
 
     override fun onDestroy() {
+        EngineLog.w("EngineService", "onDestroy pid=${android.os.Process.myPid()}")
         watchdogHandler.removeCallbacksAndMessages(null)
         mainHandler.removeCallbacksAndMessages(null)
         inferenceThread.quitSafely()
         engineCore.unload()
+        releaseWorkLock()
         super.onDestroy()
     }
 
@@ -353,5 +364,32 @@ class EngineService : Service() {
         watchdogHandler.removeCallbacks(watchdogRunnable)
         activeRequestId = -1
         requestDeadlineMs = 0L
+    }
+
+    private fun acquireWorkLock() {
+        try {
+            if (wakeLock == null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "arya:engine").apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wakeLock?.isHeld != true) {
+                wakeLock?.acquire(15 * 60 * 1000L)
+                EngineLog.i("EngineService", "wake lock acquired")
+            }
+        } catch (e: Exception) {
+            EngineLog.w("EngineService", "wake lock failed: ${e.message}")
+        }
+    }
+
+    private fun releaseWorkLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+                EngineLog.i("EngineService", "wake lock released")
+            }
+        } catch (_: Exception) {
+        }
     }
 }

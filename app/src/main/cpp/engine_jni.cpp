@@ -29,6 +29,11 @@
 #include <pthread.h>
 #include <atomic>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <algorithm>
+#include <errno.h>
+#include <stdio.h>
 
 #include "llama.h"
 
@@ -131,13 +136,71 @@ static bool detect_gpu_available() {
     return false;
 }
 
-// llama_model_params.progress_callback — reports mmap/load fraction.
-static bool llama_load_progress_cb(float progress, void * /*user_data*/) {
-    int pct = static_cast<int>(progress * 100.0f + 0.5f);
-    if (pct == 0 || pct == 100 || (pct % 10) == 0) {
-        LOGI("nativeLoadModel progress=%d%%", pct);
+static char g_crash_path[256] = "/data/data/io.agents.arya/cache/engine_logs/native-crash.txt";
+
+static void crash_handler(int sig) {
+    char buf[80];
+    int n = snprintf(buf, sizeof(buf), "native signal %d\n", sig);
+    int fd = open(g_crash_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd >= 0) {
+        if (n > 0) {
+            ssize_t wr = write(fd, buf, static_cast<size_t>(n));
+            (void) wr;
+        }
+        close(fd);
     }
-    return true; // continue
+    _exit(128 + sig);
+}
+
+static void install_crash_handler() {
+    static std::atomic<bool> installed{false};
+    bool expected = false;
+    if (!installed.compare_exchange_strong(expected, true)) return;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = crash_handler;
+    sigaction(SIGSEGV, &sa, nullptr);
+    sigaction(SIGABRT, &sa, nullptr);
+    sigaction(SIGBUS, &sa, nullptr);
+    sigaction(SIGILL, &sa, nullptr);
+    sigaction(SIGFPE, &sa, nullptr);
+}
+
+static void log_rss(const char * tag) {
+    FILE * f = fopen("/proc/self/status", "r");
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "VmRSS:", 6) == 0 || strncmp(line, "VmSize:", 7) == 0) {
+            LOGI("%s %s", tag, line);
+        }
+    }
+    fclose(f);
+}
+
+struct LoadProgressBridge {
+    JNIEnv * env;
+    jobject cb;
+    jmethodID mid;
+    int last_logged;
+};
+
+static bool llama_load_progress_cb(float progress, void * user_data) {
+    int pct = static_cast<int>(progress * 100.0f + 0.5f);
+    auto * p = static_cast<LoadProgressBridge *>(user_data);
+    if (pct == 0 || pct == 100 || (pct % 10) == 0) {
+        if (!p || pct != p->last_logged) {
+            LOGI("nativeLoadModel progress=%d%%", pct);
+            if (p) p->last_logged = pct;
+        }
+    }
+    if (p && p->env && p->cb && p->mid) {
+        jstring phase = p->env->NewStringUTF("Reading weights into RAM");
+        p->env->CallVoidMethod(p->cb, p->mid, pct, phase);
+        if (p->env->ExceptionCheck()) p->env->ExceptionClear();
+        if (phase) p->env->DeleteLocalRef(phase);
+    }
+    return true;
 }
 
 static std::vector<std::string> parse_stop_sequences(const char * json) {
@@ -187,12 +250,14 @@ static std::string extract_complete_utf8(std::string &stream_buf) {
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
-    JNIEnv * env, jobject, jstring model_path, jint n_ctx, jint n_threads)
+    JNIEnv * env, jobject, jstring model_path, jint n_ctx, jint n_threads, jobject progress_cb)
 {
+    install_crash_handler();
     const char * path = env->GetStringUTFChars(model_path, nullptr);
     if (!path) return -1;
     double t0 = now_ms();
-    LOGI("Loading model: %s n_ctx=%d n_threads=%d", path, n_ctx, n_threads);
+    LOGI("Loading model: %s n_ctx=%d n_threads=%d (load_mode=NONE)", path, n_ctx, n_threads);
+    log_rss("before-load");
 
     if (n_threads <= 0) n_threads = detect_inference_threads();
 
@@ -202,8 +267,19 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     llama_backend_init();
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0;
-    // mmap/mlock left at llama.cpp defaults (use_mmap/use_mlock were removed from
-    // llama_model_params after the 2025 API rename).
+    // Force a real read into anonymous RAM. Default AUTO/MMAP on Huawei FUSE
+    // "succeeds" in 3s with ~70 MB RSS, then the first llama_decode dies.
+    mp.load_mode = LLAMA_LOAD_MODE_NONE;
+
+    LoadProgressBridge bridge{env, nullptr, nullptr, -1};
+    if (progress_cb) {
+        jclass cls = env->GetObjectClass(progress_cb);
+        bridge.cb = progress_cb;
+        bridge.mid = cls ? env->GetMethodID(cls, "onProgress", "(ILjava/lang/String;)V") : nullptr;
+        if (cls) env->DeleteLocalRef(cls);
+    }
+    mp.progress_callback = llama_load_progress_cb;
+    mp.progress_callback_user_data = &bridge;
 
     llama_model * model = llama_model_load_from_file(path, mp);
     if (!model) {
@@ -211,13 +287,18 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
         env->ReleaseStringUTFChars(model_path, path);
         return -2;
     }
+    log_rss("after-weights");
 
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx = n_ctx;
     cp.n_threads = n_threads;
     cp.n_threads_batch = n_threads;
-    cp.n_batch = 512;
+    // Small batches: 512 made the first-decode compute buffer huge on 1.7B.
+    cp.n_batch = 128;
+    cp.n_ubatch = 32;
+    cp.n_seq_max = 1;
     cp.embeddings = false;
+    cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
 
     llama_context * ctx = llama_init_from_model(model, cp);
     if (!ctx) {
@@ -229,14 +310,29 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     env->ReleaseStringUTFChars(model_path, path);
 
     const llama_vocab * vocab = llama_model_get_vocab(model);
+
+    // Touch the compute graph now so a SIGILL/OOM happens during load, not
+    // 8 seconds into a silent generate.
+    auto warm = tokenize_string(vocab, "Hi", false, false);
+    if (!warm.empty()) {
+        int n = std::min(1, static_cast<int>(warm.size()));
+        llama_batch wb = llama_batch_get_one(warm.data(), n);
+        int wr = llama_decode(ctx, wb);
+        LOGI("warmup decode rc=%d", wr);
+        llama_memory_clear(llama_get_memory(ctx), true);
+    }
+    log_rss("after-warmup");
+
     int n_embd = llama_model_n_embd(model);
     int n_layers = llama_model_n_layer(model);
     double load_time = now_ms() - t0;
+    LOGI("load complete ms=%.0f size_mb=%.1f n_embd=%d n_layer=%d n_ctx=%d",
+         load_time, model_size / (1024.0 * 1024.0), n_embd, n_layers, n_ctx);
 
     auto * mc = new ModelContext{
         model, ctx, vocab, load_time, model_size,
         n_threads, n_ctx, n_embd, n_layers,
-        static_cast<int>(model_size * 8.0 / 4.3 / 1e9), true
+        static_cast<int>(model_size * 8.0 / 4.3 / 1e9), false
     };
     return reinterpret_cast<jlong>(mc);
 }
@@ -340,6 +436,9 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
 
     double t_start = now_ms();
     double t_last_token = t_start;
+    LOGI("generate start n_prompt=%d n_ctx=%d max_tokens=%d delta=%d",
+         n_prompt, n_ctx, max_tokens, is_delta ? 1 : 0);
+    log_rss("generate-start");
 
     if (n_prompt >= n_ctx) {
         return env->NewStringUTF("{\"error\": \"prompt_exceeds_ctx\"}");
@@ -351,12 +450,26 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     }
 
     if (n_prompt > 0) {
-        llama_batch pb = llama_batch_get_one(const_cast<llama_token*>(tokens.data()), n_prompt);
-        if (llama_decode(mc->ctx, pb) != 0) {
-            return env->NewStringUTF("{\"error\": \"decode_failed\"}");
+        const int chunk = 32;
+        for (int i = 0; i < n_prompt; ) {
+            if (mc->cancel_flag.load()) {
+                return env->NewStringUTF("{\"error\": \"cancelled\"}");
+            }
+            int n = std::min(chunk, n_prompt - i);
+            llama_batch pb = llama_batch_get_one(const_cast<llama_token*>(tokens.data() + i), n);
+            int rc = llama_decode(mc->ctx, pb);
+            if (rc != 0) {
+                LOGE("prefill decode failed rc=%d at %d/%d", rc, i, n_prompt);
+                return env->NewStringUTF("{\"error\": \"decode_failed\"}");
+            }
+            i += n;
+            if (i == n || (i % 64) == 0 || i == n_prompt) {
+                LOGI("prefill %d/%d", i, n_prompt);
+            }
         }
     }
     double prompt_eval_ms = now_ms() - t_start;
+    LOGI("prefill done ms=%.0f n_prompt=%d", prompt_eval_ms, n_prompt);
 
     // Sampler setup (b10603: penalties is still n_vocab, last_n, repeat, freq, present)
     auto * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
@@ -455,6 +568,8 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     double gen_ms = gen_end - gen_start;
 
     llama_sampler_free(smpl);
+    LOGI("generate done reason=%s gen_tokens=%d prompt_ms=%.0f gen_ms=%.0f",
+         finish_reason.c_str(), gen_tokens, prompt_eval_ms, gen_ms);
 
     char stats[512];
     snprintf(stats, sizeof(stats),

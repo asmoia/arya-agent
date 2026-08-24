@@ -43,12 +43,12 @@ class LocalLlmClient(
             ) + messages
         }
         try {
-            emit(LlmEvent.Status("Starting local engine… 0%"))
+            emit(LlmEvent.Status("Starting local engine… reading weights into RAM"))
             XLog.i(TAG, "ensureLoaded $modelPath")
             withTimeout(240_000L) {
                 engineClient.ensureLoaded(modelPath)
             }
-            emit(LlmEvent.Status("Model mapped. Writing…"))
+            emit(LlmEvent.Status("Model in RAM. Writing…"))
         } catch (e: Exception) {
             XLog.e(TAG, "ensureLoaded failed", e)
             emit(LlmEvent.Error(3, "Failed to load local model: ${e.message}"))
@@ -83,7 +83,12 @@ class LocalLlmClient(
             }
         } catch (e: Exception) {
             XLog.e(TAG, "generate failed", e)
-            emit(LlmEvent.Error(5, "Local model timed out or failed: ${e.message}"))
+            emit(
+                LlmEvent.Error(
+                    5,
+                    "Local model timed out or the engine crashed. Send again — if it keeps failing, switch to Qwen3 0.6B. (${e.message})",
+                ),
+            )
         }
     }.flowOn(Dispatchers.IO)
 

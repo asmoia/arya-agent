@@ -11,7 +11,16 @@ object EngineNative {
         System.loadLibrary("arya-engine")
     }
 
-    external fun nativeLoadModel(modelPath: String, nCtx: Int, nThreads: Int): Long
+    external fun nativeLoadModel(
+        modelPath: String,
+        nCtx: Int,
+        nThreads: Int,
+        progress: NativeLoadCallback?,
+    ): Long
+
+    interface NativeLoadCallback {
+        fun onProgress(pct: Int, phase: String)
+    }
     external fun nativeFreeModel(handle: Long)
     external fun nativeCancel(handle: Long)
     external fun nativeSaveState(handle: Long, statePath: String): Boolean

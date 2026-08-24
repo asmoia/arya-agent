@@ -32,6 +32,7 @@ mkdir -p "$OUT"
   "$ROOT/app/src/main/java/io/agents/arya/utils/PersianFormat.kt" \
   "$ROOT/app/src/main/java/io/agents/arya/voice/VoiceInputState.kt" \
   "$ROOT/app/src/main/java/io/agents/arya/engine/EngineWatchdog.kt" \
+  "$ROOT/app/src/main/java/io/agents/arya/engine/ModelPaths.kt" \
   "$ROOT/app/src/main/java/io/agents/arya/ui/chat/ChatNoise.kt" \
   "$ROOT/app/src/test/java/io/agents/arya/engine/budget/MemoryBudgetTest.kt" \
   "$ROOT/app/src/test/java/io/agents/arya/engine/budget/GgufHeaderParserTest.kt" \
@@ -52,6 +53,7 @@ mkdir -p "$OUT"
   "$ROOT/app/src/test/java/io/agents/arya/utils/PersianFormatTest.kt" \
   "$ROOT/app/src/test/java/io/agents/arya/voice/VoiceStateMachineTest.kt" \
   "$ROOT/app/src/test/java/io/agents/arya/engine/EngineWatchdogTest.kt" \
+  "$ROOT/app/src/test/java/io/agents/arya/engine/ModelPathsTest.kt" \
   "$ROOT/app/src/test/java/io/agents/arya/ui/chat/ChatNoiseTest.kt" \
   -cp "$CP" -d "$OUT"
 
@@ -76,4 +78,5 @@ java -cp "$OUT:$CP:/tmp/kt-test/kotlinc/lib/kotlin-stdlib.jar" org.junit.runner.
   io.agents.arya.utils.PersianFormatTest \
   io.agents.arya.voice.VoiceStateMachineTest \
   io.agents.arya.engine.EngineWatchdogTest \
+  io.agents.arya.engine.ModelPathsTest \
   io.agents.arya.ui.chat.ChatNoiseTest

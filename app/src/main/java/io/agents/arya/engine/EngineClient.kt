@@ -13,9 +13,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
@@ -41,12 +44,21 @@ class EngineClient(private val app: Context) {
     private val quarantinedModels = ConcurrentHashMap.newKeySet<String>()
     private val nextLoadRequestId = AtomicInteger(1)
     private val pendingBind = AtomicReference<CancellableContinuation<IEngine>?>(null)
+    private val loadGate = Mutex()
+    private val deathListeners = CopyOnWriteArrayList<(String) -> Unit>()
 
     private val deathRecipient = IBinder.DeathRecipient {
+        EngineLog.e("EngineClient", "engine binder died model=$activeModelPath")
         _state.value = EngineState.Crashed("Engine process died")
         val model = activeModelPath
         if (model != null) recordCrash(model)
         engineBinder = null
+        deathListeners.forEach { listener ->
+            try {
+                listener("Engine process died")
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -95,6 +107,14 @@ class EngineClient(private val app: Context) {
                 "This model is unstable on this device. Try a smaller model.",
             )
         }
+        // Serialize prewarm + chat so they cannot steal each other's callback
+        // or unload+reload the GGUF mid-generate.
+        return loadGate.withLock {
+            ensureLoadedLocked(modelPath, ctxSize, nThreads)
+        }
+    }
+
+    private suspend fun ensureLoadedLocked(modelPath: String, ctxSize: Int, nThreads: Int): String {
         activeModelPath = modelPath
         EngineLog.i("EngineClient", "ensureLoaded begin path=$modelPath ctx=$ctxSize")
         val binder = getOrBindService()
@@ -102,9 +122,9 @@ class EngineClient(private val app: Context) {
         // Already resident? skip the async round-trip.
         try {
             val existing = binder.ensureLoaded(modelPath, ctxSize, nThreads)
-            if (isReallyLoaded(existing)) {
+            if (isReallyLoaded(existing, modelPath)) {
                 _state.value = EngineState.Ready(modelPath)
-                _loadProgress.value = EngineLoadProgress(100, "Model mapped")
+                _loadProgress.value = EngineLoadProgress(100, "Model in RAM")
                 return existing
             }
         } catch (_: Exception) {
@@ -202,14 +222,29 @@ class EngineClient(private val app: Context) {
 
         binder.registerCallback(callback)
         _state.value = EngineState.Busy
-        val reqId = binder.generate(requestJson)
+        val onDied: (String) -> Unit = { reason ->
+            trySend(EngineEvent.Failed(EngineError.ERR_NATIVE, reason))
+            close()
+        }
+        deathListeners.add(onDied)
+        val reqId = try {
+            binder.generate(requestJson)
+        } catch (e: Exception) {
+            deathListeners.remove(onDied)
+            trySend(EngineEvent.Failed(EngineError.ERR_NATIVE, e.message ?: "generate failed"))
+            close()
+            return@callbackFlow
+        }
+        EngineLog.i("EngineClient", "generate dispatched id=$reqId")
         if (reqId < 0) {
+            deathListeners.remove(onDied)
             trySend(EngineEvent.Failed(EngineError.ERR_BUSY, EngineError.message(EngineError.ERR_BUSY)))
             _state.value = EngineState.Ready(activeModelPath.orEmpty())
             close()
         }
 
         awaitClose {
+            deathListeners.remove(onDied)
             try {
                 if (reqId >= 0) binder.cancel(reqId)
             } catch (_: Exception) {
@@ -243,14 +278,17 @@ class EngineClient(private val app: Context) {
 
     fun isQuarantined(modelPath: String): Boolean = quarantinedModels.contains(modelPath)
 
-    private fun isReallyLoaded(json: String): Boolean {
+    private fun isReallyLoaded(json: String, requestedPath: String = ""): Boolean {
         if (json.isBlank()) return false
         return try {
             val o = org.json.JSONObject(json)
             if (!o.optBoolean("loaded", false)) return false
             val sizeMb = o.optJSONObject("model_info")?.optDouble("model_size_mb", 0.0) ?: 0.0
             // Real GGUF reports hundreds of MB. ~70 MB is an empty process / failed mmap.
-            sizeMb >= 80.0
+            if (sizeMb < 80.0) return false
+            if (requestedPath.isBlank()) return true
+            val loadedPath = o.optString("model_path")
+            loadedPath.isBlank() || ModelPaths.sameModel(loadedPath, requestedPath)
         } catch (_: Exception) {
             false
         }

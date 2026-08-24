@@ -35,9 +35,17 @@ class EngineCore(private val context: Context) {
     val isBusy: Boolean
         get() = generating.get()
 
-    fun ensureLoaded(modelPath: String, ctxSize: Int, nThreads: Int): String {
+    fun ensureLoaded(
+        modelPath: String,
+        ctxSize: Int,
+        nThreads: Int,
+        onProgress: ((Int, String) -> Unit)? = null,
+    ): String {
         lock.withLock {
-            if (handle != 0L && currentModelPath == modelPath && currentCtxSize == ctxSize) {
+            // Same GGUF under a different path (FUSE vs filesDir/fast) must
+            // NOT unload+reload. That race was killing generate on Huawei.
+            if (handle != 0L && ModelPaths.sameModel(currentModelPath, modelPath)) {
+                EngineLog.i("EngineCore", "already loaded ${currentModelPath} (asked $modelPath ctx=$ctxSize have=$currentCtxSize)")
                 return statsLocked()
             }
             if (handle != 0L) unloadLocked()
@@ -73,7 +81,19 @@ class EngineCore(private val context: Context) {
                 is MemoryBudget.Plan.Load -> {
                     EngineLog.i("EngineCore", "nativeLoadModel begin path=$modelPath ctx=${plan.ctxSize} threads=${plan.nThreads} fileBytes=${file.length()}")
                     val t0 = System.currentTimeMillis()
-                    val newHandle = EngineNative.nativeLoadModel(modelPath, plan.ctxSize, plan.nThreads)
+                    val newHandle = EngineNative.nativeLoadModel(
+                        modelPath,
+                        plan.ctxSize,
+                        plan.nThreads,
+                        object : EngineNative.NativeLoadCallback {
+                            override fun onProgress(pct: Int, phase: String) {
+                                try {
+                                    onProgress?.invoke(pct, phase)
+                                } catch (_: Exception) {
+                                }
+                            }
+                        },
+                    )
                     EngineLog.i("EngineCore", "nativeLoadModel done handle=$newHandle ms=${System.currentTimeMillis() - t0}")
                     if (newHandle <= 0) {
                         throw EngineLoadException(EngineError.ERR_LOAD_FAILED, "native load code $newHandle")
@@ -135,6 +155,10 @@ class EngineCore(private val context: Context) {
                 }
             }
 
+            EngineLog.i(
+                "EngineCore",
+                "generateStream begin id=$requestId promptChars=${prompt.length} mode=$mode maxTokens=${req.maxTokens} deadline=${req.deadlineMs}",
+            )
             val stopJson = JSONArray(req.stop).toString()
             val nativeCb = object : EngineNative.NativeStreamCallback {
                 override fun onDeltaPiece(piece: String) {
@@ -145,6 +169,7 @@ class EngineCore(private val context: Context) {
                 }
             }
 
+            val tGen = System.currentTimeMillis()
             val statsJson = EngineNative.nativeGenerateStream(
                 h,
                 prompt,
@@ -158,6 +183,10 @@ class EngineCore(private val context: Context) {
                 req.deadlineMs,
                 req.tokenDeadlineMs,
                 nativeCb,
+            )
+            EngineLog.i(
+                "EngineCore",
+                "generateStream native done id=$requestId ms=${System.currentTimeMillis() - tGen} stats=${statsJson.take(220)}",
             )
 
             val stats = JSONObject(statsJson)

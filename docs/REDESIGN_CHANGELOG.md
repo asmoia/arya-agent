@@ -1,5 +1,17 @@
 # Redesign v1 changelog
 
+## 1.2.5
+
+Huawei 1.7B on 1.2.4 copied the GGUF off FUSE, then said ready in 3s.
+`:engine` died ~8s into generate (no `LAB_FIRST_TOKEN`); the UI hung 120s.
+
+- llama.cpp `LLAMA_LOAD_MODE_NONE` — actually read weights into RAM
+- Warmup `llama_decode` during load so a crash happens *before* "Writing…"
+- n_ctx cap 2048, n_batch 128 / n_ubatch 32, chunked prefill
+- Do not reload the same GGUF just because the path is FUSE vs `filesDir/fast`
+- Single-flight `ensureLoaded`; fail generate immediately if `:engine` dies
+- Native SIGSEGV/SIGILL breadcrumb in `engine_logs/native-crash.txt`
+
 ## 1.2.2 (F1–F8)
 
 - llama.cpp **b10603** (Qwen3-capable; do not revert to b3800)

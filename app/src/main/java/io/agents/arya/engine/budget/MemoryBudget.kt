@@ -85,10 +85,12 @@ object MemoryBudget {
             )
         }
 
+        // Mobile chat never needs 4096. 4096 doubles KV + compute and is
+        // what OOM-killed :engine on Huawei 1.7B after a "successful" mmap.
         val candidates = if (i.isLowRamDevice) {
             listOf(1024, 512)
         } else {
-            listOf(4096, 2048, 1024, 512)
+            listOf(2048, 1024, 512)
         }
 
         for (ctx in candidates) {

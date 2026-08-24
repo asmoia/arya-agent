@@ -45,7 +45,9 @@ target_include_directories(arya-engine PRIVATE
 target_link_libraries(arya-engine llama ggml log)
 
 if(ANDROID_ABI STREQUAL "arm64-v8a")
-    target_compile_options(arya-engine PRIVATE -O3 -fvisibility=hidden -march=armv8.2-a+fp16+dotprod -ffunction-sections -fdata-sections)
+    # armv8-a only. Do NOT bake +dotprod/+fp16 — Kirin 9000S Taishan can SIGILL
+    # on the first llama_decode even though mmap "succeeded".
+    target_compile_options(arya-engine PRIVATE -O3 -fvisibility=hidden -march=armv8-a -ffunction-sections -fdata-sections)
     target_link_options(arya-engine PRIVATE -Wl,--gc-sections)
 else()
     target_compile_options(arya-engine PRIVATE -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)
