@@ -1,1 +1,4 @@
-idle
+puppet idle 2026-08-24T08:17:57Z
+adb-ok
+PUPPET_EXIT=0
+PUPPET_TS=2026-08-24T08:17:57Z
