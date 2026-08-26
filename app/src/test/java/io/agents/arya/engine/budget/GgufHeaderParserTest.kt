@@ -29,4 +29,41 @@ class GgufHeaderParserTest {
         assertEquals(3, h?.version)
         f.delete()
     }
+
+    @Test
+    fun rejectsTruncatedKnownTensorPayload() {
+        val full = minimalF32TensorFile(payloadBytes = 16)
+        val truncated = File.createTempFile("truncated", ".gguf")
+        truncated.writeBytes(full.readBytes().copyOf(72))
+        assertNull(GgufHeaderParser.parse(truncated))
+        full.delete()
+        truncated.delete()
+    }
+
+    @Test
+    fun acceptsKnownTensorWhenPayloadFitsAlignedDataSection() {
+        val f = minimalF32TensorFile(payloadBytes = 16)
+        val h = GgufHeaderParser.parse(f)
+        assertEquals(1L, h?.tensorCount)
+        assertEquals(64L, h?.dataOffset)
+        f.delete()
+    }
+
+    private fun minimalF32TensorFile(payloadBytes: Int): File {
+        val buf = ByteBuffer.allocate(128).order(ByteOrder.LITTLE_ENDIAN)
+        buf.put("GGUF".toByteArray())
+        buf.putInt(3)
+        buf.putLong(1) // n tensors
+        buf.putLong(0) // n kv
+        buf.putLong(0) // tensor name length
+        buf.putInt(1)  // n dimensions
+        buf.putLong(4) // shape
+        buf.putInt(0)  // F32
+        buf.putLong(0) // tensor data offset
+        while (buf.position() < 64) buf.put(0)
+        repeat(payloadBytes) { buf.put(0) }
+        val f = File.createTempFile("tensor", ".gguf")
+        f.writeBytes(buf.array().copyOf(buf.position()))
+        return f
+    }
 }

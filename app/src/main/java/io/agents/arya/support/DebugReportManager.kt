@@ -55,8 +55,9 @@ object DebugReportManager {
         val httpLogs = httpDir.listFiles()?.size ?: 0
         val appLogs = AppLogStore.listLogFiles(context).size
         val modelStorage = LocalModelManager.storageDiagnostics(context)
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val runtimeMemory = ActivityManager.MemoryInfo().also { info ->
-            (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(info)
+            activityManager?.getMemoryInfo(info)
         }
         val localInference = LocalInferenceCoordinator.snapshot()
         val autoReplyManager = AutoReplyManager.getInstance()
@@ -91,6 +92,8 @@ object DebugReportManager {
             appendLine("- RAM (total): ${getDeviceRamGb(context)} GB")
             appendLine("- RAM (available at report): ${formatMb(runtimeMemory.availMem)}")
             appendLine("- Low-memory threshold: ${formatMb(runtimeMemory.threshold)}")
+            appendLine("- App memoryClass: ${activityManager?.memoryClass ?: 0} MB")
+            appendLine("- App largeMemoryClass: ${activityManager?.largeMemoryClass ?: 0} MB")
             appendLine()
             appendLine("Local Inference Runtime (#41 / #14 diagnostics)")
             appendLine("- Conversation lease: owner=${localInference.owner}, phase=${localInference.phase}, backend=${localInference.backend ?: "-"}, generation=${localInference.generation}")

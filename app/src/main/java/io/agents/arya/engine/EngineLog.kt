@@ -19,6 +19,8 @@ object EngineLog {
     private const val DIR = "engine_logs"
     private const val ACTIVE = "arya-engine.log"
     private const val PREV = "arya-engine.prev.log"
+    private const val NATIVE_CRASH = "native-crash.txt"
+    private const val NATIVE_LOAD_STAGE = "native-load-stage.txt"
     private const val MAX_BYTES = 768L * 1024L
 
     @Volatile
@@ -44,8 +46,12 @@ object EngineLog {
     @JvmStatic
     fun listFiles(context: Context): List<File> {
         val dir = resolveDir(context) ?: return emptyList()
-        return listOf(File(dir, PREV), File(dir, ACTIVE))
-            .filter { it.exists() && it.isFile && it.length() > 0L }
+        return listOf(
+            File(dir, PREV),
+            File(dir, ACTIVE),
+            File(dir, NATIVE_CRASH),
+            File(dir, NATIVE_LOAD_STAGE),
+        ).filter { it.exists() && it.isFile && it.length() > 0L }
     }
 
     private fun write(level: String, tag: String, message: String, err: Throwable?) {

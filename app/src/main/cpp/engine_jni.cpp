@@ -138,15 +138,76 @@ static bool detect_gpu_available() {
 }
 
 static char g_crash_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/native-crash.txt";
+static char g_stage_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/native-load-stage.txt";
+
+static long get_self_rss_kb() {
+    FILE * f = fopen("/proc/self/status", "r");
+    if (!f) return -1;
+    char line[256];
+    long rss = -1;
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "VmRSS:", 6) == 0) {
+            long value = -1;
+            if (sscanf(line + 6, "%ld", &value) == 1) rss = value;
+            break;
+        }
+    }
+    fclose(f);
+    return rss;
+}
+
+static void append_load_stage(const char * stage) {
+    if (!stage || !stage[0]) return;
+    char line[320];
+    long long monotonic_ms = static_cast<long long>(now_ms());
+    int n = snprintf(
+        line, sizeof(line),
+        "t_ms=%lld pid=%ld stage=%s rss_kb=%ld avail_mb=%ld\n",
+        monotonic_ms, static_cast<long>(getpid()), stage, get_self_rss_kb(), get_available_ram_mb());
+    if (n <= 0) return;
+    int fd = open(g_stage_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) return;
+    ssize_t remaining = n;
+    const char * cursor = line;
+    while (remaining > 0) {
+        ssize_t written = write(fd, cursor, static_cast<size_t>(remaining));
+        if (written <= 0) break;
+        cursor += written;
+        remaining -= written;
+    }
+    fsync(fd);
+    close(fd);
+}
 
 static void crash_handler(int sig) {
-    char buf[80];
-    int n = snprintf(buf, sizeof(buf), "native signal %d\n", sig);
+    // Do not call snprintf or other lock-taking libc helpers from a signal
+    // handler: a fault may have happened while libc was already locked.
+    const char prefix[] = "native signal ";
+    char buf[64];
+    size_t pos = 0;
+    for (size_t i = 0; i < sizeof(prefix) - 1 && pos < sizeof(buf) - 1; ++i) {
+        buf[pos++] = prefix[i];
+    }
+    unsigned int value = sig < 0 ? 0U : static_cast<unsigned int>(sig);
+    char digits[16];
+    size_t digit_count = 0;
+    do {
+        digits[digit_count++] = static_cast<char>('0' + (value % 10U));
+        value /= 10U;
+    } while (value > 0U && digit_count < sizeof(digits));
+    while (digit_count > 0 && pos < sizeof(buf) - 2) {
+        buf[pos++] = digits[--digit_count];
+    }
+    buf[pos++] = '\n';
     int fd = open(g_crash_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd >= 0) {
-        if (n > 0) {
-            ssize_t wr = write(fd, buf, static_cast<size_t>(n));
-            (void) wr;
+        ssize_t remaining = static_cast<ssize_t>(pos);
+        const char * cursor = buf;
+        while (remaining > 0) {
+            ssize_t written = write(fd, cursor, static_cast<size_t>(remaining));
+            if (written <= 0) break;
+            cursor += written;
+            remaining -= written;
         }
         close(fd);
     }
@@ -157,6 +218,12 @@ static void set_crash_log_path(const char * path) {
     if (!path || !path[0]) return;
     strncpy(g_crash_path, path, sizeof(g_crash_path) - 1);
     g_crash_path[sizeof(g_crash_path) - 1] = '\0';
+}
+
+static void set_stage_log_path(const char * path) {
+    if (!path || !path[0]) return;
+    strncpy(g_stage_path, path, sizeof(g_stage_path) - 1);
+    g_stage_path[sizeof(g_stage_path) - 1] = '\0';
 }
 
 static void install_crash_handler() {
@@ -261,6 +328,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
 {
     try {
     install_crash_handler();
+    append_load_stage("enter");
     const char * path = env->GetStringUTFChars(model_path, nullptr);
     if (!path) return -1;
     double t0 = now_ms();
@@ -272,9 +340,15 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     struct stat st; size_t model_size = 0;
     if (stat(path, &st) == 0) model_size = st.st_size;
 
+    append_load_stage("backend_init_begin");
     llama_backend_init();
+    append_load_stage("backend_init_done");
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0;
+    // Keep Android CPU loading on the default host buffer. Extra CPU buffer
+    // types may select a repacking allocator, which defeats mmap's low-RSS
+    // behavior and is not needed when no GPU layers are requested.
+    mp.use_extra_bufts = false;
     // ModelFileLocalizer has already copied FUSE/external files to ext4 under
     // filesDir/models/fast. mmap there avoids the large anonymous allocation of
     // LLAMA_LOAD_MODE_NONE and lets the kernel page weights in on demand.
@@ -290,14 +364,18 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     mp.progress_callback = llama_load_progress_cb;
     mp.progress_callback_user_data = &bridge;
 
+    append_load_stage("model_load_begin");
     llama_model * model = llama_model_load_from_file(path, mp);
+    append_load_stage("model_load_return");
     if (!model) {
+        append_load_stage("model_load_failed");
         LOGE("Failed to load model from file: %s", path);
         env->ReleaseStringUTFChars(model_path, path);
         return -2;
     }
     log_rss("after-weights");
 
+    append_load_stage("weights_loaded");
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx = n_ctx;
     cp.n_threads = n_threads;
@@ -309,8 +387,11 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     cp.embeddings = false;
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
 
+    append_load_stage("context_init_begin");
     llama_context * ctx = llama_init_from_model(model, cp);
+    append_load_stage("context_init_return");
     if (!ctx) {
+        append_load_stage("context_init_failed");
         LOGE("Failed to create context: %s", path);
         llama_model_free(model);
         env->ReleaseStringUTFChars(model_path, path);
@@ -322,6 +403,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
 
     // Touch the compute graph now so a SIGILL/OOM happens during load, not
     // 8 seconds into a silent generate.
+    append_load_stage("warmup_begin");
     auto warm = tokenize_string(vocab, "Hi", false, false);
     if (!warm.empty()) {
         int n = std::min(1, static_cast<int>(warm.size()));
@@ -329,6 +411,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
         int wr = llama_decode(ctx, wb);
         LOGI("warmup decode rc=%d", wr);
         if (wr != 0) {
+            append_load_stage("warmup_failed");
             LOGE("warmup decode failed rc=%d; refusing half-initialized model", wr);
             llama_free(ctx);
             llama_model_free(model);
@@ -338,6 +421,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
         llama_memory_clear(llama_get_memory(ctx), true);
     }
     log_rss("after-warmup");
+    append_load_stage("warmup_done");
 
     int n_embd = llama_model_n_embd(model);
     int n_layers = llama_model_n_layer(model);
@@ -345,6 +429,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     LOGI("load complete ms=%.0f size_mb=%.1f n_embd=%d n_layer=%d n_ctx=%d",
          load_time, model_size / (1024.0 * 1024.0), n_embd, n_layers, n_ctx);
 
+    append_load_stage("complete");
     auto * mc = new ModelContext{
         model, ctx, vocab, load_time, model_size,
         n_threads, n_ctx, n_embd, n_layers,
@@ -352,9 +437,11 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     };
     return reinterpret_cast<jlong>(mc);
     } catch (const std::exception& e) {
+        append_load_stage("cpp_exception");
         LOGE("nativeLoadModel exception: %s", e.what());
         return -7;
     } catch (...) {
+        append_load_stage("unknown_exception");
         LOGE("nativeLoadModel unknown exception");
         return -8;
     }
@@ -369,6 +456,17 @@ Java_io_agents_arya_engine_EngineNative_nativeSetCrashLogPath(
     if (!path) return;
     set_crash_log_path(path);
     env->ReleaseStringUTFChars(crash_path, path);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_io_agents_arya_engine_EngineNative_nativeSetLoadStagePath(
+    JNIEnv * env, jobject, jstring stage_path)
+{
+    if (!stage_path) return;
+    const char * path = env->GetStringUTFChars(stage_path, nullptr);
+    if (!path) return;
+    set_stage_log_path(path);
+    env->ReleaseStringUTFChars(stage_path, path);
 }
 
 extern "C" JNIEXPORT void JNICALL

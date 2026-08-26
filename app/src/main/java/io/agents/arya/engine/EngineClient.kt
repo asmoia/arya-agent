@@ -68,11 +68,18 @@ class EngineClient(private val app: Context) {
     }
 
     private fun engineDeathReason(): String {
-        val crashFile = java.io.File(app.cacheDir, "engine_logs/native-crash.txt")
-        val detail = runCatching {
+        val diagnosticsDir = java.io.File(app.cacheDir, "engine_logs")
+        val crashFile = java.io.File(diagnosticsDir, "native-crash.txt")
+        val stageFile = java.io.File(diagnosticsDir, "native-load-stage.txt")
+        val crash = runCatching {
             if (crashFile.isFile) crashFile.readText().takeLast(160).trim().replace('\n', ' ')
             else ""
         }.getOrDefault("")
+        val stage = runCatching {
+            if (stageFile.isFile) stageFile.readText().takeLast(240).trim().replace("\n", "; ")
+            else ""
+        }.getOrDefault("")
+        val detail = listOf(crash, stage).filter { it.isNotBlank() }.joinToString(" | ")
         return if (detail.isBlank()) "Engine process died" else "Engine process died: $detail"
     }
 

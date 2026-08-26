@@ -112,6 +112,10 @@ class EngineService : Service() {
                         }
                     }
                     val src = java.io.File(modelPath)
+                    val diagnosticsDir = java.io.File(cacheDir, "engine_logs").apply { mkdirs() }
+                    java.io.File(diagnosticsDir, "native-crash.txt").delete()
+                    java.io.File(diagnosticsDir, "native-load-stage.txt").delete()
+                    EngineLog.i("EngineService", "native diagnostics reset id=$requestId")
                     val fast = ModelFileLocalizer.ensureFastPath(this@EngineService, src) { pct, phase ->
                         emitProgress(requestId, 10 + (pct * 0.35).toInt(), phase)
                     }
@@ -264,11 +268,17 @@ class EngineService : Service() {
         EngineLog.init(this)
         EngineLog.i("EngineService", "onCreate pid=${android.os.Process.myPid()}")
         runCatching {
-            val crashFile = java.io.File(cacheDir, "engine_logs/native-crash.txt")
-            crashFile.parentFile?.mkdirs()
+            val diagnosticsDir = java.io.File(cacheDir, "engine_logs").apply { mkdirs() }
+            val crashFile = java.io.File(diagnosticsDir, "native-crash.txt")
+            val stageFile = java.io.File(diagnosticsDir, "native-load-stage.txt")
             EngineNative.nativeSetCrashLogPath(crashFile.absolutePath)
+            EngineNative.nativeSetLoadStagePath(stageFile.absolutePath)
+            EngineLog.i(
+                "EngineService",
+                "native diagnostics paths crash=${crashFile.absolutePath} stage=${stageFile.absolutePath}",
+            )
         }.onFailure { error ->
-            EngineLog.w("EngineService", "native crash log path setup failed", error)
+            EngineLog.w("EngineService", "native diagnostics path setup failed", error)
         }
         engineCore = EngineCore(this)
         profileManager = DeviceProfileManager(this)

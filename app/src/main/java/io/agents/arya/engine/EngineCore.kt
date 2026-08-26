@@ -79,8 +79,14 @@ class EngineCore(private val context: Context) {
                     modelFileBytes = file.length(),
                     isLowRamDevice = mem.lowRam,
                     modelMeta = meta,
+                    processMemoryLimitBytes = mem.processLimit,
                 ),
                 profile,
+            )
+            EngineLog.i(
+                "EngineCore",
+                "memory plan total=${mem.total / (1024 * 1024)}MB avail=${mem.avail / (1024 * 1024)}MB " +
+                    "processLimit=${mem.processLimit / (1024 * 1024)}MB file=${file.length() / (1024 * 1024)}MB plan=$plan",
             )
             when (plan) {
                 is MemoryBudget.Plan.Refuse -> {
@@ -364,7 +370,8 @@ class EngineCore(private val context: Context) {
         } else {
             info.totalMem < 3L * 1024 * 1024 * 1024
         }
-        return RamSnapshot(info.totalMem, info.availMem, low)
+        val processLimit = am.largeMemoryClass.toLong() * 1024L * 1024L
+        return RamSnapshot(info.totalMem, info.availMem, low, processLimit)
     }
 
     private fun safeError(cb: IEngineCallback, id: Int, code: Int, message: String) {
@@ -374,7 +381,12 @@ class EngineCore(private val context: Context) {
         }
     }
 
-    private data class RamSnapshot(val total: Long, val avail: Long, val lowRam: Boolean)
+    private data class RamSnapshot(
+        val total: Long,
+        val avail: Long,
+        val lowRam: Boolean,
+        val processLimit: Long,
+    )
 }
 
 class EngineLoadException(val code: Int, message: String) : Exception(message)

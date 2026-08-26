@@ -16,6 +16,8 @@ object MemoryBudget {
         val modelFileBytes: Long,
         val isLowRamDevice: Boolean,
         val modelMeta: ModelMeta? = null,
+        /** Android's per-process large-heap class in bytes; 0 means unavailable. */
+        val processMemoryLimitBytes: Long = 0L,
     )
 
     data class ModelMeta(
@@ -85,6 +87,18 @@ object MemoryBudget {
             )
         }
 
+        // System-wide free RAM is not enough evidence that :engine can survive
+        // a native load. Android also enforces a per-process heap class; keep
+        // headroom for the JVM, Binder, llama metadata, and transient buffers.
+        val processLimit = i.processMemoryLimitBytes
+        if (processLimit > 0L && i.modelFileBytes > (processLimit * 0.88)) {
+            return Plan.Refuse(
+                reasonEn = "This model exceeds the app's per-process memory budget",
+                reasonFa = "مدل از سقف حافظهٔ پردازش برنامه بزرگ‌تر است",
+                suggestSmallerModel = true,
+            )
+        }
+
         // Mobile chat never needs 4096. 4096 doubles KV + compute and is
         // what OOM-killed :engine on Huawei 1.7B after a "successful" mmap.
         val candidates = if (i.isLowRamDevice) {
@@ -95,7 +109,9 @@ object MemoryBudget {
 
         for (ctx in candidates) {
             val working = modelWorkingSet(i.modelFileBytes, ctx, i.modelMeta)
-            if (i.availRamBytes - working >= MARGIN_BYTES) {
+            val fitsSystemRam = i.availRamBytes - working >= MARGIN_BYTES
+            val fitsProcessBudget = processLimit <= 0L || working + MARGIN_BYTES <= (processLimit * 0.88)
+            if (fitsSystemRam && fitsProcessBudget) {
                 return Plan.Load(
                     ctxSize = ctx,
                     nThreads = nThreads,

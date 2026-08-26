@@ -38,6 +38,21 @@ class MemoryBudgetSingleTest {
     }
 
     @Test
+    fun perProcessBudgetRejectsModelThatCanTriggerNativeKill() {
+        val plan = MemoryBudget.plan(
+            MemoryBudget.Inputs(
+                totalRamBytes = 12L * GB,
+                availRamBytes = 6L * GB,
+                modelFileBytes = 1_224L * MB,
+                isLowRamDevice = false,
+                processMemoryLimitBytes = 1_024L * MB,
+            ),
+            MemoryBudget.DeviceProfile(bestThreads = 4),
+        )
+        assertTrue(plan is MemoryBudget.Plan.Refuse)
+    }
+
+    @Test
     fun metaFormulaUsedWhenPresent() {
         val meta = MemoryBudget.ModelMeta(nLayers = 28, nKvHeads = 8, headDim = 128, nParams = 1_700_000_000)
         val kv = MemoryBudget.kvBytes(2048, meta, 1_200L * MB)
