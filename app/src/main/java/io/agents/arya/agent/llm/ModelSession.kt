@@ -5,8 +5,9 @@ import io.agents.arya.agent.AgentConfig
 import java.io.File
 
 /**
- * Single readiness gate for chat. Never silently fall through to OpenAI
- * when the user has no key and no local GGUF.
+ * Single readiness gate for chat and voice. A non-empty preference is not enough:
+ * local readiness requires a usable GGUF file, and cloud readiness requires both
+ * a model and an API key.
  */
 sealed class ModelReadiness {
     data class Local(val config: AgentConfig, val label: String, val path: String) : ModelReadiness()
@@ -17,58 +18,113 @@ sealed class ModelReadiness {
 object ModelSession {
 
     fun resolve(context: Context): ModelReadiness {
-        val snap = ModelConfigRepository.snapshot()
+        val snapshot = ModelConfigRepository.snapshot()
         val recommended = LocalModelManager.bestSupportedModel(context)
             ?: LocalModelManager.AVAILABLE_MODELS.minByOrNull { it.minRamGb }
 
-        val localFile = snap.local.modelPath.takeIf { it.isNotBlank() }?.let { File(it) }
-        if (localFile != null && localFile.exists() && localFile.length() > 1_048_576L) {
-            return ModelReadiness.Local(
-                config = snap.toAgentConfig(temperature = 0.3, maxIterations = 8, streaming = true),
-                label = snap.local.displayName.ifBlank { localFile.nameWithoutExtension },
-                path = localFile.absolutePath,
-            )
+        // An explicitly selected, valid cloud configuration wins over a local file.
+        if (snapshot.activeMode == ActiveModelMode.CLOUD && snapshot.activeCloud.isConfigured) {
+            return cloud(snapshot)
         }
 
-        val downloaded = LocalModelManager.catalog(context)
-            .filter { it.isDownloaded && it.isSupported }
-            .maxByOrNull { it.model.minRamGb }
-            ?: LocalModelManager.findAnyGguf(context)?.let { found ->
-                LocalModelManager.CatalogEntry(
-                    model = LocalModelManager.AVAILABLE_MODELS.firstOrNull {
-                        found.name.contains(it.fileName.substringBefore(".gguf"), ignoreCase = true)
-                    } ?: LocalModelManager.AVAILABLE_MODELS.first(),
-                    isDownloaded = true,
-                    isSupported = true,
-                    path = found.absolutePath,
+        val local = resolveLocal(context, snapshot)
+        if (local != null) {
+            // Repair persisted state when a stale FUSE/external path resolves to an
+            // internal managed copy. This keeps future launches on the safe path.
+            if (snapshot.local.modelPath != local.path || snapshot.activeMode != ActiveModelMode.LOCAL) {
+                ModelConfigRepository.saveLocalDefault(
+                    modelPath = local.path,
+                    modelId = local.model.id,
+                    activateNow = true,
                 )
             }
-        if (downloaded?.path != null) {
-            ModelConfigRepository.saveLocalDefault(
-                modelPath = downloaded.path,
-                modelId = downloaded.model.id,
-                activateNow = true,
-            )
             val healed = ModelConfigRepository.snapshot()
             return ModelReadiness.Local(
-                config = healed.toAgentConfig(temperature = 0.3, maxIterations = 8, streaming = true),
-                label = downloaded.model.displayName,
-                path = downloaded.path,
+                config = healed.toLocalAgentConfig(
+                    temperature = 0.3,
+                    maxIterations = 8,
+                    streaming = true,
+                    modelPath = local.path,
+                    modelId = local.model.id,
+                ),
+                label = local.model.displayName,
+                path = local.path,
             )
         }
 
-        if (snap.activeCloud.isConfigured) {
-            return ModelReadiness.Cloud(
-                config = snap.toAgentConfig(temperature = 0.4, maxIterations = 10, streaming = true),
-                label = snap.activeCloud.modelName.ifBlank { "Cloud" },
-            )
+        // If local mode has no usable file, a valid cloud config is still a safer
+        // fallback than silently constructing an empty OPENAI client.
+        if (snapshot.activeCloud.isConfigured) {
+            return cloud(snapshot)
         }
 
         return ModelReadiness.NeedsSetup(
-            reason = "Download a local model to use Arya offline. Cloud needs an API key.",
+            reason = "Download a local GGUF model to use Arya offline, or configure a cloud API key.",
             recommended = recommended,
         )
     }
+
+    private fun cloud(snapshot: ResolvedModelConfig): ModelReadiness.Cloud {
+        return ModelReadiness.Cloud(
+            config = snapshot.toCloudAgentConfig(
+                temperature = 0.4,
+                maxIterations = 10,
+                streaming = true,
+            ),
+            label = snapshot.activeCloud.modelName.ifBlank { "Cloud" },
+        )
+    }
+
+    private fun resolveLocal(
+        context: Context,
+        snapshot: ResolvedModelConfig,
+    ): LocalCandidate? {
+        val configured = snapshot.local.modelPath.takeIf { it.isNotBlank() }?.let(::File)
+        if (configured != null && LocalModelManager.isUsableModelFile(configured)) {
+            val model = modelForPath(snapshot, configured)
+            if (model != null) return LocalCandidate(model, configured.absolutePath)
+        }
+
+        val configuredModel = LocalModelManager.AVAILABLE_MODELS.firstOrNull { model ->
+            snapshot.local.modelId.equals(model.id, ignoreCase = true) ||
+                snapshot.local.modelPath.endsWith(model.fileName, ignoreCase = true)
+        }
+        if (configuredModel != null) {
+            LocalModelManager.getModelPath(context, configuredModel)?.let { path ->
+                return LocalCandidate(configuredModel, path)
+            }
+        }
+
+        val catalogCandidate = LocalModelManager.catalog(context)
+            .asSequence()
+            .filter { it.isDownloaded && it.isSupported && it.path != null }
+            .maxByOrNull { it.model.minRamGb }
+        if (catalogCandidate?.path != null) {
+            return LocalCandidate(catalogCandidate.model, catalogCandidate.path)
+        }
+
+        val recovered = LocalModelManager.findAnyGguf(context) ?: return null
+        val recoveredModel = LocalModelManager.AVAILABLE_MODELS.firstOrNull {
+            recovered.name.contains(it.fileName.substringBefore(".gguf"), ignoreCase = true)
+        } ?: LocalModelManager.AVAILABLE_MODELS.firstOrNull {
+            it.minRamGb <= LocalModelManager.getDeviceRamGb(context)
+        } ?: return null
+        if (!LocalModelManager.isModelSupportedOnDevice(context, recoveredModel)) return null
+        return LocalCandidate(recoveredModel, recovered.absolutePath)
+    }
+
+    private fun modelForPath(snapshot: ResolvedModelConfig, file: File): LocalModelManager.ModelInfo? {
+        return LocalModelManager.AVAILABLE_MODELS.firstOrNull {
+            snapshot.local.modelId.equals(it.id, ignoreCase = true) ||
+                file.name.equals(it.fileName, ignoreCase = true) ||
+                file.name.contains(it.fileName.substringBefore(".gguf"), ignoreCase = true)
+        } ?: LocalModelManager.customModel()?.takeIf { it.fileName.equals(file.name, ignoreCase = true) }
+    }
+
+    private data class LocalCandidate(
+        val model: LocalModelManager.ModelInfo,
+        val path: String,
+    )
 
     fun label(readiness: ModelReadiness): String = when (readiness) {
         is ModelReadiness.Local -> readiness.label

@@ -1,10 +1,12 @@
 package io.agents.arya.agent.llm
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.RandomAccessFile
 
 class LocalModelManagerTest {
 
@@ -26,6 +28,20 @@ class LocalModelManagerTest {
 
     @get:Rule
     val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun `usable model requires a nontrivial GGUF header`() {
+        val valid = temporaryFolder.newFile("valid.gguf")
+        valid.outputStream().use { it.write(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte())) }
+        RandomAccessFile(valid, "rw").use { it.setLength(1_048_576L) }
+
+        val invalid = temporaryFolder.newFile("invalid.gguf")
+        invalid.outputStream().use { it.write("<html>not a model</html>".toByteArray()) }
+        RandomAccessFile(invalid, "rw").use { it.setLength(1_048_576L) }
+
+        assertTrue(LocalModelManager.isUsableModelFile(valid))
+        assertFalse(LocalModelManager.isUsableModelFile(invalid))
+    }
 
     @Test
     fun `model directory uses external app storage when it can be created`() {

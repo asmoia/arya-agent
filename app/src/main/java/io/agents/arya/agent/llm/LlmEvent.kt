@@ -5,7 +5,11 @@ sealed interface LlmEvent {
     data class ToolCallStart(val name: String?) : LlmEvent
     data class ToolCallArgsDelta(val fragment: String) : LlmEvent
     data class ToolCall(val name: String, val argsJson: String) : LlmEvent
-    data class Finished(val reason: String, val matchedStop: String? = null) : LlmEvent
+    data class Finished(
+        val reason: String,
+        val matchedStop: String? = null,
+        val text: String = "",
+    ) : LlmEvent
     data class Error(val code: Int, val message: String) : LlmEvent
     data class Status(val message: String) : LlmEvent
 }

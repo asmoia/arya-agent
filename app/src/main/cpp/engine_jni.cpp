@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <errno.h>
 #include <stdio.h>
+#include <exception>
 
 #include "llama.h"
 
@@ -252,6 +253,7 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     JNIEnv * env, jobject, jstring model_path, jint n_ctx, jint n_threads, jobject progress_cb)
 {
+    try {
     install_crash_handler();
     const char * path = env->GetStringUTFChars(model_path, nullptr);
     if (!path) return -1;
@@ -319,6 +321,13 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
         llama_batch wb = llama_batch_get_one(warm.data(), n);
         int wr = llama_decode(ctx, wb);
         LOGI("warmup decode rc=%d", wr);
+        if (wr != 0) {
+            LOGE("warmup decode failed rc=%d; refusing half-initialized model", wr);
+            llama_free(ctx);
+            llama_model_free(model);
+            env->ReleaseStringUTFChars(model_path, path);
+            return -6;
+        }
         llama_memory_clear(llama_get_memory(ctx), true);
     }
     log_rss("after-warmup");
@@ -335,6 +344,13 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
         static_cast<int>(model_size * 8.0 / 4.3 / 1e9), false
     };
     return reinterpret_cast<jlong>(mc);
+    } catch (const std::exception& e) {
+        LOGE("nativeLoadModel exception: %s", e.what());
+        return -7;
+    } catch (...) {
+        LOGE("nativeLoadModel unknown exception");
+        return -8;
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -409,6 +425,7 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     jstring stop_json, jlong deadline_ms, jlong token_deadline_ms,
     jobject stream_callback)
 {
+    try {
     auto * mc = handle_to_ctx(handle);
     if (!mc || !mc->ctx || !mc->vocab) {
         return env->NewStringUTF("{\"error\": \"invalid_handle\"}");
@@ -579,6 +596,13 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
         gen_ms > 0 ? gen_tokens / (gen_ms / 1000.0) : 0, finish_reason.c_str());
 
     return env->NewStringUTF(stats);
+    } catch (const std::exception& e) {
+        LOGE("nativeGenerateStream exception: %s", e.what());
+        return env->NewStringUTF("{\"error\":\"native_exception\"}");
+    } catch (...) {
+        LOGE("nativeGenerateStream unknown exception");
+        return env->NewStringUTF("{\"error\":\"native_exception\"}");
+    }
 }
 
 extern "C" JNIEXPORT jstring JNICALL

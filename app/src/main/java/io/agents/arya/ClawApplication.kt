@@ -4,7 +4,6 @@ import io.agents.arya.agent.DefaultAgentService
 import io.agents.arya.engine.EngineClient
 import io.agents.arya.agent.llm.InferenceTelemetryCollector
 import io.agents.arya.base.BaseApp
-import io.agents.arya.channel.ChannelManager
 import io.agents.arya.tool.ToolRegistry
 import io.agents.arya.utils.AppLogStore
 import io.agents.arya.utils.KVUtils
@@ -89,11 +88,8 @@ class ClawApplication : BaseApp() {
     private fun registerNetworkCallback() {
         networkListener = object : NetworkUtils.OnNetworkStatusChangedListener {
             override fun onConnected(networkType: NetworkUtils.NetworkType?) {
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    if (KVUtils.hasLlmConfig()) {
-                        ChannelManager.reconnectIfNeeded()
-                    }
-                }, 2000)
+                // Remote message channels are frozen in v1.2.5. Do not restart
+                // them implicitly on every network transition.
             }
 
             override fun onDisconnected() {

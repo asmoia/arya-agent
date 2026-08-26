@@ -11,7 +11,6 @@ import io.agents.arya.agent.AgentConfig
 import io.agents.arya.agent.llm.ModelConfigRepository
 import io.agents.arya.channel.Channel
 import io.agents.arya.channel.ChannelManager
-import io.agents.arya.channel.ChannelSetup
 import io.agents.arya.service.ForegroundService
 import io.agents.arya.floating.FloatingCircleManager
 import io.agents.arya.service.KeepAliveJobService
@@ -32,8 +31,6 @@ class AppViewModel : ViewModel() {
         agentConfigProvider = { getAgentConfig() },
         onTaskFinished = { /* refresh */ }
     )
-
-    private val channelSetup = ChannelSetup(taskOrchestrator = taskOrchestrator)
 
     val taskSessionStore: TaskSessionStore
         get() = taskOrchestrator.taskSessionStore
@@ -101,7 +98,8 @@ class AppViewModel : ViewModel() {
         acquireScreenWakeLock()
         KeepAliveJobService.cancel(ClawApplication.instance)
         ForegroundService.syncToBackgroundState(ClawApplication.instance)
-        channelSetup.setup()
+        // Remote message channels are frozen in v1.2.5. Installed-app
+        // accessibility automation remains available through task tools.
     }
 
 

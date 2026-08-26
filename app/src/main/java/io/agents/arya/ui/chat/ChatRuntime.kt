@@ -51,7 +51,11 @@ class ChatRuntime(
         _uiState.value = _uiState.value.copy(messages = loaded)
     }
 
-    fun send(userText: String, agentConfig: AgentConfig) {
+    fun send(
+        userText: String,
+        agentConfig: AgentConfig,
+        onTerminal: ((LlmEvent) -> Unit)? = null,
+    ) {
         if (userText.isBlank()) return
 
         lastUserPrompt = userText
@@ -66,7 +70,7 @@ class ChatRuntime(
             streamingReasoning = null,
             activeToolName = null,
             draftText = "",
-            statusLine = "Starting local engine…",
+            statusLine = context.getString(io.agents.arya.R.string.chat_starting_engine),
             loadPercent = 0,
         )
 
@@ -85,8 +89,17 @@ class ChatRuntime(
         }
 
         streamJob = scope.launch(Dispatchers.IO) {
+            var activeClient: LlmClient? = null
+            var terminalReported = false
+            fun reportTerminal(event: LlmEvent) {
+                if (!terminalReported) {
+                    terminalReported = true
+                    onTerminal?.invoke(event)
+                }
+            }
             try {
                 val client: LlmClient = LlmClientFactory.create(context, agentConfig, engineClient)
+                activeClient = client
                 val chatMsgs = updatedMsgs.map { m ->
                     ChatMsg(
                         role = when (m.role) {
@@ -148,6 +161,7 @@ class ChatRuntime(
                             _uiState.value = _uiState.value.copy(statusLine = event.message)
                         }
                         is LlmEvent.Error -> {
+                            reportTerminal(event)
                             _uiState.value = _uiState.value.copy(
                                 isStreaming = false,
                                 errorMessage = event.message,
@@ -156,6 +170,7 @@ class ChatRuntime(
                             )
                         }
                         is LlmEvent.Finished -> {
+                            reportTerminal(event.copy(text = currentAssistantText))
                             _uiState.value = _uiState.value.copy(
                                 isStreaming = false,
                                 activeToolName = null,
@@ -168,13 +183,19 @@ class ChatRuntime(
                     }
                 }
             } catch (e: Exception) {
+                val error = LlmEvent.Error(
+                    code = 6,
+                    message = e.message ?: context.getString(io.agents.arya.R.string.chat_model_unreachable),
+                )
+                reportTerminal(error)
                 _uiState.value = _uiState.value.copy(
                     isStreaming = false,
-                    errorMessage = e.message ?: "Could not reach the model. Download a local GGUF or add a cloud key.",
+                    errorMessage = error.message,
                     statusLine = null,
                     loadPercent = null,
                 )
             } finally {
+                activeClient?.close()
                 progressJob.cancel()
             }
         }
@@ -182,6 +203,7 @@ class ChatRuntime(
 
     fun stopStreaming() {
         streamJob?.cancel()
+        scope.launch(Dispatchers.IO) { engineClient.cancelActive() }
         _uiState.value = _uiState.value.copy(
             isStreaming = false,
             activeToolName = null,

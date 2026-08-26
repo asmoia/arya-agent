@@ -59,4 +59,27 @@ class ExternalAutomationContractTest {
         assertNull(ExternalAutomationContract.parse("other.action") { null })
         assertNull(ExternalAutomationContract.parse(ExternalAutomationContract.ACTION_RUN_TASK) { null })
     }
+
+    @Test
+    fun `parse rejects oversized payload`() {
+        val oversized = "x".repeat(ExternalAutomationContract.MAX_TEXT_CHARS + 1)
+        assertNull(
+            ExternalAutomationContract.parse(ExternalAutomationContract.ACTION_RUN_TASK) { key ->
+                if (key == ExternalAutomationContract.EXTRA_TASK) oversized else null
+            },
+        )
+    }
+
+    @Test
+    fun `parse drops invalid callback metadata`() {
+        val request = ExternalAutomationContract.parse(ExternalAutomationContract.ACTION_RUN_CHAT) { key ->
+            mapOf(
+                ExternalAutomationContract.EXTRA_CHAT to "hello",
+                ExternalAutomationContract.EXTRA_RETURN_ACTION to "bad action",
+                ExternalAutomationContract.EXTRA_RETURN_PACKAGE to "not a package",
+            )[key]
+        }
+        assertNull(request!!.returnAction)
+        assertNull(request.returnPackage)
+    }
 }

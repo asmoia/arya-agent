@@ -24,6 +24,10 @@ import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
 import io.agents.arya.AppCapabilityCoordinator
 import io.agents.arya.ClawApplication
+import io.agents.arya.TaskEvent
+import io.agents.arya.agent.llm.LlmEvent
+import io.agents.arya.automation.ExternalAutomationContract
+import io.agents.arya.automation.ExternalAutomationEntrypoint
 import io.agents.arya.R
 import io.agents.arya.TaskSessionStore
 import io.agents.arya.agent.llm.LocalModelManager
@@ -56,8 +60,9 @@ class ComposeChatActivity : ComponentActivity() {
     private var showCaps by mutableStateOf(false)
     private var capTick by mutableStateOf(0)
     private var readiness by mutableStateOf<ModelReadiness>(
-        ModelReadiness.NeedsSetup("Checking models…", null),
+        ModelReadiness.NeedsSetup("", null),
     )
+    private var handledExternalLaunchKey: String? = null
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -146,7 +151,7 @@ class ComposeChatActivity : ComponentActivity() {
                         cancelVoiceInput()
                     },
                     onStopStreaming = { chatRuntime.stopStreaming() },
-                    onRequestStopTask = { taskSessionStore.requestStop() },
+                    onRequestStopTask = { ClawApplication.appViewModelInstance.stopTask() },
                     onOpenModels = { showModels = true },
                     onOpenSettings = {
                         startActivity(Intent(this, SettingsActivity::class.java))
@@ -195,6 +200,13 @@ class ComposeChatActivity : ComponentActivity() {
                 }
             }
         }
+        handleExternalIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleExternalIntent(intent)
     }
 
     override fun onResume() {
@@ -205,7 +217,13 @@ class ComposeChatActivity : ComponentActivity() {
     }
 
     private fun refreshReadiness() {
-        readiness = ModelSession.resolve(this)
+        readiness = ModelSession.resolve(this).let { resolved ->
+            if (resolved is ModelReadiness.NeedsSetup && resolved.reason.isBlank()) {
+                ModelReadiness.NeedsSetup(getString(R.string.model_checking), null)
+            } else {
+                resolved
+            }
+        }
     }
 
     private fun prewarmIfPossible() {
@@ -231,6 +249,119 @@ class ComposeChatActivity : ComponentActivity() {
             is ModelReadiness.Cloud -> chatRuntime.send(text, gate.config)
         }
     }
+
+    private fun handleExternalIntent(incoming: Intent?) {
+        if (incoming == null) return
+        val task = incoming.getStringExtra(ExternalAutomationEntrypoint.EXTRA_TASK)?.trim().orEmpty()
+        val chat = incoming.getStringExtra(ExternalAutomationEntrypoint.EXTRA_CHAT)?.trim().orEmpty()
+        if (task.isBlank() && chat.isBlank()) return
+
+        val text: String
+        val mode: ExternalAutomationContract.Mode
+        if (incoming.action == ExternalAutomationContract.ACTION_RUN_TASK ||
+            (task.isNotBlank() && chat.isBlank())
+        ) {
+            text = task.ifBlank { chat }
+            mode = ExternalAutomationContract.Mode.TASK
+        } else {
+            text = chat.ifBlank { task }
+            mode = ExternalAutomationContract.Mode.CHAT
+        }
+        if (text.isBlank()) return
+
+        val request = ExternalLaunch(
+            mode = mode,
+            text = text,
+            requestId = incoming.getStringExtra(ExternalAutomationEntrypoint.EXTRA_EXTERNAL_REQUEST_ID),
+            returnAction = incoming.getStringExtra(ExternalAutomationEntrypoint.EXTRA_EXTERNAL_RETURN_ACTION),
+            returnPackage = incoming.getStringExtra(ExternalAutomationEntrypoint.EXTRA_EXTERNAL_RETURN_PACKAGE),
+        )
+        val key = listOf(request.mode, request.requestId, request.text).joinToString("|")
+        if (handledExternalLaunchKey == key) return
+        handledExternalLaunchKey = key
+
+        when (request.mode) {
+            ExternalAutomationContract.Mode.CHAT -> dispatchExternalChat(request)
+            ExternalAutomationContract.Mode.TASK -> dispatchExternalTask(request)
+        }
+    }
+
+    private fun dispatchExternalChat(request: ExternalLaunch) {
+        val gate = ModelSession.resolve(this)
+        readiness = gate
+        when (gate) {
+            is ModelReadiness.NeedsSetup -> {
+                chatRuntime.setDraft(request.text)
+                showModels = true
+                notifyExternal(request, ExternalAutomationContract.STATUS_FAILED, error = gate.reason)
+            }
+            is ModelReadiness.Local -> chatRuntime.send(request.text, gate.config) { event ->
+                notifyExternalFromChat(request, event)
+            }
+            is ModelReadiness.Cloud -> chatRuntime.send(request.text, gate.config) { event ->
+                notifyExternalFromChat(request, event)
+            }
+        }
+    }
+
+    private fun dispatchExternalTask(request: ExternalLaunch) {
+        val taskId = request.requestId ?: "external-${System.currentTimeMillis()}"
+        ClawApplication.appViewModelInstance.startTask(request.text, taskId) { event ->
+            when (event) {
+                is TaskEvent.Completed -> notifyExternal(
+                    request,
+                    ExternalAutomationContract.STATUS_COMPLETED,
+                    result = event.answer,
+                )
+                is TaskEvent.Failed -> notifyExternal(
+                    request,
+                    ExternalAutomationContract.STATUS_FAILED,
+                    error = event.error,
+                )
+                TaskEvent.Cancelled -> notifyExternal(request, ExternalAutomationContract.STATUS_CANCELLED)
+                TaskEvent.Blocked -> notifyExternal(request, ExternalAutomationContract.STATUS_BLOCKED)
+                else -> Unit
+            }
+        }
+    }
+
+    private fun notifyExternalFromChat(request: ExternalLaunch, event: LlmEvent) {
+        when (event) {
+            is LlmEvent.Finished -> notifyExternal(
+                request,
+                ExternalAutomationContract.STATUS_COMPLETED,
+                result = event.text.ifBlank { "completed" },
+            )
+            is LlmEvent.Error -> notifyExternal(request, ExternalAutomationContract.STATUS_FAILED, error = event.message)
+            else -> Unit
+        }
+    }
+
+    private fun notifyExternal(
+        request: ExternalLaunch,
+        status: String,
+        result: String? = null,
+        error: String? = null,
+    ) {
+        ExternalAutomationContract.sendCallback(
+            context = this,
+            returnAction = request.returnAction,
+            requestId = request.requestId,
+            status = status,
+            result = result,
+            error = error,
+            returnPackage = request.returnPackage,
+            mode = request.mode,
+        )
+    }
+
+    private data class ExternalLaunch(
+        val mode: ExternalAutomationContract.Mode,
+        val text: String,
+        val requestId: String?,
+        val returnAction: String?,
+        val returnPackage: String?,
+    )
 
     private fun toggleVoice() {
         if (isVoiceListening) stopVoiceInput() else startVoiceInput()

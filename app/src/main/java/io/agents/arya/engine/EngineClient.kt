@@ -43,6 +43,7 @@ class EngineClient(private val app: Context) {
     private val crashTimestamps = ConcurrentHashMap<String, MutableList<Long>>()
     private val quarantinedModels = ConcurrentHashMap.newKeySet<String>()
     private val nextLoadRequestId = AtomicInteger(1)
+    private val activeGenerateRequestId = AtomicInteger(-1)
     private val pendingBind = AtomicReference<CancellableContinuation<IEngine>?>(null)
     private val loadGate = Mutex()
     private val deathListeners = CopyOnWriteArrayList<(String) -> Unit>()
@@ -53,6 +54,10 @@ class EngineClient(private val app: Context) {
         val model = activeModelPath
         if (model != null) recordCrash(model)
         engineBinder = null
+        activeGenerateRequestId.set(-1)
+        pendingBind.getAndSet(null)?.let { waiter ->
+            if (waiter.isActive) waiter.resumeWithException(IllegalStateException("Engine process died"))
+        }
         deathListeners.forEach { listener ->
             try {
                 listener("Engine process died")
@@ -64,8 +69,9 @@ class EngineClient(private val app: Context) {
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             try {
-                service?.linkToDeath(deathRecipient, 0)
-                val bound = IEngine.Stub.asInterface(service)
+                val remote = service ?: throw IllegalStateException("EngineService returned a null binder")
+                remote.linkToDeath(deathRecipient, 0)
+                val bound = IEngine.Stub.asInterface(remote)
                 engineBinder = bound
                 val model = activeModelPath
                 _state.value = if (model.isNullOrBlank()) {
@@ -86,6 +92,7 @@ class EngineClient(private val app: Context) {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             engineBinder = null
+            activeGenerateRequestId.set(-1)
             _state.value = EngineState.Disconnected
             pendingBind.getAndSet(null)?.let { waiter ->
                 if (waiter.isActive) {
@@ -136,11 +143,18 @@ class EngineClient(private val app: Context) {
         return try {
             withTimeout(240_000L) {
                 suspendCancellableCoroutine { cont ->
+                    val onDied: (String) -> Unit = { reason ->
+                        if (cont.isActive) {
+                            cont.resumeWithException(IllegalStateException(reason))
+                        }
+                    }
+                    deathListeners.add(onDied)
                     val cb = object : IEngineCallback.Stub() {
                         override fun onDelta(id: Int, textDelta: String?) {}
                         override fun onDone(id: Int, statsJson: String?) {}
                         override fun onError(id: Int, code: Int, message: String?) {
                             if (id != requestId && id != 0) return
+                            deathListeners.remove(onDied)
                             if (cont.isActive) {
                                 cont.resumeWithException(
                                     IllegalStateException(message ?: EngineError.message(code)),
@@ -154,6 +168,7 @@ class EngineClient(private val app: Context) {
                         }
                         override fun onLoadResult(id: Int, infoJson: String?) {
                             if (id != requestId && id != 0) return
+                            deathListeners.remove(onDied)
                             _loadProgress.value = EngineLoadProgress(100, "Model ready")
                             _state.value = EngineState.Ready(modelPath)
                             if (cont.isActive) cont.resume(infoJson ?: "{}")
@@ -164,9 +179,11 @@ class EngineClient(private val app: Context) {
                         EngineLog.i("EngineClient", "requestLoad dispatch id=$requestId")
                         binder.requestLoad(modelPath, ctxSize, nThreads, requestId)
                     } catch (e: Exception) {
+                        deathListeners.remove(onDied)
                         if (cont.isActive) cont.resumeWithException(e)
                     }
                     cont.invokeOnCancellation {
+                        deathListeners.remove(onDied)
                         try {
                             binder.cancel(requestId)
                         } catch (_: Exception) {
@@ -195,12 +212,14 @@ class EngineClient(private val app: Context) {
             }
 
             override fun onDone(requestId: Int, statsJson: String?) {
+                activeGenerateRequestId.compareAndSet(requestId, -1)
                 trySend(EngineEvent.Done(statsJson ?: "{}"))
                 _state.value = EngineState.Ready(activeModelPath.orEmpty())
                 close()
             }
 
             override fun onError(requestId: Int, code: Int, message: String?) {
+                activeGenerateRequestId.compareAndSet(requestId, -1)
                 if (code == EngineError.ERR_NATIVE) {
                     _state.value = EngineState.Crashed(message ?: "native")
                 } else {
@@ -236,7 +255,9 @@ class EngineClient(private val app: Context) {
             return@callbackFlow
         }
         EngineLog.i("EngineClient", "generate dispatched id=$reqId")
+        if (reqId >= 0) activeGenerateRequestId.set(reqId)
         if (reqId < 0) {
+            activeGenerateRequestId.set(-1)
             deathListeners.remove(onDied)
             trySend(EngineEvent.Failed(EngineError.ERR_BUSY, EngineError.message(EngineError.ERR_BUSY)))
             _state.value = EngineState.Ready(activeModelPath.orEmpty())
@@ -245,6 +266,7 @@ class EngineClient(private val app: Context) {
 
         awaitClose {
             deathListeners.remove(onDied)
+            if (reqId >= 0) activeGenerateRequestId.compareAndSet(reqId, -1)
             try {
                 if (reqId >= 0) binder.cancel(reqId)
             } catch (_: Exception) {
@@ -253,8 +275,10 @@ class EngineClient(private val app: Context) {
     }
 
     suspend fun cancelActive() {
+        val requestId = activeGenerateRequestId.getAndSet(-1)
+        if (requestId < 0) return
         try {
-            engineBinder?.cancel(0)
+            engineBinder?.cancel(requestId)
         } catch (_: Exception) {
         }
     }
@@ -269,8 +293,11 @@ class EngineClient(private val app: Context) {
     suspend fun countTokens(text: String): Int = engineBinder?.countTokens(text) ?: 0
 
     fun unload() {
+        val requestId = activeGenerateRequestId.getAndSet(-1)
         try {
-            engineBinder?.unload()
+            val binder = engineBinder
+            if (binder != null && requestId >= 0) binder.cancel(requestId)
+            binder?.unload()
         } catch (_: Exception) {
         }
         _state.value = EngineState.Disconnected

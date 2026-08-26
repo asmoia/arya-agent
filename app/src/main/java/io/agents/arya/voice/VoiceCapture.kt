@@ -12,6 +12,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.content.ContextCompat
 import io.agents.arya.R
+import io.agents.arya.utils.KVUtils
 
 /**
  * Shared SpeechRecognizer wrapper used by ComposeChatActivity and OverlayHostActivity.
@@ -165,7 +166,7 @@ class VoiceCapture(
     }
 
     fun buildListenIntent(): Intent {
-        val tag = java.util.Locale.getDefault().toLanguageTag()
+        val tag = VoiceLocale.resolveTag(KVUtils.getVoiceLocale())
         return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag)

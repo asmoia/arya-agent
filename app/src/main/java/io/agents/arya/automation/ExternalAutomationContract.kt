@@ -40,6 +40,14 @@ object ExternalAutomationContract {
     const val STATUS_REJECTED = "rejected"
 
     private const val TAG = "ExternalAutomation"
+    const val MAX_TEXT_CHARS = 16_000
+    private const val MAX_BASE64_CHARS = 24_000
+    private const val MAX_REQUEST_ID_CHARS = 128
+    private const val MAX_RETURN_ACTION_CHARS = 128
+    private const val MAX_RETURN_PACKAGE_CHARS = 256
+    private const val MAX_CALLBACK_ERROR_CHARS = 2_000
+    private val ACTION_PATTERN = Regex("^[A-Za-z0-9_.-]{1,$MAX_RETURN_ACTION_CHARS}$")
+    private val PACKAGE_PATTERN = Regex("^[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+$")
 
     enum class Mode {
         TASK,
@@ -71,9 +79,11 @@ object ExternalAutomationContract {
         return Request(
             mode = mode,
             text = text,
-            requestId = extra(EXTRA_REQUEST_ID)?.trim()?.takeIf { it.isNotEmpty() },
-            returnAction = extra(EXTRA_RETURN_ACTION)?.trim()?.takeIf { it.isNotEmpty() },
-            returnPackage = extra(EXTRA_RETURN_PACKAGE)?.trim()?.takeIf { it.isNotEmpty() },
+            requestId = boundedMetadata(extra(EXTRA_REQUEST_ID), MAX_REQUEST_ID_CHARS),
+            returnAction = boundedMetadata(extra(EXTRA_RETURN_ACTION), MAX_RETURN_ACTION_CHARS)
+                ?.takeIf { ACTION_PATTERN.matches(it) },
+            returnPackage = boundedMetadata(extra(EXTRA_RETURN_PACKAGE), MAX_RETURN_PACKAGE_CHARS)
+                ?.takeIf { PACKAGE_PATTERN.matches(it) },
         )
     }
 
@@ -87,15 +97,21 @@ object ExternalAutomationContract {
         returnPackage: String? = null,
         mode: Mode? = null,
     ) {
-        if (returnAction.isNullOrBlank()) return
+        val action = returnAction?.trim()
+        val packageName = returnPackage?.trim()
+        if (action.isNullOrBlank() || packageName.isNullOrBlank()) return
+        if (!ACTION_PATTERN.matches(action) || !PACKAGE_PATTERN.matches(packageName)) {
+            XLog.w(TAG, "Skipped callback with invalid destination")
+            return
+        }
         try {
-            val callback = Intent(returnAction).apply {
-                returnPackage?.takeIf { it.isNotBlank() }?.let { setPackage(it) }
-                requestId?.let { putExtra(EXTRA_REQUEST_ID, it) }
+            val callback = Intent(action).apply {
+                setPackage(packageName)
+                requestId?.take(MAX_REQUEST_ID_CHARS)?.let { putExtra(EXTRA_REQUEST_ID, it) }
                 putExtra(EXTRA_STATUS, status)
                 mode?.let { putExtra(EXTRA_MODE, it.name.lowercase()) }
-                result?.let { putExtra(EXTRA_RESULT, it) }
-                error?.let { putExtra(EXTRA_ERROR, it) }
+                result?.take(MAX_TEXT_CHARS)?.let { putExtra(EXTRA_RESULT, it) }
+                error?.take(MAX_CALLBACK_ERROR_CHARS)?.let { putExtra(EXTRA_ERROR, it) }
             }
             context.sendBroadcast(callback)
         } catch (e: Exception) {
@@ -105,16 +121,28 @@ object ExternalAutomationContract {
 
     private fun decodeBase64(value: String?): String? {
         val encoded = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (encoded.length > MAX_BASE64_CHARS) return null
         return try {
-            String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8).trim()
+            String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8)
+                .trim()
+                .takeIf { it.isNotBlank() && it.length <= MAX_TEXT_CHARS }
         } catch (_: IllegalArgumentException) {
             null
         }
     }
 
     private fun firstNonBlank(first: String?, second: String?): String? {
-        if (!first.isNullOrBlank()) return first.trim()
-        if (!second.isNullOrBlank()) return second.trim()
-        return null
+        return listOf(first, second)
+            .asSequence()
+            .mapNotNull { boundedPayload(it) }
+            .firstOrNull()
     }
+
+    private fun boundedPayload(value: String?): String? = value
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && it.length <= MAX_TEXT_CHARS }
+
+    private fun boundedMetadata(value: String?, maxChars: Int): String? = value
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() && it.length <= maxChars }
 }

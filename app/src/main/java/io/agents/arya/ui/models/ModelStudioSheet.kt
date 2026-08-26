@@ -24,8 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.agents.arya.R
 import io.agents.arya.agent.llm.LocalModelManager
 import io.agents.arya.agent.llm.ModelDownloadHub
 import io.agents.arya.agent.llm.ModelReadiness
@@ -57,18 +59,18 @@ fun ModelStudioSheet(
                 .clip(CircleShape)
                 .background(palette.hairline),
         )
-        Text("Models", fontSize = 28.sp, fontWeight = FontWeight.SemiBold, color = palette.text)
+        Text(stringResource(R.string.models_title), fontSize = 28.sp, fontWeight = FontWeight.SemiBold, color = palette.text)
         Spacer(Modifier.height(4.dp))
         Text(
-            "On-device GGUF · this phone reports ${ramGb} GB RAM",
+            stringResource(R.string.models_ram_subtitle, ramGb),
             fontSize = 14.sp,
             color = palette.textSecondary,
         )
         Spacer(Modifier.height(6.dp))
         Text(
             when (readiness) {
-                is ModelReadiness.Local -> "Active · ${readiness.label}"
-                is ModelReadiness.Cloud -> "Active · Cloud ${readiness.label}"
+                is ModelReadiness.Local -> stringResource(R.string.model_active_local, readiness.label)
+                is ModelReadiness.Cloud -> stringResource(R.string.model_active_cloud, readiness.label)
                 is ModelReadiness.NeedsSetup -> readiness.reason
             },
             fontSize = 14.sp,
@@ -89,7 +91,7 @@ fun ModelStudioSheet(
 
         Spacer(Modifier.height(12.dp))
         Text(
-            "Downloads continue in the background. You can leave this screen.",
+            stringResource(R.string.models_background_downloads),
             fontSize = 12.sp,
             color = palette.textTertiary,
         )
@@ -118,24 +120,25 @@ private fun ModelCard(
             Column(Modifier.weight(1f)) {
                 Text(entry.model.displayName, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = palette.text)
                 Text(
-                    buildString {
-                        append("%.1f GB".format(entry.model.sizeBytes / 1_000_000_000.0))
-                        append(" · ")
-                        append("${entry.model.minRamGb}+ GB RAM")
-                        if (!entry.isSupported) append(" · this phone is below the floor")
-                    },
+                    stringResource(
+                        R.string.model_card_specs,
+                        "%.1f".format(entry.model.sizeBytes / 1_000_000_000.0),
+                        entry.model.minRamGb,
+                    ) + if (!entry.isSupported) stringResource(R.string.model_card_below_floor) else "",
                     fontSize = 13.sp,
                     color = palette.textSecondary,
                 )
             }
+            val downloadAction = stringResource(R.string.model_action_download)
+            val useAction = stringResource(R.string.model_action_use)
             val action = when {
-                running -> "Downloading"
-                entry.isDownloaded && entry.isSupported -> "Use"
-                entry.isDownloaded -> "Installed"
-                entry.isSupported -> "Download"
-                else -> "Too large"
+                running -> stringResource(R.string.model_action_downloading)
+                entry.isDownloaded && entry.isSupported -> useAction
+                entry.isDownloaded -> stringResource(R.string.model_action_installed)
+                entry.isSupported -> downloadAction
+                else -> stringResource(R.string.model_action_too_large)
             }
-            val clickable = (action == "Download" || action == "Use") && !running
+            val clickable = (action == downloadAction || action == useAction) && !running
             Text(
                 text = action,
                 color = if (clickable) palette.accent else palette.textTertiary,
@@ -145,16 +148,16 @@ private fun ModelCard(
                     .clip(RoundedCornerShape(14.dp))
                     .background(if (clickable) palette.accentSoft else palette.canvas)
                     .clickable(enabled = clickable) {
-                        if (action == "Download") onDownload() else onActivate()
+                        if (action == downloadAction) onDownload() else onActivate()
                     }
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
 
-        if (running && job != null) {
+        job?.takeIf { running }?.let { activeJob ->
             Spacer(Modifier.height(12.dp))
             LinearProgressIndicator(
-                progress = { job.progress },
+                progress = { activeJob.progress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
@@ -164,16 +167,20 @@ private fun ModelCard(
             )
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${job.percent}%", fontSize = 12.sp, color = palette.textSecondary)
-                val mb = job.bytesDownloaded / 1_000_000
-                val total = if (job.totalBytes > 0) job.totalBytes / 1_000_000 else 0
-                val speed = if (job.bytesPerSecond > 0) " · ${job.bytesPerSecond / 1000} KB/s" else ""
-                Text("$mb / $total MB$speed", fontSize = 12.sp, color = palette.textSecondary)
+                Text("${activeJob.percent}%", fontSize = 12.sp, color = palette.textSecondary)
+                val mb = activeJob.bytesDownloaded / 1_000_000
+                val total = if (activeJob.totalBytes > 0) activeJob.totalBytes / 1_000_000 else 0
+                val speed = if (activeJob.bytesPerSecond > 0) {
+                    stringResource(R.string.model_speed_suffix, activeJob.bytesPerSecond / 1000)
+                } else {
+                    ""
+                }
+                Text(stringResource(R.string.model_progress_size, mb, total, speed), fontSize = 12.sp, color = palette.textSecondary)
             }
         }
-        if (failed && job?.error != null) {
+        job?.takeIf { failed }?.error?.let { error ->
             Spacer(Modifier.height(8.dp))
-            Text(job.error, fontSize = 12.sp, color = palette.warning)
+            Text(error, fontSize = 12.sp, color = palette.warning)
         }
     }
 }

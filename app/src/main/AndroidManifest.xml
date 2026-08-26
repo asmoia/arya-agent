@@ -21,13 +21,10 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <!-- Device features -->
     <uses-feature
@@ -113,14 +110,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-
-        <receiver
-            android:name=".debug.DebugTaskReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="io.agents.arya.DEBUG_TASK" />
-            </intent-filter>
-        </receiver>
 
         <receiver
             android:name=".automation.ExternalAutomationReceiver"
@@ -217,15 +206,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Debug: trigger tasks via ADB broadcast -->
-        <receiver
-            android:name=".debug.TaskTriggerReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="io.agents.arya.TASK" />
             </intent-filter>
         </receiver>
 

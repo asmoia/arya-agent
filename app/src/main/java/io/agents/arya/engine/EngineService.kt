@@ -239,8 +239,9 @@ class EngineService : Service() {
         }
 
         override fun cancel(requestId: Int) {
+            // Keep the request callback until EngineCore emits terminal cancelled/error.
+            // Dropping it here makes callbackFlow wait for a timeout forever.
             engineCore.cancel(requestId)
-            dropCallback(requestId)
         }
 
         override fun stats(): String = engineCore.stats()
@@ -314,8 +315,7 @@ class EngineService : Service() {
         updateForeground(text)
     }
 
-    private fun callbackFor(requestId: Int): IEngineCallback? =
-        callbacks[requestId] ?: sessionCallback
+    private fun callbackFor(requestId: Int): IEngineCallback? = callbacks[requestId]
 
     private fun dropCallback(requestId: Int) {
         callbacks.remove(requestId)

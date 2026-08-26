@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.util.concurrent.TimeUnit
 
 /**
@@ -402,25 +403,32 @@ object LocalModelManager {
      * Look in the active dir first, then the other storage root. The Huawei 0.6B
      * already lives under external files/models — never hide it if preference flips.
      */
-    /** Any GGUF already on disk (internal or external), used to heal NeedsSetup. */
+    /** Any usable GGUF already on disk (including the mmap-safe fast copy). */
     fun findAnyGguf(context: Context): File? {
+        return modelSearchDirs(context)
+            .flatMap { dir ->
+                dir.listFiles()?.filter { isUsableModelFile(it) && it.name.endsWith(".gguf", true) }
+                    .orEmpty()
+                    .asIterable()
+            }
+            .maxByOrNull { it.length() }
+    }
+
+    fun findExistingModelFile(context: Context, model: ModelInfo): File? {
+        return modelSearchDirs(context)
+            .asSequence()
+            .map { File(it, model.fileName) }
+            .firstOrNull { isValidModelFile(it, model) }
+    }
+
+    /** Search every managed root, including files/models/fast used by ModelFileLocalizer. */
+    private fun modelSearchDirs(context: Context): List<File> {
         val dirs = linkedSetOf<File>()
         runCatching { dirs += getModelDir(context) }
         context.getExternalFilesDir(null)?.let { dirs += File(it, "models") }
         dirs += File(context.filesDir, "models")
-        return dirs.flatMap { dir ->
-            dir.listFiles()?.filter { it.isFile && it.name.endsWith(".gguf", true) && it.length() > 1_048_576L }
-                .orEmpty()
-                .asIterable()
-        }.maxByOrNull { it.length() }
-    }
-
-    fun findExistingModelFile(context: Context, model: ModelInfo): File? {
-        val candidates = linkedSetOf<File>()
-        runCatching { candidates += File(getModelDir(context), model.fileName) }
-        context.getExternalFilesDir(null)?.let { candidates += File(File(it, "models"), model.fileName) }
-        candidates += File(File(context.filesDir, "models"), model.fileName)
-        return candidates.firstOrNull { isValidModelFile(it, model) }
+        dirs += File(context.filesDir, "models/fast")
+        return dirs.toList()
     }
 
     private fun matchesConfiguredModel(model: ModelInfo, localConfig: LocalModelConfig): Boolean {
@@ -588,13 +596,23 @@ object LocalModelManager {
         }
     }
 
+    /** A model is usable only when it is a non-trivial GGUF, not merely a large file. */
+    fun isUsableModelFile(file: File): Boolean {
+        if (!file.isFile || file.length() < 1_048_576L) return false
+        return runCatching {
+            RandomAccessFile(file, "r").use { input ->
+                val magic = ByteArray(4)
+                input.readFully(magic)
+                magic.contentEquals(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
+            }
+        }.getOrDefault(false)
+    }
+
     private fun isValidModelFile(file: File, model: ModelInfo): Boolean {
-        if (!file.exists()) return false
+        if (!isUsableModelFile(file)) return false
         val length = file.length()
-        if (length <= 0L) return false
-        // Custom user-supplied models have unknown expected size — accept anything
-        // larger than 1MB (anything smaller is almost certainly not a real model).
-        if (model.isCustom) return length >= 1_048_576L
+        // Custom user-supplied models have unknown expected size, but must still be GGUF.
+        if (model.isCustom) return true
         return length in expectedLowerBound(model)..expectedUpperBound(model)
     }
 

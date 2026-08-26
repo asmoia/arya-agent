@@ -19,7 +19,7 @@ class ThemeActivity : BaseActivity() {
 
     data class ThemeConfig(
         val id: String,
-        val name: String,
+        val nameRes: Int,
         val isDark: Boolean,
         val bg: Int,
         val userBubble: Int,
@@ -31,8 +31,8 @@ class ThemeActivity : BaseActivity() {
 
     // Only expose ember (brand color). Other themes kept in ThemeManager for future use.
     private val themes = listOf(
-        ThemeConfig("ember_dark", "Dark", true, Color.parseColor("#141010"), Color.parseColor("#D45A30"), Color.parseColor("#352A25"), Color.parseColor("#C0542E"), Color.parseColor("#2E2623"), Color.parseColor("#E8845A")),
-        ThemeConfig("ember_light", "Light", false, Color.parseColor("#F0E8E0"), Color.parseColor("#C0542E"), Color.parseColor("#E6D8CA"), Color.parseColor("#C0542E"), Color.parseColor("#D0C4B8"), Color.parseColor("#C0542E")),
+        ThemeConfig("ember_dark", R.string.theme_dark, true, Color.parseColor("#141010"), Color.parseColor("#D45A30"), Color.parseColor("#352A25"), Color.parseColor("#C0542E"), Color.parseColor("#2E2623"), Color.parseColor("#E8845A")),
+        ThemeConfig("ember_light", R.string.theme_light, false, Color.parseColor("#F0E8E0"), Color.parseColor("#C0542E"), Color.parseColor("#E6D8CA"), Color.parseColor("#C0542E"), Color.parseColor("#D0C4B8"), Color.parseColor("#C0542E")),
     )
 
     private var selectedThemeId = "ember_dark"
@@ -50,7 +50,7 @@ class ThemeActivity : BaseActivity() {
         (contentFrame?.getChildAt(0) as? android.view.View)?.setBackgroundColor(tc.bg)
 
         findViewById<CommonToolbar>(R.id.toolbar).apply {
-            setTitle("Appearance")
+            setTitle(getString(R.string.settings_group_appearance))
             setTitleColor(tc.aiText)
             setBackgroundColor(tc.toolbarBg)
             showBackButton(true) { finish() }
@@ -108,7 +108,7 @@ class ThemeActivity : BaseActivity() {
             cornerRadius = dp(6f)
         }
 
-        name.text = theme.name
+        name.text = getString(theme.nameRes)
 
         view.setOnClickListener {
             selectedThemeId = theme.id
@@ -149,8 +149,8 @@ class ThemeActivity : BaseActivity() {
         }
 
         val current = themes.find { it.id == selectedThemeId }
-        val label = current?.name ?: selectedThemeId
-        findViewById<TextView>(R.id.tvCurrentTheme).text = "Current: $label"
+        val label = current?.let { getString(it.nameRes) } ?: selectedThemeId
+        findViewById<TextView>(R.id.tvCurrentTheme).text = getString(R.string.theme_current, label)
     }
 
     private fun roundRect(color: Int, radius: Float) = GradientDrawable().apply {

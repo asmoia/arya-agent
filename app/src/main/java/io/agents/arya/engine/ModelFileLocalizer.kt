@@ -4,6 +4,7 @@ import android.content.Context
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 
 /**
  * llama.cpp mmaps the GGUF. On Huawei/EMUI the file often lives on
@@ -30,7 +31,7 @@ object ModelFileLocalizer {
         src: File,
         onProgress: (Int, String) -> Unit,
     ): File {
-        if (!src.exists() || src.length() < 1_048_576L) {
+        if (!isUsableGguf(src)) {
             throw EngineLoadException(
                 EngineError.ERR_LOAD_FAILED,
                 "Model file missing or tiny: ${src.absolutePath}",
@@ -42,7 +43,7 @@ object ModelFileLocalizer {
         }
         val destDir = File(context.filesDir, "models/fast").apply { mkdirs() }
         val dest = File(destDir, src.name)
-        if (dest.exists() && dest.length() == src.length()) {
+        if (isUsableGguf(dest) && dest.length() == src.length()) {
             EngineLog.i("ModelFileLocalizer", "reuse internal ${dest.absolutePath} bytes=${dest.length()}")
             onProgress(100, "Using fast local copy")
             return dest
@@ -71,7 +72,7 @@ object ModelFileLocalizer {
                 output.fd.sync()
             }
         }
-        if (tmp.length() != src.length()) {
+        if (tmp.length() != src.length() || !isUsableGguf(tmp)) {
             tmp.delete()
             throw EngineLoadException(
                 EngineError.ERR_LOAD_FAILED,
@@ -83,8 +84,26 @@ object ModelFileLocalizer {
             tmp.copyTo(dest, overwrite = true)
             tmp.delete()
         }
+        if (!isUsableGguf(dest)) {
+            dest.delete()
+            throw EngineLoadException(
+                EngineError.ERR_LOAD_FAILED,
+                "Internal model copy has an invalid GGUF header: ${dest.absolutePath}",
+            )
+        }
         onProgress(100, "Copy done")
         EngineLog.i("ModelFileLocalizer", "copy ok ${dest.length()} bytes")
         return dest
+    }
+
+    private fun isUsableGguf(file: File): Boolean {
+        if (!file.isFile || file.length() < 1_048_576L) return false
+        return runCatching {
+            RandomAccessFile(file, "r").use { input ->
+                val magic = ByteArray(4)
+                input.readFully(magic)
+                magic.contentEquals(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
+            }
+        }.getOrDefault(false)
     }
 }

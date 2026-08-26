@@ -56,16 +56,6 @@ object ExternalAutomationEntrypoint {
             return false
         }
 
-        XLog.i(TAG, "Accepted external automation ${request.mode}: ${request.text.take(MAX_LOG_TEXT)}")
-        ExternalAutomationContract.sendCallback(
-            context = context,
-            returnAction = request.returnAction,
-            requestId = request.requestId,
-            status = ExternalAutomationContract.STATUS_ACCEPTED,
-            returnPackage = request.returnPackage,
-            mode = request.mode,
-        )
-
         val launch = Intent(context, ComposeChatActivity::class.java).apply {
             when (request.mode) {
                 ExternalAutomationContract.Mode.TASK -> putExtra(EXTRA_TASK, request.text)
@@ -76,8 +66,32 @@ object ExternalAutomationEntrypoint {
             putExtra(EXTRA_EXTERNAL_RETURN_PACKAGE, request.returnPackage)
             flags = launchFlags
         }
-        context.startActivity(launch)
-        return true
+
+        return try {
+            context.startActivity(launch)
+            XLog.i(TAG, "Accepted external automation ${request.mode}: ${request.text.take(MAX_LOG_TEXT)}")
+            ExternalAutomationContract.sendCallback(
+                context = context,
+                returnAction = request.returnAction,
+                requestId = request.requestId,
+                status = ExternalAutomationContract.STATUS_ACCEPTED,
+                returnPackage = request.returnPackage,
+                mode = request.mode,
+            )
+            true
+        } catch (e: Exception) {
+            XLog.w(TAG, "Failed to dispatch external automation", e)
+            ExternalAutomationContract.sendCallback(
+                context = context,
+                returnAction = request.returnAction,
+                requestId = request.requestId,
+                status = ExternalAutomationContract.STATUS_FAILED,
+                error = "Arya could not open the automation surface.",
+                returnPackage = request.returnPackage,
+                mode = request.mode,
+            )
+            false
+        }
     }
 
     private fun isTargetedToArya(context: Context, intent: Intent): Boolean {

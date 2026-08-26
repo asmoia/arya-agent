@@ -10,10 +10,14 @@ object LlmClientFactory {
     fun create(
         context: Context,
         config: AgentConfig,
-        engineClient: EngineClient,
+        engineClient: EngineClient?,
     ): LlmClient {
         return if (config.provider == LlmProvider.LOCAL) {
-            LocalLlmClient(context, config, engineClient)
+            LocalLlmClient(
+                context,
+                config,
+                engineClient ?: throw IllegalStateException("Local voice inference requires an engine client"),
+            )
         } else {
             val dialect = if (config.provider == LlmProvider.ANTHROPIC) {
                 CloudDialect.ANTHROPIC

@@ -2,7 +2,12 @@
 
 ## 1.2.6
 
-Official rebuild from the signed v1.2.5 source tag. This release changes only the application version metadata: versionCode 109 and versionName 1.2.6.
+Official rebuild from the signed v1.2.5 source tag with the v1.2.6 version metadata (versionCode 109, versionName 1.2.6). This release also carries the recovered model-loading, engine-lifecycle, cancellation, voice, external-routing, security and localization fixes from the review work.
+
+- Validate local files as non-trivial GGUF files before activation or native load; search external, internal and mmap-safe `models/fast` roots.
+- Repair stale local model paths and prevent cloud fallback from masking a usable local model; reject model switching/unload races during generation.
+- Keep request-scoped cancellation callbacks until a terminal event; harden voice model resolution and external automation payload/callback validation.
+- Close global cleartext traffic and keep debug task receivers in the debug manifest only.
 
 ## 1.2.5
 

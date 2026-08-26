@@ -47,41 +47,56 @@ data class ResolvedModelConfig(
 ) {
     fun isLocalActive(): Boolean = activeMode == ActiveModelMode.LOCAL
 
+    private fun baseSystemPrompt(): String = io.agents.arya.agent.PromptUtils
+        .applyGlobalPrompt(AgentConfig.DEFAULT_SYSTEM_PROMPT)
+
+    fun toLocalAgentConfig(
+        temperature: Double,
+        maxIterations: Int,
+        streaming: Boolean = false,
+        modelPath: String = local.modelPath,
+        modelId: String = local.modelId,
+    ): AgentConfig = AgentConfig(
+        apiKey = "",
+        baseUrl = modelPath,
+        modelName = modelId,
+        systemPrompt = baseSystemPrompt(),
+        maxIterations = maxIterations,
+        temperature = temperature,
+        provider = LlmProvider.LOCAL,
+        streaming = streaming,
+        hermesEnabled = KVUtils.isHermesEmbeddedEnabled(),
+    )
+
+    fun toCloudAgentConfig(
+        temperature: Double,
+        maxIterations: Int,
+        streaming: Boolean = false,
+    ): AgentConfig = AgentConfig(
+        apiKey = activeCloud.apiKey,
+        baseUrl = activeCloud.resolvedBaseUrl,
+        modelName = activeCloud.modelName,
+        systemPrompt = baseSystemPrompt(),
+        maxIterations = maxIterations,
+        temperature = temperature,
+        provider = activeCloud.agentProvider,
+        streaming = streaming,
+        hermesEnabled = KVUtils.isHermesEmbeddedEnabled(),
+    )
+
     fun toAgentConfig(
         temperature: Double,
         maxIterations: Int,
         streaming: Boolean = false
     ): AgentConfig {
-        // Inject persistent global instructions (#45) into systemPrompt.
-        // This is the runtime construction path used by AppViewModel/AgentService,
-        // bypassing AgentConfig.Builder.build(), so we must apply the helper here too.
-        val finalSystemPrompt = io.agents.arya.agent.PromptUtils
-            .applyGlobalPrompt(AgentConfig.DEFAULT_SYSTEM_PROMPT)
-        val hermesEnabled = KVUtils.isHermesEmbeddedEnabled()
-        return if (activeMode == ActiveModelMode.LOCAL) {
-            AgentConfig(
-                apiKey = "",
-                baseUrl = local.modelPath,
-                modelName = local.modelId,
-                systemPrompt = finalSystemPrompt,
-                maxIterations = maxIterations,
-                temperature = temperature,
-                provider = LlmProvider.LOCAL,
-                streaming = streaming,
-                hermesEnabled = hermesEnabled
-            )
+        val localFileIsUsable = local.modelPath.isNotBlank() &&
+            LocalModelManager.isUsableModelFile(File(local.modelPath))
+        val useLocal = activeMode == ActiveModelMode.LOCAL ||
+            (!activeCloud.isConfigured && localFileIsUsable)
+        return if (useLocal) {
+            toLocalAgentConfig(temperature, maxIterations, streaming)
         } else {
-            AgentConfig(
-                apiKey = activeCloud.apiKey,
-                baseUrl = activeCloud.resolvedBaseUrl,
-                modelName = activeCloud.modelName,
-                systemPrompt = finalSystemPrompt,
-                maxIterations = maxIterations,
-                temperature = temperature,
-                provider = activeCloud.agentProvider,
-                streaming = streaming,
-                hermesEnabled = hermesEnabled
-            )
+            toCloudAgentConfig(temperature, maxIterations, streaming)
         }
     }
 }

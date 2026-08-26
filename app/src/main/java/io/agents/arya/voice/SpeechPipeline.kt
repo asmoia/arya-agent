@@ -9,14 +9,14 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import io.agents.arya.utils.KVUtils
 import io.agents.arya.utils.XLog
-import java.util.Locale
 
 /**
  * PHASE 1 — Speech-to-text abstraction.
  *
- * Currently uses Android's built-in SpeechRecognizer (which routes to Google's
- * cloud ASR on most devices).
+ * Currently uses Android's built-in SpeechRecognizer (which may route to a
+ * platform/cloud ASR service on most devices). This is not offline STT.
  *
  * TODO (Phase 1 Enhancement): Replace with true on-device STT via sherpa-onnx
  * (Whisper + Silero VAD) for fully offline, private voice input.
@@ -33,7 +33,7 @@ interface SpeechPipeline {
 
 /**
  * Android's built-in SpeechRecognizer (fallback STT).
- * NOTE: on most devices this routes to Google's cloud ASR, not truly on-device.
+ * NOTE: this may route to a platform/cloud ASR service; it is not truly offline.
  * For production voice privacy, integrate sherpa-onnx (Whisper) instead.
  */
 class AndroidSpeechClient(private val context: Context) : SpeechPipeline {
@@ -93,7 +93,9 @@ class AndroidSpeechClient(private val context: Context) : SpeechPipeline {
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+            val tag = VoiceLocale.resolveTag(KVUtils.getVoiceLocale())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, tag)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }

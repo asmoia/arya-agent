@@ -124,4 +124,279 @@
     <string name="voice_mic_open_settings">باز کردن تنظیمات برنامه</string>
     <string name="voice_input_unavailable">تشخیص گفتار روی این دستگاه در دسترس نیست</string>
     <string name="voice_input_error">ورودی صوتی ناموفق بود. دوباره امتحان کنید.</string>
+    <!-- Common -->
+    <string name="common_unbound_success">قطع شد</string>
+    <string name="channel_discord">دیسکورد</string>
+    <string name="channel_telegram">تلگرام</string>
+    <string name="channel_wechat">وی‌چت</string>
+    <string name="common_load_failed">بارگذاری ناموفق: %s</string>
+
+    <!-- Home -->
+    <string name="home_permission_enabled">فعال</string>
+    <string name="home_card_system_window_title">پنجرهٔ سیستمی</string>
+    <string name="home_card_system_window_subtitle">پنل شناور روی برنامه‌ها</string>
+    <string name="home_storage_enabled">دسترسی فایل تأیید شد</string>
+    <string name="home_enable_storage">لطفاً دسترسی همهٔ فایل‌ها را بدهید</string>
+    <string name="home_cancel_task_success">وظیفهٔ هوش مصنوعی متوقف شد</string>
+    <string name="home_no_task_running">هیچ وظیفه‌ای در حال اجرا نیست</string>
+
+    <!-- Settings and legacy configuration -->
+    <string name="settings_group_channel">کانال‌ها</string>
+    <string name="unbind_title">قطع اتصال</string>
+    <string name="unbind_message">اتصال %1$s قطع شود؟ دیگر از طریق %2$s پیام دریافت نمی‌کنید.</string>
+    <string name="unbind_action">قطع اتصال</string>
+    <string name="channel_config_discord_title">تنظیم دیسکورد</string>
+    <string name="channel_config_discord_tip">توکن ربات را از صفحهٔ Bot در Discord Developer Portal وارد کنید. گزینهٔ Message Content Intent باید فعال باشد.</string>
+    <string name="channel_config_discord_hint1">توکن ربات را وارد کنید</string>
+    <string name="channel_config_telegram_title">تنظیم تلگرام</string>
+    <string name="channel_config_telegram_tip">توکن ربات را وارد کنید؛ برای دریافت آن در تلگرام با @BotFather ربات بسازید.</string>
+    <string name="channel_config_telegram_hint1">توکن ربات را وارد کنید</string>
+    <string name="channel_config_wechat_title">تنظیم وی‌چت</string>
+    <string name="channel_config_wechat_tip">برای مجوز دادن به ربات، کد QR را با وی‌چت اسکن کنید. توکن و آدرس API پس از تأیید خودکار ذخیره می‌شوند.</string>
+    <string name="channel_config_wechat_btn_scan">دریافت کد QR</string>
+    <string name="channel_config_wechat_scanning">منتظر اسکن…</string>
+    <string name="channel_config_wechat_confirmed">مجوز تأیید شد</string>
+    <string name="wechat_qr_failed">دریافت کد QR وی‌چت ناموفق بود</string>
+    <string name="wechat_unsupported_media">پیام %s دریافت شد؛ این نوع هنوز پشتیبانی نمی‌شود. لطفاً یک دستور متنی بفرستید.</string>
+    <string name="wechat_media_image">تصویر</string>
+    <string name="wechat_media_video">ویدئو</string>
+    <string name="wechat_media_file">فایل</string>
+    <string name="wechat_media_voice">صدا</string>
+    <string name="wechat_media_unknown">رسانه</string>
+    <string name="channel_config_saved">تنظیمات ذخیره شد</string>
+    <string name="channel_config_lan_hint">برای پیکربندی با مرورگر، «تنظیم LAN» را در تنظیمات فعال کنید</string>
+    <string name="channel_config_lan_hint_running">پیکربندی فقط محلی است. %s را در مرورگر همین گوشی باز کنید؛ این نشانی را به اشتراک نگذارید.</string>
+    <string name="channel_config_lan_copied">نشانی کپی شد</string>
+
+    <!-- LLM Config -->
+    <string name="llm_config_api_key_required">لطفاً کلید API را وارد کنید</string>
+    <string name="llm_config_base_url_hint">مثلاً https://api.openai.com/v1 (برای پیش‌فرض OpenAI خالی بگذارید)</string>
+    <string name="llm_config_model_name_hint">مثلاً gpt-4o، gpt-4o-mini یا claude-3-5-sonnet</string>
+    <string name="menu_llm_config">تنظیم مدل زبانی</string>
+
+    <!-- Legacy menu -->
+    <string name="menu_discord">دیسکورد</string>
+    <string name="menu_telegram">تلگرام</string>
+    <string name="menu_wechat">وی‌چت</string>
+    <string name="menu_lan_config">تنظیم LAN</string>
+    <string name="lan_config_stopped">خاموش</string>
+    <string name="lan_config_no_wifi">لطفاً ابتدا به Wi‑Fi وصل شوید</string>
+
+    <!-- Protocol -->
+    <string name="protocol_agree_title">راهنمای حریم خصوصی</string>
+    <string name="protocol_alert_title">شرایط و حریم خصوصی</string>
+    <string name="protocol_disagree">موافق نیستم</string>
+    <string name="protocol_agree_continue">موافقم و ادامه می‌دهم</string>
+
+    <!-- Floating and notification -->
+    <string name="floating_task_received">دریافت شد: «%s»</string>
+    <string name="notification_channel_description">وضعیت اجرا و آمار آریا را نشان می‌دهد</string>
+    <string name="notification_content_text">وظیفه در حال اجراست…</string>
+
+    <!-- Channel messages -->
+    <string name="channel_msg_task_cancelled">وظیفه به‌صورت دستی لغو شد</string>
+    <string name="channel_msg_service_not_ready">سرویس آماده نیست؛ بعداً دوباره امتحان کنید</string>
+    <string name="channel_msg_tool_success">موفق</string>
+    <string name="channel_msg_tool_failure">ناموفق</string>
+    <string name="channel_msg_tool_execution">[%1$s]: %2$s</string>
+    <string name="channel_msg_task_error">خطا: %s</string>
+    <string name="channel_msg_no_accessibility">دسترسی‌پذیری وجود ندارد؛ اجرای وظیفه ممکن نیست</string>
+    <string name="channel_msg_task_in_progress">وظیفه‌ای در حال اجراست؛ لطفاً صبر کنید</string>
+    <string name="channel_msg_system_dialog_blocked">ممکن است یک گفت‌وگوی سیستمی صفحه را مسدود کرده باشد. آن را بررسی و دستی مدیریت کنید، سپس دوباره تلاش کنید.</string>
+
+    <!-- Accessibility descriptions -->
+    <string name="cd_back_button">بازگشت</string>
+    <string name="cd_settings">تنظیمات</string>
+    <string name="cd_clear_input">پاک کردن ورودی</string>
+    <string name="cd_checkbox">تغییر وضعیت چک‌باکس</string>
+    <string name="cd_selected">انتخاب‌شده</string>
+    <string name="cd_task_success">وظیفه تکمیل شد</string>
+    <string name="cd_task_error">وظیفه ناموفق بود</string>
+    <string name="cd_channel_logo">نشان کانال</string>
+    <string name="cd_app_logo">نشان برنامه</string>
+    <string name="cd_floating_idle">آریا — برای تمرکز ضربه بزنید</string>
+    <string name="cd_qr_code">کد QR</string>
+    <string name="cd_toggle_password">نمایش یا مخفی‌کردن رمز</string>
+    <string name="cd_copy">کپی</string>
+    <string name="cd_arrow_right">بیشتر</string>
+    <string name="cd_empty_state">داده‌ای وجود ندارد</string>
+    <string name="cd_error_state">بارگذاری ناموفق بود</string>
+
+    <!-- Agent -->
+    <string name="agent_task_cancel">وظیفه لغو شد</string>
+    <string name="agent_api_call_failed">فراخوانی سرویس هوش مصنوعی ناموفق بود: %s</string>
+    <string name="agent_max_iterations">بدون تکمیل وظیفه، به حداکثر تکرار (%d) رسید</string>
+
+    <!-- File tool -->
+    <string name="tool_no_storage_permission">مجوز خواندن/نوشتن فایل وجود ندارد</string>
+    <string name="tool_file_not_found">فایل پیدا نشد: %s</string>
+    <string name="tool_not_a_file">مسیر، فایل نیست: %s</string>
+    <string name="tool_no_task_channel">کانال وظیفهٔ فعالی وجود ندارد</string>
+    <string name="tool_file_sent">فایل ارسال شد: %s</string>
+    <string name="tool_file_send_failed">ارسال فایل ناموفق بود: %s</string>
+
+    <!-- Tool names -->
+    <string name="tool_name_get_screen_info">دریافت اطلاعات صفحه</string>
+    <string name="tool_name_finish">پایان وظیفه</string>
+    <string name="tool_name_get_installed_apps">دریافت برنامه‌های نصب‌شده</string>
+    <string name="tool_name_find_node_info">یافتن گره</string>
+    <string name="tool_name_long_press">لمس طولانی</string>
+    <string name="tool_name_repeat_actions">تکرار کنش‌ها</string>
+    <string name="tool_name_volume_up">افزایش صدا</string>
+    <string name="tool_name_volume_down">کاهش صدا</string>
+    <string name="tool_name_dpad_up">جهت بالا</string>
+    <string name="tool_name_dpad_down">جهت پایین</string>
+    <string name="tool_name_dpad_left">جهت چپ</string>
+    <string name="tool_name_dpad_right">جهت راست</string>
+    <string name="tool_name_dpad_center">مرکز جهت‌ها</string>
+    <string name="tool_name_press_menu">منو</string>
+    <string name="tool_name_press_power">پاور</string>
+    <string name="tool_name_search_app">جستجوی برنامه</string>
+
+    <!-- Input and global prompt -->
+    <string name="input_dialog_need_more">حداقل %d نویسه وارد کنید</string>
+    <string name="input_dialog_need_less">حداکثر %d نویسه وارد کنید</string>
+    <string name="input_dialog_no_zero">لطفاً مقدار غیرصفر وارد کنید</string>
+    <string name="global_prompt_dialog_title">ویرایش دستورالعمل‌های عمومی</string>
+    <string name="global_prompt_set_status">تنظیم‌شده (%d نویسه)</string>
+
+    <!-- Custom local model URL -->
+    <string name="custom_local_model_url_title">نشانی مدل محلی سفارشی</string>
+    <string name="custom_local_model_url_dialog_title">نشانی دانلود مدل سفارشی</string>
+    <string name="custom_local_model_url_hint">نشانی مستقیم دانلود مدل GGUF با https://… . اعتبارسنجی مدل سفارشی همچنان به header معتبر GGUF نیاز دارد.</string>
+    <string name="custom_local_model_url_not_set">تنظیم نشده</string>
+    <string name="custom_local_model_url_set">نشانی سفارشی تنظیم شد</string>
+    <string name="custom_local_model_url_invalid">نشانی باید با https:// شروع شود</string>
+    <!-- Settings UI labels and actions -->
+    <string name="settings_status_enabled">فعال</string>
+    <string name="settings_status_disabled">غیرفعال</string>
+    <string name="settings_status_unrestricted">بدون محدودیت</string>
+    <string name="settings_status_restricted">محدود</string>
+    <string name="settings_notification_access">دسترسی اعلان</string>
+    <string name="settings_task_budget">بودجهٔ وظیفه</string>
+    <string name="settings_group_appearance">ظاهر</string>
+    <string name="settings_theme">تم</string>
+    <string name="settings_group_tools">ابزارها و Hermes</string>
+    <string name="settings_manage_tools">مدیریت ابزارها</string>
+    <string name="settings_tools_gated">محافظت‌شده</string>
+    <string name="settings_remote_control">اتوماسیون خارجی</string>
+    <string name="settings_external_automation_disabled">اتوماسیون خارجی غیرفعال شد</string>
+    <string name="settings_external_automation_enable_title">اتوماسیون خارجی فعال شود؟</string>
+    <string name="settings_external_automation_enable_message">برنامه‌های مورداعتماد مانند Tasker یا MacroDroid می‌توانند با intentهای صریح اندروید وظایف آریا را شروع کنند. اگر فراخوان را کنترل نمی‌کنید، این گزینه را خاموش نگه دارید.</string>
+    <string name="settings_external_automation_enable_action">فعال‌کردن</string>
+    <string name="settings_external_automation_enabled">اتوماسیون خارجی فعال شد</string>
+    <string name="settings_hermes_status_enabled">فعال (Hermes)</string>
+    <string name="settings_hermes_status_disabled">غیرفعال</string>
+    <string name="settings_hermes_disable_title">هستهٔ Hermes غیرفعال شود؟</string>
+    <string name="settings_hermes_disable_message">حلقهٔ کلاسیک آریا، بدون حافظه و مهارت‌های Hermes، استفاده خواهد شد.</string>
+    <string name="settings_hermes_disable_action">غیرفعال‌کردن</string>
+    <string name="settings_hermes_disabled">Hermes غیرفعال شد</string>
+    <string name="settings_hermes_enabled">هستهٔ Hermes فعال شد</string>
+    <string name="settings_sensitive_disable_title">تأیید کارهای حساس غیرفعال شود؟</string>
+    <string name="settings_sensitive_disable_message">آریا ممکن است بدون پرسش قبلی پیام بفرستد یا تماس بگیرد. این کار خطرناک است.</string>
+    <string name="settings_sensitive_disable_action">غیرفعال‌کردن (ناامن)</string>
+    <string name="settings_sensitive_disabled">تأیید کارهای حساس غیرفعال شد</string>
+    <string name="settings_sensitive_enabled">تأیید کارهای حساس فعال شد</string>
+    <string name="settings_task_mode_toast">حالت وظیفه: %1$s — %2$s</string>
+    <string name="settings_backup_in_progress">در حال آماده‌سازی پشتیبان…</string>
+    <string name="settings_backup_share_chooser">اشتراک پشتیبان Hermes</string>
+    <string name="settings_backup_subject">پشتیبان Hermes آریا</string>
+    <string name="settings_share_failed">اشتراک‌گذاری ناموفق بود: %s</string>
+    <string name="settings_oem_guide">راهنمای سازنده و باتری</string>
+    <string name="settings_oem_guide_trailing">هواوی / شیائومی</string>
+    <string name="settings_about">درباره</string>
+    <string name="settings_report_bug">گزارش اشکال</string>
+    <string name="settings_share_debug_report">اشتراک گزارش اشکال‌زدایی</string>
+    <string name="settings_zip_logs_state">ZIP گزارش‌ها و وضعیت</string>
+    <string name="settings_bug_report_ready_title">گزارش اشکال آماده است</string>
+    <string name="settings_bug_report_ready_message">%1$s آماده است.\n\nبرای ثبت اشکال، یک issue در GitHub باز کنید. اگر بارگذاری پیوست دشوار است، «اشتراک ZIP» را انتخاب و گزارش را دستی ارسال کنید.</string>
+    <string name="settings_open_github_issue">باز کردن issue در GitHub</string>
+    <string name="settings_share_zip">اشتراک ZIP</string>
+    <string name="settings_share_bug_report_chooser">اشتراک ZIP گزارش اشکال</string>
+    <string name="settings_attach_file_after_open">پس از بازشدن صفحه، %s را به issue گیت‌هاب پیوست کنید</string>
+    <string name="settings_no_app_github">برنامه‌ای برای بازکردن GitHub پیدا نشد</string>
+    <string name="settings_preparing_debug_report">در حال آماده‌سازی گزارش اشکال‌زدایی…</string>
+    <string name="settings_debug_report_chooser">اشتراک گزارش اشکال‌زدایی</string>
+    <string name="settings_debug_report_subject">گزارش اشکال‌زدایی آریا %s</string>
+    <string name="settings_debug_report_body">این گزارش اشکال‌زدایی را هنگام گزارش مشکل آریا پیوست کنید.</string>
+    <string name="settings_debug_report_build_failed">ساخت گزارش اشکال‌زدایی ناموفق بود</string>
+    <string name="settings_no_app_share_report">برنامه‌ای برای اشتراک گزارش پیدا نشد</string>
+    <string name="settings_gated_help">ابزارهای گوشی و حافظه/مهارت‌های Hermes در دسترس هستند. کارهای حساس پیش از اجرا نیاز به تأیید دارند.</string>
+    <string name="settings_backup_restore_title">پشتیبان بازیابی شود؟</string>
+    <string name="settings_backup_restore_message">حافظه و مهارت‌ها از فایل ZIP ادغام می‌شوند. کلیدهای API وارد نمی‌شوند.</string>
+    <string name="settings_backup_restore_action">انتخاب فایل</string>
+    <string name="settings_zip">ZIP</string>
+    <string name="settings_oem_guide_title">پایداری روی EMUI، HyperOS و One UI</string>
+    <string name="settings_oem_guide_message">برای اینکه آریا بعد از راه‌اندازی مجدد و در پس‌زمینه فعال بماند:\n\n۱) دسترسی‌پذیری آریا را روشن نگه دارید\n۲) دسترسی اعلان را بدهید\n۳) نمایش روی برنامه‌های دیگر را مجاز کنید\n۴) مصرف باتری را روی بدون محدودیت بگذارید\n۵) هواوی: باتری → راه‌اندازی برنامه → آریا → مدیریت خودکار را خاموش کنید\n۶) شیائومی: برنامه‌ها → آریا → ذخیرهٔ باتری → بدون محدودیت + شروع خودکار\n۷) سامسونگ: باتری → محدودیت مصرف پس‌زمینه → آریا را از برنامه‌های خواب خارج کنید\n\nمدل محلی در پوشهٔ files/models برنامه ذخیره می‌شود و با به‌روزرسانی برنامه حذف نمی‌شود؛ فقط پاک‌کردن داده‌ها آن را حذف می‌کند.</string>
+    <string name="settings_thinking_adaptive">تطبیقی</string>
+    <string name="settings_thinking_instant">فوری · ۴ دور</string>
+    <string name="settings_thinking_thinking">فکرکردن · ۶ دور</string>
+    <string name="settings_thinking_high">دقیق · ۸ دور</string>
+    <string name="settings_thinking_adaptive_detail">خودکار بر اساس RAM و سختی وظیفه</string>
+    <string name="settings_thinking_instant_detail">بیشترین سرعت · حداکثر ۴ دور</string>
+    <string name="settings_thinking_thinking_detail">متعادل · حداکثر ۶ دور</string>
+    <string name="settings_thinking_high_detail">دقیق‌تر · حداکثر ۸ دور</string>
+    <string name="settings_share_debug_subject">گزارش اشکال‌زدایی آریا %s</string>
+    <string name="settings_share_debug_body">این گزارش اشکال‌زدایی را هنگام گزارش مشکل آریا پیوست کنید.</string>
+    <string name="settings_attach_github_body">این ZIP را به issue گیت‌هاب پیوست کنید:\nhttps://github.com/asmoia/arya-agent/issues/new</string>
+    <string name="settings_budget_toast">بودجه: %s</string>
+    <string name="settings_hermes_core">هستهٔ Hermes</string>
+    <string name="settings_sensitive_confirm">تأیید کارهای حساس</string>
+    <string name="settings_thinking_mode">حالت فکرکردن وظیفه</string>
+    <string name="settings_backup_export">خروجی پشتیبان Hermes</string>
+    <string name="settings_github_zip">GitHub + ZIP</string>
+    <string name="settings_bug_report_ready">گزارش اشکال آماده است</string>
+    <string name="settings_budget_max_cost">\nحداکثر هزینهٔ هر وظیفه (دلار آمریکا)</string>
+    <string name="settings_budget_no_cap_hint">خالی = بدون سقف هزینه</string>
+    <string name="theme_section_dark">تم‌های تیره</string>
+    <string name="theme_section_light">تم‌های روشن</string>
+    <string name="theme_dark">تیره</string>
+    <string name="theme_light">روشن</string>
+    <string name="theme_current">تم فعلی: %s</string>
+    <string name="settings_github">GitHub</string>
+    <string name="models_title">مدل‌ها</string>
+    <string name="models_ram_subtitle">GGUF روی دستگاه · این گوشی %1$d گیگابایت RAM دارد</string>
+    <string name="model_active_local">فعال · %s</string>
+    <string name="model_active_cloud">فعال · ابری %s</string>
+    <string name="models_background_downloads">دانلود در پس‌زمینه ادامه دارد؛ می‌توانید این صفحه را ترک کنید.</string>
+    <string name="model_action_downloading">در حال دانلود</string>
+    <string name="model_action_use">استفاده</string>
+    <string name="model_action_installed">نصب‌شده</string>
+    <string name="model_action_download">دانلود</string>
+    <string name="model_action_too_large">بیش از حد بزرگ</string>
+    <string name="model_card_specs">%1$s گیگابایت · RAM موردنیاز %2$d+ گیگابایت</string>
+    <string name="model_card_below_floor"> · RAM این گوشی کمتر از حداقل است</string>
+    <string name="model_speed_suffix"> · %d کیلوبایت بر ثانیه</string>
+    <string name="model_progress_size">%1$d / %2$d مگابایت%3$s</string>
+    <string name="llm_no_model_selected">مدلی انتخاب نشده است</string>
+    <string name="llm_configure_cloud_below">یک مدل ابری را در پایین تنظیم کنید</string>
+    <string name="llm_needs_ram">نیازمند %d گیگابایت یا بیشتر</string>
+    <string name="llm_local_default_set">مدل محلی پیش‌فرض شد: %s</string>
+    <string name="llm_model_file_missing">فایل مدل پیدا نشد</string>
+    <string name="llm_model_deleted">%s حذف شد</string>
+    <string name="llm_already_downloading">دانلود از قبل در حال انجام است</string>
+    <string name="llm_downloading">در حال دانلود…</string>
+    <string name="llm_downloaded">دانلود شد</string>
+    <string name="llm_api_key_cleared">کلید API پاک شد</string>
+    <string name="llm_enter_api_key_first">ابتدا کلید API را وارد کنید</string>
+    <string name="llm_testing">در حال آزمایش…</string>
+    <string name="llm_api_key_too_short">کلید API کوتاه است</string>
+    <string name="llm_no_model_selected_error">مدلی انتخاب نشده است</string>
+    <string name="llm_select_model">یک مدل انتخاب کنید</string>
+    <string name="llm_saved_cloud_default">پیش‌فرض ابری ذخیره شد: %s</string>
+    <string name="llm_status_connected">متصل</string>
+    <string name="llm_status_not_configured">تنظیم نشده</string>
+    <string name="llm_status_ready">آماده</string>
+    <string name="llm_cloud_meta">%s · ابری</string>
+    <string name="llm_model_meta">%1$d مگابایت · RAM موردنیاز %2$d گیگابایت یا بیشتر</string>
+    <string name="llm_model_unsupported_meta">%1$s · این گوشی %2$d گیگابایت RAM دارد</string>
+    <string name="llm_active_supported">فعال</string>
+    <string name="llm_active_unsupported">فعال با هشدار</string>
+    <string name="llm_default">پیش‌فرض</string>
+    <string name="llm_download_button">↓ دانلود</string>
+    <string name="llm_ready_to_save">✓ آمادهٔ ذخیره</string>
+    <string name="llm_test_failed">✗ %s</string>
+    <string name="chat_starting_engine">در حال راه‌اندازی موتور محلی…</string>
+    <string name="chat_model_unreachable">دسترسی به مدل ممکن نیست. یک GGUF محلی دانلود یا یک کلید ابری اضافه کنید.</string>
+    <string name="model_checking">در حال بررسی مدل‌ها…</string>
 </resources>

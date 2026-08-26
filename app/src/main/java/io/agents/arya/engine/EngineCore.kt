@@ -27,6 +27,8 @@ class EngineCore(private val context: Context) {
     private var committedPrefixKey: String? = null
     private var nPast: Int = 0
     private val generating = AtomicBoolean(false)
+    @Volatile
+    private var unloadWhenIdle = false
     private val prefixCache = PrefixCache(File(context.filesDir, "prefix-cache"))
 
     val isLoaded: Boolean
@@ -48,11 +50,17 @@ class EngineCore(private val context: Context) {
                 EngineLog.i("EngineCore", "already loaded ${currentModelPath} (asked $modelPath ctx=$ctxSize have=$currentCtxSize)")
                 return statsLocked()
             }
+            if (generating.get()) {
+                throw EngineLoadException(EngineError.ERR_BUSY, "Cannot switch models while generation is active")
+            }
             if (handle != 0L) unloadLocked()
 
             val file = File(modelPath)
-            if (!file.exists()) {
-                throw EngineLoadException(EngineError.ERR_LOAD_FAILED, "Model file missing: $modelPath")
+            if (!file.isFile || !io.agents.arya.agent.llm.LocalModelManager.isUsableModelFile(file)) {
+                throw EngineLoadException(EngineError.ERR_LOAD_FAILED, "Model is not a usable GGUF file: $modelPath")
+            }
+            if (io.agents.arya.engine.budget.GgufHeaderParser.parse(file) == null) {
+                throw EngineLoadException(EngineError.ERR_LOAD_FAILED, "GGUF header could not be parsed: $modelPath")
             }
 
             val mem = readDeviceRam()
@@ -99,6 +107,7 @@ class EngineCore(private val context: Context) {
                         throw EngineLoadException(EngineError.ERR_LOAD_FAILED, "native load code $newHandle")
                     }
                     handle = newHandle
+                    unloadWhenIdle = false
                     currentModelPath = modelPath
                     currentCtxSize = plan.ctxSize
                     currentThreads = plan.nThreads
@@ -235,12 +244,18 @@ class EngineCore(private val context: Context) {
             safeError(callback, requestId, EngineError.ERR_NATIVE, e.message ?: "generation error")
         } finally {
             generating.set(false)
+            lock.withLock {
+                if (unloadWhenIdle) {
+                    unloadLocked()
+                    unloadWhenIdle = false
+                }
+            }
         }
     }
 
     fun cancel(@Suppress("UNUSED_PARAMETER") requestId: Int) {
         lock.withLock {
-            if (handle != 0L) EngineNative.nativeCancel(handle)
+            if (handle != 0L && generating.get()) EngineNative.nativeCancel(handle)
         }
     }
 
@@ -280,7 +295,14 @@ class EngineCore(private val context: Context) {
     fun stats(): String = lock.withLock { statsLocked() }
 
     fun unload() {
-        lock.withLock { unloadLocked() }
+        lock.withLock {
+            if (generating.get()) {
+                unloadWhenIdle = true
+                if (handle != 0L) EngineNative.nativeCancel(handle)
+                return
+            }
+            unloadLocked()
+        }
     }
 
     private fun maybeRestorePrefix(key: String): Boolean {
@@ -304,6 +326,7 @@ class EngineCore(private val context: Context) {
 
     private fun unloadLocked() {
         if (handle != 0L) {
+            unloadWhenIdle = false
             EngineNative.nativeFreeModel(handle)
             handle = 0L
             currentModelPath = null

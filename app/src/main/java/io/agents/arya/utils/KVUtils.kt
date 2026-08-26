@@ -424,11 +424,14 @@ object KVUtils {
     // ==================== Voice (time-contract) ====================
     private const val KEY_VOICE_AUTO_SEND = "KEY_VOICE_AUTO_SEND"
     private const val KEY_VOICE_TTS = "KEY_VOICE_TTS"
+    private const val KEY_VOICE_LOCALE = "KEY_VOICE_LOCALE"
 
     fun isVoiceAutoSend(): Boolean = getBoolean(KEY_VOICE_AUTO_SEND, false)
     fun setVoiceAutoSend(enabled: Boolean) = putBoolean(KEY_VOICE_AUTO_SEND, enabled)
     fun isVoiceTtsEnabled(): Boolean = getBoolean(KEY_VOICE_TTS, true)
     fun setVoiceTtsEnabled(enabled: Boolean) = putBoolean(KEY_VOICE_TTS, enabled)
+    fun getVoiceLocale(): String = getString(KEY_VOICE_LOCALE, "fa-IR")
+    fun setVoiceLocale(value: String) = putString(KEY_VOICE_LOCALE, value)
 
     private const val KEY_OFFLINE_STT = "KEY_OFFLINE_STT"
     fun isOfflineSttEnabled(): Boolean = getBoolean(KEY_OFFLINE_STT, false)
