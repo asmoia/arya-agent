@@ -1,5 +1,9 @@
 # Redesign v1 changelog
 
+## 1.2.6
+
+Official rebuild from the signed v1.2.5 source tag. This release changes only the application version metadata: versionCode 109 and versionName 1.2.6.
+
 ## 1.2.5
 
 Huawei 1.7B on 1.2.4 copied the GGUF off FUSE, then said ready in 3s.
