@@ -49,21 +49,31 @@ class EngineClient(private val app: Context) {
     private val deathListeners = CopyOnWriteArrayList<(String) -> Unit>()
 
     private val deathRecipient = IBinder.DeathRecipient {
-        EngineLog.e("EngineClient", "engine binder died model=$activeModelPath")
-        _state.value = EngineState.Crashed("Engine process died")
+        val reason = engineDeathReason()
+        EngineLog.e("EngineClient", "engine binder died model=$activeModelPath reason=$reason")
+        _state.value = EngineState.Crashed(reason)
         val model = activeModelPath
         if (model != null) recordCrash(model)
         engineBinder = null
         activeGenerateRequestId.set(-1)
         pendingBind.getAndSet(null)?.let { waiter ->
-            if (waiter.isActive) waiter.resumeWithException(IllegalStateException("Engine process died"))
+            if (waiter.isActive) waiter.resumeWithException(IllegalStateException(reason))
         }
         deathListeners.forEach { listener ->
             try {
-                listener("Engine process died")
+                listener(reason)
             } catch (_: Exception) {
             }
         }
+    }
+
+    private fun engineDeathReason(): String {
+        val crashFile = java.io.File(app.cacheDir, "engine_logs/native-crash.txt")
+        val detail = runCatching {
+            if (crashFile.isFile) crashFile.readText().takeLast(160).trim().replace('\n', ' ')
+            else ""
+        }.getOrDefault("")
+        return if (detail.isBlank()) "Engine process died" else "Engine process died: $detail"
     }
 
     private val serviceConnection = object : ServiceConnection {

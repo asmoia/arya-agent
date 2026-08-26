@@ -21,6 +21,7 @@ object EngineNative {
     interface NativeLoadCallback {
         fun onProgress(pct: Int, phase: String)
     }
+    external fun nativeSetCrashLogPath(path: String)
     external fun nativeFreeModel(handle: Long)
     external fun nativeCancel(handle: Long)
     external fun nativeSaveState(handle: Long, statePath: String): Boolean

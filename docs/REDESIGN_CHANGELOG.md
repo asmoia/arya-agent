@@ -8,6 +8,7 @@ Official rebuild from the signed v1.2.5 source tag with the v1.2.6 version metad
 - Repair stale local model paths and prevent cloud fallback from masking a usable local model; reject model switching/unload races during generation.
 - Keep request-scoped cancellation callbacks until a terminal event; harden voice model resolution and external automation payload/callback validation.
 - Close global cleartext traffic and keep debug task receivers in the debug manifest only.
+- Use `LLAMA_LOAD_MODE_MMAP` after the ext4 fast copy instead of the anonymous-allocation path; configure an app-specific native crash breadcrumb so a process death during weight loading is diagnosable.
 
 ## 1.2.5
 

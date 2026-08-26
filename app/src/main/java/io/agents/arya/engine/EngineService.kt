@@ -263,6 +263,13 @@ class EngineService : Service() {
         super.onCreate()
         EngineLog.init(this)
         EngineLog.i("EngineService", "onCreate pid=${android.os.Process.myPid()}")
+        runCatching {
+            val crashFile = java.io.File(cacheDir, "engine_logs/native-crash.txt")
+            crashFile.parentFile?.mkdirs()
+            EngineNative.nativeSetCrashLogPath(crashFile.absolutePath)
+        }.onFailure { error ->
+            EngineLog.w("EngineService", "native crash log path setup failed", error)
+        }
         engineCore = EngineCore(this)
         profileManager = DeviceProfileManager(this)
         inferenceThread = HandlerThread("inference").apply { start() }

@@ -137,7 +137,7 @@ static bool detect_gpu_available() {
     return false;
 }
 
-static char g_crash_path[256] = "/data/data/io.agents.arya/cache/engine_logs/native-crash.txt";
+static char g_crash_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/native-crash.txt";
 
 static void crash_handler(int sig) {
     char buf[80];
@@ -151,6 +151,12 @@ static void crash_handler(int sig) {
         close(fd);
     }
     _exit(128 + sig);
+}
+
+static void set_crash_log_path(const char * path) {
+    if (!path || !path[0]) return;
+    strncpy(g_crash_path, path, sizeof(g_crash_path) - 1);
+    g_crash_path[sizeof(g_crash_path) - 1] = '\0';
 }
 
 static void install_crash_handler() {
@@ -258,7 +264,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     const char * path = env->GetStringUTFChars(model_path, nullptr);
     if (!path) return -1;
     double t0 = now_ms();
-    LOGI("Loading model: %s n_ctx=%d n_threads=%d (load_mode=NONE)", path, n_ctx, n_threads);
+    LOGI("Loading model: %s n_ctx=%d n_threads=%d (load_mode=MMAP; source must be internal fast path)", path, n_ctx, n_threads);
     log_rss("before-load");
 
     if (n_threads <= 0) n_threads = detect_inference_threads();
@@ -269,9 +275,10 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     llama_backend_init();
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0;
-    // Force a real read into anonymous RAM. Default AUTO/MMAP on Huawei FUSE
-    // "succeeds" in 3s with ~70 MB RSS, then the first llama_decode dies.
-    mp.load_mode = LLAMA_LOAD_MODE_NONE;
+    // ModelFileLocalizer has already copied FUSE/external files to ext4 under
+    // filesDir/models/fast. mmap there avoids the large anonymous allocation of
+    // LLAMA_LOAD_MODE_NONE and lets the kernel page weights in on demand.
+    mp.load_mode = LLAMA_LOAD_MODE_MMAP;
 
     LoadProgressBridge bridge{env, nullptr, nullptr, -1};
     if (progress_cb) {
@@ -351,6 +358,17 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
         LOGE("nativeLoadModel unknown exception");
         return -8;
     }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_io_agents_arya_engine_EngineNative_nativeSetCrashLogPath(
+    JNIEnv * env, jobject, jstring crash_path)
+{
+    if (!crash_path) return;
+    const char * path = env->GetStringUTFChars(crash_path, nullptr);
+    if (!path) return;
+    set_crash_log_path(path);
+    env->ReleaseStringUTFChars(crash_path, path);
 }
 
 extern "C" JNIEXPORT void JNICALL
