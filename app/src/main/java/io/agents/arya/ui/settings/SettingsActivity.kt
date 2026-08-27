@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import android.graphics.drawable.GradientDrawable
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
@@ -18,13 +19,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import io.agents.arya.ClawApplication
 import io.agents.arya.R
 import io.agents.arya.base.BaseActivity
 import io.agents.arya.widget.AlertDialog
 import io.agents.arya.widget.ConfirmDialog
 import io.agents.arya.widget.CommonToolbar
-import io.agents.arya.widget.InputDialog
 import io.agents.arya.widget.MenuGroup
 import io.agents.arya.widget.MenuItem
 import io.agents.arya.AppCapabilityCoordinator
@@ -33,10 +32,7 @@ import io.agents.arya.appViewModel
 import io.agents.arya.server.ConfigServerManager
 import io.agents.arya.service.ForegroundService
 import io.agents.arya.support.DebugReportManager
-import io.agents.arya.agent.hermes.backup.HermesBackupManager
 import io.agents.arya.utils.KVUtils
-import io.agents.arya.agent.hermes.core.HermesRuntimePolicy
-import io.agents.arya.agent.hermes.core.HermesThinkingMode
 import io.agents.arya.utils.XLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -63,12 +59,7 @@ class SettingsActivity : BaseActivity() {
     private var permOverlay: io.agents.arya.widget.MenuItem? = null
     private var permBattery: io.agents.arya.widget.MenuItem? = null
     private var permStorage: io.agents.arya.widget.MenuItem? = null
-    private var externalAutomationItem: io.agents.arya.widget.MenuItem? = null
-    private var hermesCoreItem: io.agents.arya.widget.MenuItem? = null
-    private var thinkingModeItem: io.agents.arya.widget.MenuItem? = null
     private var sensitiveConfirmItem: io.agents.arya.widget.MenuItem? = null
-    private var globalPromptItem: io.agents.arya.widget.MenuItem? = null
-    private var customModelUrlItem: io.agents.arya.widget.MenuItem? = null
 
     private val viewModel by lazy {
         ViewModelProvider(this)[SettingsViewModel::class.java]
@@ -84,20 +75,6 @@ class SettingsActivity : BaseActivity() {
 
     // Register channel config result callback
     
-    /** SAF picker for Hermes backup ZIP import */
-    private val hermesImportLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@registerForActivityResult
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                HermesBackupManager.importFromUri(this@SettingsActivity, uri, replaceAll = false)
-            }
-            Toast.makeText(this@SettingsActivity, result.message, Toast.LENGTH_LONG).show()
-            XLog.i("SettingsActivity", "hermes import: ${result.message}")
-        }
-    }
-
 private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this) { result ->
         result?.let {
             // Refresh settings after successful config (refresh "Bound"/"Unbound" status)
@@ -111,6 +88,12 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         // Force match theme from ThemeManager
         val themeColors = io.agents.arya.ui.chat.ThemeManager.getColors()
         window.statusBarColor = themeColors.toolbarBg
+        window.navigationBarColor = themeColors.bg
+        window.decorView.systemUiVisibility = if (io.agents.arya.ui.chat.ThemeManager.isDark()) {
+            0
+        } else {
+            android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
         window.decorView.setBackgroundColor(themeColors.bg)
 
         setContentView(R.layout.activity_settings)
@@ -124,6 +107,7 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         initToolbar()
         initMenuGroups()
         initSettingsSearch()
+        styleSearchBox(themeColors)
         applyThemeToGroups(themeColors)
         observeViewModel()
     }
@@ -151,7 +135,6 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         show(R.id.modelGroup, SettingsGroup.MODEL)
         show(R.id.appearanceGroup, SettingsGroup.ADVANCED)
         show(R.id.toolsGroup, SettingsGroup.VOICE)
-        show(R.id.remoteGroup, SettingsGroup.ADVANCED)
         show(R.id.aboutGroup, SettingsGroup.ADVANCED)
     }
 
@@ -159,8 +142,7 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         super.onResume()
         refreshSettings()
         refreshPermissions()
-        refreshExternalAutomation()
-        refreshHermesAndSafety()
+        refreshSafety()
         handler.removeCallbacks(permPoller)
         handler.postDelayed(permPoller, 1000)
     }
@@ -180,43 +162,10 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         permStorage?.setTrailingText(if (capabilities.storageAccessGranted) getString(R.string.settings_status_enabled) else getString(R.string.settings_status_disabled))
     }
 
-    private fun refreshExternalAutomation() {
-        externalAutomationItem?.setTrailingText(
-            if (KVUtils.isExternalAutomationEnabled()) getString(R.string.settings_status_enabled) else getString(R.string.settings_status_disabled)
-        )
-    }
-
-    private fun refreshHermesAndSafety() {
-        hermesCoreItem?.setTrailingText(
-            if (KVUtils.isHermesEmbeddedEnabled()) getString(R.string.settings_hermes_status_enabled) else getString(R.string.settings_hermes_status_disabled)
-        )
+    private fun refreshSafety() {
         sensitiveConfirmItem?.setTrailingText(
             if (KVUtils.isSensitiveConfirmEnabled()) getString(R.string.settings_status_enabled) else getString(R.string.settings_status_disabled)
         )
-    }
-
-    private fun toggleHermesCore() {
-        val currently = KVUtils.isHermesEmbeddedEnabled()
-        if (currently) {
-            ConfirmDialog.showWarm(
-                context = this,
-                title = getString(R.string.settings_hermes_disable_title),
-                message = getString(R.string.settings_hermes_disable_message),
-                actionTitle = getString(R.string.settings_hermes_disable_action),
-                cancelTitle = getString(R.string.common_cancel),
-                onAction = {
-                    KVUtils.setHermesEmbeddedEnabled(false)
-                    ClawApplication.appViewModelInstance.updateAgentConfig()
-                    refreshHermesAndSafety()
-                    Toast.makeText(this, R.string.settings_hermes_disabled, Toast.LENGTH_SHORT).show()
-                }
-            )
-        } else {
-            KVUtils.setHermesEmbeddedEnabled(true)
-            ClawApplication.appViewModelInstance.updateAgentConfig()
-            refreshHermesAndSafety()
-            Toast.makeText(this, R.string.settings_hermes_enabled, Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun toggleSensitiveConfirm() {
@@ -230,109 +179,17 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
                 cancelTitle = getString(R.string.common_cancel),
                 onAction = {
                     KVUtils.setSensitiveConfirmEnabled(false)
-                    refreshHermesAndSafety()
+                    refreshSafety()
                     Toast.makeText(this, R.string.settings_sensitive_disabled, Toast.LENGTH_LONG).show()
                 }
             )
         } else {
             KVUtils.setSensitiveConfirmEnabled(true)
-            refreshHermesAndSafety()
+            refreshSafety()
             Toast.makeText(this, R.string.settings_sensitive_enabled, Toast.LENGTH_SHORT).show()
         }
     }
 
-    /** Refreshes the trailing label on the global-prompt row (#45). */
-
-    private fun showOemGuide() {
-        AlertDialog.show(
-            context = this,
-            title = getString(R.string.settings_oem_guide_title),
-            message = getString(R.string.settings_oem_guide_message),
-            actionTitle = getString(R.string.common_confirm)
-        )
-    }
-
-
-    
-    private fun thinkingModeLabel(mode: HermesThinkingMode): String = when (mode) {
-        HermesThinkingMode.ADAPTIVE -> getString(R.string.settings_thinking_adaptive)
-        HermesThinkingMode.INSTANT -> getString(R.string.settings_thinking_instant)
-        HermesThinkingMode.THINKING -> getString(R.string.settings_thinking_thinking)
-        HermesThinkingMode.HIGH -> getString(R.string.settings_thinking_high)
-    }
-
-    private fun cycleThinkingMode() {
-        val order = listOf(
-            HermesThinkingMode.INSTANT,
-            HermesThinkingMode.ADAPTIVE,
-            HermesThinkingMode.THINKING,
-            HermesThinkingMode.HIGH
-        )
-        val cur = HermesRuntimePolicy.currentMode()
-        val idx = order.indexOf(cur).let { if (it < 0) 0 else it }
-        val next = order[(idx + 1) % order.size]
-        HermesRuntimePolicy.setMode(next)
-        thinkingModeItem?.setTrailingText(thinkingModeLabel(next))
-        val detail = when (next) {
-            HermesThinkingMode.ADAPTIVE -> getString(R.string.settings_thinking_adaptive_detail)
-            HermesThinkingMode.INSTANT -> getString(R.string.settings_thinking_instant_detail)
-            HermesThinkingMode.THINKING -> getString(R.string.settings_thinking_thinking_detail)
-            HermesThinkingMode.HIGH -> getString(R.string.settings_thinking_high_detail)
-        }
-        Toast.makeText(this, getString(R.string.settings_task_mode_toast, thinkingModeLabel(next), detail), Toast.LENGTH_LONG).show()
-    }
-
-    private fun exportHermesBackup() {
-        Toast.makeText(this, R.string.settings_backup_in_progress, Toast.LENGTH_SHORT).show()
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                HermesBackupManager.exportToCache(this@SettingsActivity)
-            }
-            if (!result.ok || result.file == null) {
-                Toast.makeText(this@SettingsActivity, result.message, Toast.LENGTH_LONG).show()
-                return@launch
-            }
-            try {
-                val uri = FileProvider.getUriForFile(
-                    this@SettingsActivity,
-                    "${packageName}.fileprovider",
-                    result.file
-                )
-                val share = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/zip"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_SUBJECT, getString(R.string.settings_backup_subject))
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(share, getString(R.string.settings_backup_share_chooser)))
-            } catch (e: Exception) {
-                XLog.e("SettingsActivity", "share backup failed", e)
-                Toast.makeText(this@SettingsActivity, getString(R.string.settings_share_failed, e.message.orEmpty()), Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-
-    private fun refreshGlobalPromptStatus() {
-        val current = KVUtils.getGlobalPrompt()
-        val label = if (current.isBlank()) {
-            getString(R.string.global_prompt_not_set)
-        } else {
-            getString(R.string.global_prompt_set_status, current.length)
-        }
-        globalPromptItem?.setTrailingText(label)
-    }
-
-    /** Refreshes the trailing label on the custom-model-URL row (#36). */
-    private fun refreshCustomModelUrlStatus() {
-        val current = KVUtils.getCustomLocalModelUrl()
-        val label = if (current.isBlank()) {
-            getString(R.string.custom_local_model_url_not_set)
-        } else {
-            getString(R.string.custom_local_model_url_set)
-        }
-        customModelUrlItem?.setTrailingText(label)
-    }
 
     private fun initToolbar() {
         findViewById<CommonToolbar>(R.id.toolbar).apply {
@@ -340,6 +197,22 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
             showBackButton(true) { finish() }
         }
     }
+
+    private fun styleSearchBox(tc: io.agents.arya.ui.chat.ThemeManager.ChatColors) {
+        findViewById<android.widget.EditText>(R.id.settingsSearch)?.apply {
+            setTextColor(tc.aiText)
+            setHintTextColor(tc.toolDefault)
+            background = GradientDrawable().apply {
+                setColor(tc.toolbarBg)
+                setStroke(dp(1), tc.inputBorder)
+                cornerRadius = dp(14).toFloat()
+            }
+            setPadding(dp(16), 0, dp(16), 0)
+            minHeight = dp(48)
+        }
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun applyThemeToGroups(tc: io.agents.arya.ui.chat.ThemeManager.ChatColors) {
         val groups = listOf(
@@ -349,7 +222,7 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         for (id in groups) {
             val g = findViewById<MenuGroup>(id) ?: continue
             g.setTitleColor(tc.aiText)
-            g.setCardBackgroundColor(tc.toolbarBg)
+            g.setCardBackgroundColor(tc.aiBubble)
             for (i in 0 until g.getMenuItemCount()) {
                 g.getMenuItemAt(i)?.apply {
                     setTitleColor(tc.aiText)
@@ -369,28 +242,6 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
 
     private fun refreshSettings() {
         viewModel.refresh()
-    }
-
-    private fun toggleExternalAutomation() {
-        if (KVUtils.isExternalAutomationEnabled()) {
-            KVUtils.setExternalAutomationEnabled(false)
-            refreshExternalAutomation()
-            Toast.makeText(this, R.string.settings_external_automation_disabled, Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        ConfirmDialog.showWarm(
-            context = this,
-            title = getString(R.string.settings_external_automation_enable_title),
-            message = getString(R.string.settings_external_automation_enable_message),
-            actionTitle = getString(R.string.settings_external_automation_enable_action),
-            cancelTitle = getString(R.string.common_cancel),
-            onAction = {
-                KVUtils.setExternalAutomationEnabled(true)
-                refreshExternalAutomation()
-                Toast.makeText(this, R.string.settings_external_automation_enabled, Toast.LENGTH_SHORT).show()
-            }
-        )
     }
 
     private fun initMenuGroups() {
@@ -518,90 +369,6 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         )
         menuItems[SettingsViewModel.MenuAction.LLM_CONFIG.name]?.setLeadingIconColor(getColor(R.color.colorTextPrimary))
 
-        // Task Budget (inline in model group)
-        modelGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_recent_history,
-            title = getString(R.string.settings_task_budget),
-            onClick = { showBudgetDialog() },
-            showDivider = true
-        ).apply {
-            setTrailingText(io.agents.arya.agent.TaskBudget.describeCurrentBudget())
-        }
-
-        // Global Prompt (#45) — user-defined persistent instructions
-        globalPromptItem = modelGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_edit,
-            title = getString(R.string.global_prompt_title),
-            onClick = {
-                val current = KVUtils.getGlobalPrompt()
-                XLog.i("SettingsActivity", "open global prompt dialog: current.len=${current.length}")
-                InputDialog.show(
-                    context = this@SettingsActivity,
-                    title = getString(R.string.global_prompt_dialog_title),
-                    presetText = current,
-                    hint = getString(R.string.global_prompt_hint),
-                    maxLength = 2000,
-                ) { text ->
-                    KVUtils.setGlobalPrompt(text)
-                    XLog.i("SettingsActivity", "global prompt saved: new.len=${text.length}, hasPrompt=${KVUtils.hasGlobalPrompt()}")
-                    refreshGlobalPromptStatus()
-                }
-            },
-            showDivider = false
-        )
-        globalPromptItem?.setLeadingIconColor(getColor(R.color.colorTextPrimary))
-        refreshGlobalPromptStatus()
-
-        // Custom Local Model URL (#36) — advanced: lets users add their own model download URL
-        customModelUrlItem = modelGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_share,
-            title = getString(R.string.custom_local_model_url_title),
-            onClick = {
-                val current = KVUtils.getCustomLocalModelUrl()
-                XLog.i("SettingsActivity", "open custom model url dialog: current.len=${current.length}")
-                InputDialog.show(
-                    context = this@SettingsActivity,
-                    title = getString(R.string.custom_local_model_url_dialog_title),
-                    presetText = current,
-                    hint = getString(R.string.custom_local_model_url_hint),
-                    maxLength = 1000,
-                    inputValidate = { text ->
-                        val lower = text.trim().lowercase()
-                        if (lower.isEmpty()) {
-                            // Empty = clear; allow
-                            io.agents.arya.widget.InputDialog.ValidateResult(true, null)
-                        } else if (!lower.startsWith("https://")) {
-                            io.agents.arya.widget.InputDialog.ValidateResult(
-                                false,
-                                getString(R.string.custom_local_model_url_invalid)
-                            )
-                        } else {
-                            io.agents.arya.widget.InputDialog.ValidateResult(true, null)
-                        }
-                    },
-                ) { text ->
-                    // Normalize the protocol prefix to lowercase (Android keyboard auto-cap
-                    // can produce "HTTPS://..."). Rest of the URL is case-preserved.
-                    val trimmed = text.trim().let { raw ->
-                        when {
-                            raw.startsWith("HTTPS://", ignoreCase = false) -> "https://" + raw.substring(8)
-                            raw.startsWith("HTTP://", ignoreCase = false) -> "http://" + raw.substring(7)
-                            else -> raw
-                        }
-                    }
-                    KVUtils.setCustomLocalModelUrl(trimmed)
-                    XLog.i(
-                        "SettingsActivity",
-                        "custom local model url saved: new.len=${trimmed.length}, hasUrl=${KVUtils.hasCustomLocalModelUrl()}"
-                    )
-                    refreshCustomModelUrlStatus()
-                }
-            },
-            showDivider = false
-        )
-        customModelUrlItem?.setLeadingIconColor(getColor(R.color.colorTextPrimary))
-        refreshCustomModelUrlStatus()
-
         // Appearance
         val appearanceGroup = findViewById<MenuGroup>(R.id.appearanceGroup)
         appearanceGroup.setTitle(getString(R.string.settings_group_appearance))
@@ -619,18 +386,9 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
             setTrailingText(label)
         }
 
-        // Tools + Hermes safety
+        // Assistant behavior: keep only the controls users need day to day.
         val toolsGroup = findViewById<MenuGroup>(R.id.toolsGroup)
-        toolsGroup.setTitle(getString(R.string.settings_group_tools))
-
-        hermesCoreItem = toolsGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_compass,
-            title = getString(R.string.settings_hermes_core),
-            onClick = { toggleHermesCore() },
-            showDivider = true
-        ).apply {
-            setTrailingText(if (KVUtils.isHermesEmbeddedEnabled()) getString(R.string.settings_hermes_status_enabled) else getString(R.string.settings_hermes_status_disabled))
-        }
+        toolsGroup.setTitle(getString(R.string.settings_group_assistant))
 
         sensitiveConfirmItem = toolsGroup.addMenuItem(
             leadingIcon = android.R.drawable.ic_menu_info_details,
@@ -641,66 +399,18 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
             setTrailingText(if (KVUtils.isSensitiveConfirmEnabled()) getString(R.string.settings_status_enabled) else getString(R.string.settings_status_disabled))
         }
 
-        thinkingModeItem = toolsGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_sort_by_size,
-            title = getString(R.string.settings_thinking_mode),
-            onClick = { cycleThinkingMode() },
-            showDivider = true
-        ).apply {
-            setTrailingText(thinkingModeLabel(HermesRuntimePolicy.currentMode()))
-        }
-
         toolsGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_manage,
-            title = getString(R.string.settings_manage_tools),
-            onClick = {
-                Toast.makeText(
-                    this,
-                    getString(R.string.settings_gated_help),
-                    Toast.LENGTH_LONG
-                ).show()
-            },
-            showDivider = true
-        ).apply {
-            setTrailingText(getString(R.string.settings_tools_gated))
-        }
-
-        toolsGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_save,
-            title = getString(R.string.settings_backup_export),
-            onClick = { exportHermesBackup() },
-            showDivider = true
-        ).apply {
-            setTrailingText(getString(R.string.settings_zip))
-        }
-
-        toolsGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_upload,
-            title = getString(R.string.settings_backup_restore_action) + " Hermes (Import)",
-            onClick = {
-                ConfirmDialog.show(
-                    context = this,
-                    title = getString(R.string.settings_backup_restore_title),
-                    message = getString(R.string.settings_backup_restore_message),
-                    actionTitle = getString(R.string.settings_backup_restore_action),
-                    cancelTitle = getString(R.string.common_cancel),
-                    onAction = {
-                        hermesImportLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
-                    }
-                )
-            },
-            showDivider = true
-        ).apply {
-            setTrailingText(getString(R.string.settings_zip))
-        }
-
-        toolsGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_btn_speak_now,
+            leadingIcon = R.drawable.ic_rocket,
             title = getString(R.string.settings_voice_auto_send),
             onClick = {
                 val next = !KVUtils.isVoiceAutoSend()
                 KVUtils.setVoiceAutoSend(next)
-                Toast.makeText(this, if (next) "Auto-send on" else "Auto-send off", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    if (next) getString(R.string.settings_voice_auto_send_enabled)
+                    else getString(R.string.settings_voice_auto_send_disabled),
+                    Toast.LENGTH_SHORT,
+                ).show()
             },
             showDivider = true
         ).apply {
@@ -708,57 +418,26 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
         }
 
         toolsGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_lock_silent_mode_off,
+            leadingIcon = R.drawable.ic_notification,
             title = getString(R.string.settings_voice_tts),
             onClick = {
                 val next = !KVUtils.isVoiceTtsEnabled()
                 KVUtils.setVoiceTtsEnabled(next)
-                Toast.makeText(this, if (next) "TTS on" else "TTS off", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    if (next) getString(R.string.settings_voice_tts_enabled)
+                    else getString(R.string.settings_voice_tts_disabled),
+                    Toast.LENGTH_SHORT,
+                ).show()
             },
             showDivider = true
         ).apply {
             setTrailingText(if (KVUtils.isVoiceTtsEnabled()) "ON" else "OFF")
         }
 
-        toolsGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_btn_speak_now,
-            title = getString(R.string.settings_offline_stt),
-            onClick = {
-                val next = !KVUtils.isOfflineSttEnabled()
-                KVUtils.setOfflineSttEnabled(next)
-                Toast.makeText(
-                    this,
-                    if (next) getString(R.string.settings_offline_stt_on)
-                    else getString(R.string.settings_offline_stt_off),
-                    Toast.LENGTH_SHORT,
-                ).show()
-            },
-            showDivider = true
-        ).apply {
-            setTrailingText(if (KVUtils.isOfflineSttEnabled()) "ON" else "OFF")
-        }
-
-        toolsGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_info_details,
-            title = getString(R.string.settings_oem_guide),
-            onClick = { showOemGuide() },
-            showDivider = false
-        ).apply {
-            setTrailingText(getString(R.string.settings_oem_guide_trailing))
-        }
-
-        // Remote Control
-        val remoteGroup = findViewById<MenuGroup>(R.id.remoteGroup)
-        remoteGroup.setTitle(getString(R.string.settings_remote_control))
-
-        externalAutomationItem = remoteGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_share,
-            title = getString(R.string.settings_remote_control),
-            onClick = { toggleExternalAutomation() },
-            showDivider = true
-        ).apply {
-            setTrailingText(if (KVUtils.isExternalAutomationEnabled()) "Enabled" else "Disabled")
-        }
+        // Remote automation is still supported internally, but stays out of the
+        // primary Settings surface until it has a dedicated security screen.
+        findViewById<MenuGroup>(R.id.remoteGroup)?.visibility = android.view.View.GONE
 
         // About
         val aboutGroup = findViewById<MenuGroup>(R.id.aboutGroup)
@@ -766,11 +445,11 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
 
         aboutGroup.addMenuItem(
             leadingIcon = android.R.drawable.ic_menu_info_details,
-            title = "آریا (Arya)",
+            title = getString(R.string.app_name),
             onClick = { },
             showDivider = true
         ).apply {
-            setTrailingText("v${io.agents.arya.BuildConfig.VERSION_NAME} · Hermes")
+            setTrailingText("v${io.agents.arya.BuildConfig.VERSION_NAME}")
         }
 
         aboutGroup.addMenuItem(
@@ -786,31 +465,9 @@ private val channelConfigLauncher = ChannelConfigActivity.registerLauncher(this)
             leadingIcon = android.R.drawable.ic_menu_upload,
             title = getString(R.string.settings_share_debug_report),
             onClick = { shareDebugReport() },
-            showDivider = true
-        ).apply {
-            setTrailingText(getString(R.string.settings_zip_logs_state))
-        }
-
-        aboutGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_share,
-            title = "GitHub",
-            onClick = {
-                startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/asmoia/arya-agent".toUri()))
-            },
-            showDivider = true
-        ).apply {
-            setTrailingText("asmoia/arya-agent")
-        }
-
-        aboutGroup.addMenuItem(
-            leadingIcon = android.R.drawable.ic_menu_compass,
-            title = "Built by",
-            onClick = {
-                startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/ithiria894".toUri()))
-            },
             showDivider = false
         ).apply {
-            setTrailingText("ithiria894")
+            setTrailingText(getString(R.string.settings_zip_logs_state))
         }
     }
 

@@ -3,8 +3,10 @@
 
 package io.agents.arya.agent.llm
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.StatFs
+import io.agents.arya.engine.budget.MemoryBudget
 import io.agents.arya.utils.XLog
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -109,8 +111,9 @@ object LocalModelManager {
     )
 
     fun recommendedModel(context: Context): ModelInfo? {
-        val deviceRamGb = getDeviceRamGb(context)
-        return AVAILABLE_MODELS.firstOrNull { it.minRamGb <= deviceRamGb }
+        return catalog(context).firstOrNull { it.isSupported && it.model.id == "qwen3-1.7b" }
+            ?.model
+            ?: catalog(context).firstOrNull { it.isSupported }?.model
     }
 
     /** Blocks retired large Gemma selections left in old app preferences. */
@@ -132,12 +135,11 @@ object LocalModelManager {
 
     fun deviceSupport(context: Context): DeviceSupport {
         val deviceRamGb = getDeviceRamGb(context)
+        val runtimeSupported = AVAILABLE_MODELS.filter { runtimePlan(context, it) is MemoryBudget.Plan.Load }
         return DeviceSupport(
             deviceRamGb = deviceRamGb,
             minimumBuiltInRamGb = AVAILABLE_MODELS.minOfOrNull { it.minRamGb } ?: 0,
-            bestSupportedModel = AVAILABLE_MODELS
-                .filter { it.minRamGb <= deviceRamGb }
-                .maxByOrNull { it.minRamGb }
+            bestSupportedModel = runtimeSupported.maxByOrNull { it.minRamGb }
         )
     }
 
@@ -146,16 +148,33 @@ object LocalModelManager {
     }
 
     fun isModelSupportedOnDevice(context: Context, model: ModelInfo): Boolean {
-        return deviceSupport(context).deviceRamGb >= model.minRamGb
+        return runtimePlan(context, model) is MemoryBudget.Plan.Load
+    }
+
+    private fun runtimePlan(context: Context, model: ModelInfo): MemoryBudget.Plan {
+        if (model.isCustom || model.sizeBytes <= 0L) return MemoryBudget.Plan.Load(1024, 2, false)
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            ?: return MemoryBudget.Plan.Refuse("ActivityManager unavailable", "مدیریت حافظه در دسترس نیست", true)
+        val info = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        return MemoryBudget.plan(
+            MemoryBudget.Inputs(
+                totalRamBytes = info.totalMem,
+                availRamBytes = info.availMem,
+                modelFileBytes = model.sizeBytes,
+                isLowRamDevice = am.isLowRamDevice,
+                processMemoryLimitBytes = am.largeMemoryClass.toLong() * 1024L * 1024L,
+            ),
+            null,
+        )
     }
 
     fun catalog(context: Context): List<CatalogEntry> {
-        val support = deviceSupport(context)
         val builtIns = AVAILABLE_MODELS.map { model ->
             CatalogEntry(
                 model = model,
                 isDownloaded = isModelDownloaded(context, model),
-                isSupported = model.minRamGb <= support.deviceRamGb,
+                isSupported = runtimePlan(context, model) is MemoryBudget.Plan.Load,
                 path = getModelPath(context, model),
             )
         }

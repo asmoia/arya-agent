@@ -6,9 +6,11 @@ import org.json.JSONObject
  * Pure, Context-free memory planner (S3). Unit-tested; never touches Android APIs.
  */
 object MemoryBudget {
-    const val PLAN_VERSION = 1
+    const val PLAN_VERSION = 2
     private const val MARGIN_BYTES = 600L * 1024 * 1024
     private const val FALLBACK_KV_PER_2048_PER_1B = 64L * 1024 * 1024
+    private const val NATIVE_TRANSIENT_RESERVE_BYTES = 160L * 1024 * 1024
+    private const val PROCESS_HEADROOM_RATIO = 0.88
 
     data class Inputs(
         val totalRamBytes: Long,
@@ -87,14 +89,21 @@ object MemoryBudget {
             )
         }
 
-        // System-wide free RAM is not enough evidence that :engine can survive
-        // a native load. Android also enforces a per-process heap class; keep
-        // headroom for the JVM, Binder, llama metadata, and transient buffers.
+        // getLargeMemoryClass() describes the managed Java heap, not the
+        // resident size of read-only mmap pages in a native :engine process.
+        // Never compare the whole GGUF file against that value: on Huawei it
+        // is 512 MB even though the 12 GB device has several GB free. Use the
+        // heap class only as a conservative cap for transient native work
+        // (KV cache + llama metadata/allocator headroom).
         val processLimit = i.processMemoryLimitBytes
-        if (processLimit > 0L && i.modelFileBytes > (processLimit * 0.88)) {
+        val processBudget = if (processLimit > 0L) {
+            (processLimit.toDouble() * PROCESS_HEADROOM_RATIO).toLong()
+        } else 0L
+        val transientNative = kvBytes(2048, i.modelMeta, i.modelFileBytes) + NATIVE_TRANSIENT_RESERVE_BYTES
+        if (processBudget > 0L && transientNative > processBudget) {
             return Plan.Refuse(
-                reasonEn = "This model exceeds the app's per-process memory budget",
-                reasonFa = "مدل از سقف حافظهٔ پردازش برنامه بزرگ‌تر است",
+                reasonEn = "This model's runtime working memory exceeds the app's per-process budget",
+                reasonFa = "حافظهٔ کاری اجرای این مدل از سقف پردازش برنامه بیشتر است",
                 suggestSmallerModel = true,
             )
         }
@@ -110,7 +119,7 @@ object MemoryBudget {
         for (ctx in candidates) {
             val working = modelWorkingSet(i.modelFileBytes, ctx, i.modelMeta)
             val fitsSystemRam = i.availRamBytes - working >= MARGIN_BYTES
-            val fitsProcessBudget = processLimit <= 0L || working + MARGIN_BYTES <= (processLimit * 0.88)
+            val fitsProcessBudget = processBudget <= 0L || (kvBytes(ctx, i.modelMeta, i.modelFileBytes) + NATIVE_TRANSIENT_RESERVE_BYTES) <= processBudget
             if (fitsSystemRam && fitsProcessBudget) {
                 return Plan.Load(
                     ctxSize = ctx,

@@ -117,6 +117,10 @@
     <string name="settings_group_advanced">پیشرفته</string>
     <string name="settings_voice_auto_send">ارسال خودکار متن صدا</string>
     <string name="settings_voice_tts">خواندن جواب‌های کوتاه</string>
+    <string name="settings_voice_auto_send_enabled">ارسال خودکار متن صدا فعال شد</string>
+    <string name="settings_voice_auto_send_disabled">ارسال خودکار متن صدا خاموش شد</string>
+    <string name="settings_voice_tts_enabled">خواندن جواب‌های کوتاه فعال شد</string>
+    <string name="settings_voice_tts_disabled">خواندن جواب‌های کوتاه خاموش شد</string>
     <string name="settings_offline_stt">تشخیص گفتار آفلاین</string>
     <string name="settings_search_hint">جستجو در تنظیمات</string>
     <string name="voice_need_mic">برای ورودی صوتی اجازه میکروفون لازم است</string>
@@ -277,6 +281,7 @@
     <string name="settings_group_appearance">ظاهر</string>
     <string name="settings_theme">تم</string>
     <string name="settings_group_tools">ابزارها و Hermes</string>
+    <string name="settings_group_assistant">دستیار</string>
     <string name="settings_manage_tools">مدیریت ابزارها</string>
     <string name="settings_tools_gated">محافظت‌شده</string>
     <string name="settings_remote_control">اتوماسیون خارجی</string>

@@ -44,9 +44,6 @@ object SettingsCatalog {
 
         return listOf(
             SettingsRow("llm", SettingsGroup.MODEL, title(R.string.menu_llm_config, "LLM Config"), listOf("model", "openai", "anthropic", "gguf", "qwen")),
-            SettingsRow("budget", SettingsGroup.MODEL, title(R.string.settings_task_budget, "Task Budget"), listOf("tokens", "cost")),
-            SettingsRow("prompt", SettingsGroup.MODEL, title(R.string.global_prompt_title, "Global prompt"), listOf("system", "instructions")),
-            SettingsRow("custom_url", SettingsGroup.MODEL, title(R.string.custom_local_model_url_title, "Custom model URL"), listOf("download", "gguf")),
             SettingsRow("a11y", SettingsGroup.PERMISSIONS, title(R.string.home_card_accessibility_title, "Accessibility"), listOf("a11y", "service")),
             SettingsRow("notif", SettingsGroup.PERMISSIONS, title(R.string.home_card_notification_title, "Notifications"), listOf("push")),
             SettingsRow("overlay", SettingsGroup.PERMISSIONS, title(R.string.home_card_system_window_title, "Overlay"), listOf("float", "bubble")),
@@ -54,10 +51,9 @@ object SettingsCatalog {
             SettingsRow("storage", SettingsGroup.PERMISSIONS, title(R.string.home_card_storage_title, "Storage"), listOf("files", "models")),
             SettingsRow("voice_auto", SettingsGroup.VOICE, title(R.string.settings_voice_auto_send, "Auto-send voice"), listOf("speech", "mic", "stt")),
             SettingsRow("voice_tts", SettingsGroup.VOICE, title(R.string.settings_voice_tts, "Speak short answers"), listOf("tts", "speech")),
-            SettingsRow("offline_stt", SettingsGroup.VOICE, title(R.string.settings_offline_stt, "Offline speech"), listOf("whisper", "stt")),
+            SettingsRow("safety", SettingsGroup.VOICE, title(R.string.settings_sensitive_confirm, "Sensitive-action confirmation"), listOf("safety", "confirm", "security")),
             SettingsRow("theme", SettingsGroup.ADVANCED, title(R.string.settings_theme, "Theme"), listOf("dark", "light")),
             SettingsRow("debug", SettingsGroup.ADVANCED, title(R.string.settings_report_bug, "Debug report"), listOf("log", "bug")),
-            SettingsRow("github", SettingsGroup.ADVANCED, title(R.string.settings_github, "GitHub"), listOf("source", "release")),
         )
     }
 }

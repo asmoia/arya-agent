@@ -42,6 +42,7 @@ class EngineClient(private val app: Context) {
 
     private val crashTimestamps = ConcurrentHashMap<String, MutableList<Long>>()
     private val quarantinedModels = ConcurrentHashMap.newKeySet<String>()
+    private val blockedModelReasons = ConcurrentHashMap<String, String>()
     private val nextLoadRequestId = AtomicInteger(1)
     private val activeGenerateRequestId = AtomicInteger(-1)
     private val pendingBind = AtomicReference<CancellableContinuation<IEngine>?>(null)
@@ -125,6 +126,10 @@ class EngineClient(private val app: Context) {
     }
 
     suspend fun ensureLoaded(modelPath: String, ctxSize: Int = 2048, nThreads: Int = 4): String {
+        blockedModelReasons[modelPath]?.let { reason ->
+            _state.value = EngineState.Quarantined(modelPath)
+            throw IllegalStateException(reason)
+        }
         if (quarantinedModels.contains(modelPath)) {
             _state.value = EngineState.Quarantined(modelPath)
             throw IllegalStateException(
@@ -172,10 +177,14 @@ class EngineClient(private val app: Context) {
                         override fun onError(id: Int, code: Int, message: String?) {
                             if (id != requestId && id != 0) return
                             deathListeners.remove(onDied)
+                            val detail = message ?: EngineError.message(code)
+                            if (code == EngineError.ERR_OOM_PREVENTED) {
+                                blockedModelReasons[modelPath] = detail
+                                quarantinedModels.add(modelPath)
+                                _state.value = EngineState.Quarantined(modelPath)
+                            }
                             if (cont.isActive) {
-                                cont.resumeWithException(
-                                    IllegalStateException(message ?: EngineError.message(code)),
-                                )
+                                cont.resumeWithException(IllegalStateException(detail))
                             }
                         }
                         override fun onLoadProgress(pct: Int, phase: String?) {
@@ -381,8 +390,12 @@ class EngineClient(private val app: Context) {
         synchronized(list) {
             list.add(now)
             list.removeAll { now - it > 10 * 60 * 1000L }
-            if (list.size >= 3) {
+            if (list.size >= 2) {
                 quarantinedModels.add(modelPath)
+                blockedModelReasons.putIfAbsent(
+                    modelPath,
+                    "This model crashed the native engine twice on this device. Try Qwen3 0.6B.",
+                )
                 _state.value = EngineState.Quarantined(modelPath)
             }
         }

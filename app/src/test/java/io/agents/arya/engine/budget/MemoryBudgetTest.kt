@@ -38,18 +38,45 @@ class MemoryBudgetSingleTest {
     }
 
     @Test
-    fun perProcessBudgetRejectsModelThatCanTriggerNativeKill() {
+    fun mmapModelIsNotRejectedByManagedHeapClassAlone() {
         val plan = MemoryBudget.plan(
             MemoryBudget.Inputs(
                 totalRamBytes = 12L * GB,
                 availRamBytes = 6L * GB,
                 modelFileBytes = 1_224L * MB,
                 isLowRamDevice = false,
-                processMemoryLimitBytes = 1_024L * MB,
+                processMemoryLimitBytes = 512L * MB,
+                modelMeta = MemoryBudget.ModelMeta(
+                    nLayers = 28,
+                    nKvHeads = 8,
+                    headDim = 128,
+                    nParams = 1_700_000_000,
+                ),
             ),
             MemoryBudget.DeviceProfile(bestThreads = 4),
         )
-        assertTrue(plan is MemoryBudget.Plan.Refuse)
+        assertTrue("mmap-backed model should fit; got $plan", plan is MemoryBudget.Plan.Load)
+    }
+
+    @Test
+    fun verySmallProcessBudgetStillRefusesTransientMemory() {
+        val plan = MemoryBudget.plan(
+            MemoryBudget.Inputs(
+                totalRamBytes = 12L * GB,
+                availRamBytes = 6L * GB,
+                modelFileBytes = 1_224L * MB,
+                isLowRamDevice = false,
+                processMemoryLimitBytes = 256L * MB,
+                modelMeta = MemoryBudget.ModelMeta(
+                    nLayers = 28,
+                    nKvHeads = 8,
+                    headDim = 128,
+                    nParams = 1_700_000_000,
+                ),
+            ),
+            MemoryBudget.DeviceProfile(bestThreads = 4),
+        )
+        assertTrue("transient memory should be refused; got $plan", plan is MemoryBudget.Plan.Refuse)
     }
 
     @Test

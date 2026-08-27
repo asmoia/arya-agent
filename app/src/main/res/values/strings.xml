@@ -254,6 +254,10 @@
     <string name="settings_group_advanced">Advanced</string>
     <string name="settings_voice_auto_send">Auto-send voice transcripts</string>
     <string name="settings_voice_tts">Speak short answers</string>
+    <string name="settings_voice_auto_send_enabled">Voice transcript auto-send enabled</string>
+    <string name="settings_voice_auto_send_disabled">Voice transcript auto-send disabled</string>
+    <string name="settings_voice_tts_enabled">Short-answer speech enabled</string>
+    <string name="settings_voice_tts_disabled">Short-answer speech disabled</string>
     <string name="settings_offline_stt">Offline speech recognition</string>
     <string name="settings_search_hint">Search settings</string>
     <string name="voice_need_mic">Microphone permission is required for voice input</string>
@@ -269,6 +273,7 @@
     <string name="settings_group_appearance">Appearance</string>
     <string name="settings_theme">Theme</string>
     <string name="settings_group_tools">Tools and Hermes</string>
+    <string name="settings_group_assistant">Assistant</string>
     <string name="settings_manage_tools">Manage Tools</string>
     <string name="settings_tools_gated">Gated</string>
     <string name="settings_remote_control">External Automation</string>
