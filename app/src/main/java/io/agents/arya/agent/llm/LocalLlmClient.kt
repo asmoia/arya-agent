@@ -3,8 +3,10 @@ package io.agents.arya.agent.llm
 import android.content.Context
 import io.agents.arya.agent.AgentConfig
 import io.agents.arya.engine.EngineClient
+import io.agents.arya.engine.EngineError
 import io.agents.arya.engine.EngineEvent
 import io.agents.arya.engine.EngineRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -89,27 +91,60 @@ class LocalLlmClient(
             deadlineMs = 90_000L,
             tokenDeadlineMs = 12_000L,
         )
-        try {
-            withTimeout(120_000L) {
-                engineClient.generate(req).collect { engineEv ->
-                    when (engineEv) {
-                        is EngineEvent.Delta -> assembler.feed(engineEv.text).forEach { emit(it) }
-                        is EngineEvent.Done -> {
-                            assembler.finish().forEach { emit(it) }
+        suspend fun generateOnce(target: StreamAssembler): Throwable? {
+            return try {
+                withTimeout(120_000L) {
+                    engineClient.generate(req).collect { engineEv ->
+                        when (engineEv) {
+                            is EngineEvent.Delta -> target.feed(engineEv.text).forEach { emit(it) }
+                            is EngineEvent.Done -> target.finish().forEach { emit(it) }
+                            is EngineEvent.Failed -> throw GenerationFailure(engineEv.code, engineEv.message)
+                            is EngineEvent.LoadProgress -> emit(LlmEvent.Status(engineEv.phase.ifBlank { "Loading…" }))
                         }
-                        is EngineEvent.Failed -> emit(LlmEvent.Error(engineEv.code, engineEv.message))
-                        is EngineEvent.LoadProgress -> emit(LlmEvent.Status(engineEv.phase.ifBlank { "Loading…" }))
                     }
                 }
+                null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e
             }
+        }
+
+        val generationError = generateOnce(assembler)
+        if (generationError == null) return@flow
+
+        XLog.e(TAG, "generate failed", generationError)
+        if (generationError !is GenerationFailure || generationError.code != EngineError.ERR_NATIVE) {
+            val code = (generationError as? GenerationFailure)?.code ?: 5
+            emit(LlmEvent.Error(code, "Local model generation failed safely. (${generationError.message})"))
+            return@flow
+        }
+        if (!isKnownHeavyQwen(modelPath)) {
+            emit(LlmEvent.Error(5, "Local model generation failed safely. (${generationError.message})"))
+            return@flow
+        }
+
+        emit(LlmEvent.Status("1.7B failed during inference. Switching to Qwen3 0.6B…"))
+        val fallback = ensureSmallFallback()
+        if (fallback.isNullOrBlank()) {
+            emit(LlmEvent.Error(5, "The 1.7B model ran out of memory during inference and Qwen3 0.6B is unavailable. Download the 0.6B model and try again."))
+            return@flow
+        }
+        try {
+            ModelConfigRepository.saveLocalDefault(fallback, "qwen3-0.6b", activateNow = true)
+            emit(LlmEvent.Status("Loading Qwen3 0.6B fallback…"))
+            withTimeout(240_000L) {
+                engineClient.ensureLoaded(fallback, ctxSize = 1024, nThreads = 2)
+            }
+            emit(LlmEvent.Status("Qwen3 0.6B ready. Retrying this request…"))
+            val fallbackError = generateOnce(StreamAssembler())
+            if (fallbackError != null) throw fallbackError
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            XLog.e(TAG, "generate failed", e)
-            emit(
-                LlmEvent.Error(
-                    5,
-                    "Local model timed out or the engine crashed. Send again — if it keeps failing, switch to Qwen3 0.6B. (${e.message})",
-                ),
-            )
+            XLog.e(TAG, "fallback generation failed", e)
+            emit(LlmEvent.Error(5, "Qwen3 0.6B also could not generate a response safely. (${e.message})"))
         }
             }.flowOn(Dispatchers.IO)
 
@@ -136,6 +171,8 @@ class LocalLlmClient(
             })
         }
     }
+
+    private class GenerationFailure(val code: Int, message: String) : IllegalStateException(message)
 
     override fun chatSync(messages: List<ChatMsg>, tools: List<ToolSpec>): LlmResponse {
         var fullText = ""
