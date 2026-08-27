@@ -99,14 +99,11 @@ class EngineCore(private val context: Context) {
                         modelPath,
                         plan.ctxSize,
                         plan.nThreads,
-                        object : EngineNative.NativeLoadCallback {
-                            override fun onProgress(pct: Int, phase: String) {
-                                try {
-                                    onProgress?.invoke(pct, phase)
-                                } catch (_: Exception) {
-                                }
-                            }
-                        },
+                        // Do not re-enter the Java binder callback from the
+                        // llama.cpp loader. On Huawei the callback/JNI boundary
+                        // was the last unobserved code path before process death;
+                        // Service emits coarse progress around this call.
+                        null,
                     )
                     EngineLog.i("EngineCore", "nativeLoadModel done handle=$newHandle ms=${System.currentTimeMillis() - t0}")
                     if (newHandle <= 0) {

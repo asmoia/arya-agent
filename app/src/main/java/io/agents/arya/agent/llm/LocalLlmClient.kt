@@ -10,8 +10,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import io.agents.arya.utils.XLog
+import kotlin.coroutines.resume
 
 /**
  * Main-process local client. Never loads natives — all work goes over AIDL.
@@ -51,8 +53,27 @@ class LocalLlmClient(
             emit(LlmEvent.Status("Model in RAM. Writing…"))
         } catch (e: Exception) {
             XLog.e(TAG, "ensureLoaded failed", e)
-            emit(LlmEvent.Error(3, "Failed to load local model: ${e.message}"))
-            return@flow
+            val fallback = if (isKnownHeavyQwen(modelPath)) {
+                emit(LlmEvent.Status("1.7B engine failed. Preparing Qwen3 0.6B fallback…"))
+                ensureSmallFallback()
+            } else {
+                null
+            }
+            if (fallback.isNullOrBlank()) {
+                emit(LlmEvent.Error(3, "Local engine could not load this model safely. Qwen3 0.6B fallback is unavailable. (${e.message})"))
+                return@flow
+            }
+            try {
+                ModelConfigRepository.saveLocalDefault(fallback, "qwen3-0.6b", activateNow = true)
+                withTimeout(240_000L) {
+                    engineClient.ensureLoaded(fallback, ctxSize = 1024, nThreads = 2)
+                }
+                emit(LlmEvent.Status("Qwen3 0.6B ready. Writing…"))
+            } catch (fallbackError: Exception) {
+                XLog.e(TAG, "fallback ensureLoaded failed", fallbackError)
+                emit(LlmEvent.Error(3, "Neither the selected model nor Qwen3 0.6B could load safely. (${fallbackError.message})"))
+                return@flow
+            }
         }
 
         val assembler = StreamAssembler()
@@ -90,7 +111,31 @@ class LocalLlmClient(
                 ),
             )
         }
-    }.flowOn(Dispatchers.IO)
+            }.flowOn(Dispatchers.IO)
+
+    private fun isKnownHeavyQwen(path: String): Boolean =
+        path.endsWith("Qwen_Qwen3-1.7B-Q4_K_M.gguf", ignoreCase = true) ||
+            path.contains("qwen3-1.7b", ignoreCase = true)
+
+    private suspend fun ensureSmallFallback(): String? {
+        val model = LocalModelManager.AVAILABLE_MODELS.firstOrNull { it.id == "qwen3-0.6b" }
+            ?: return null
+        LocalModelManager.getModelPath(context, model)?.let { return it }
+        return suspendCancellableCoroutine { continuation ->
+            LocalModelManager.downloadModel(context, model, object : LocalModelManager.DownloadCallback {
+                override fun onProgress(bytesDownloaded: Long, totalBytes: Long, bytesPerSecond: Long) = Unit
+
+                override fun onComplete(modelPath: String) {
+                    if (continuation.isActive) continuation.resume(modelPath)
+                }
+
+                override fun onError(error: String) {
+                    XLog.e(TAG, "0.6B fallback download failed: $error")
+                    if (continuation.isActive) continuation.resume(null)
+                }
+            })
+        }
+    }
 
     override fun chatSync(messages: List<ChatMsg>, tools: List<ToolSpec>): LlmResponse {
         var fullText = ""

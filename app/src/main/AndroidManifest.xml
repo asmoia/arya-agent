@@ -182,11 +182,10 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <!-- Keep the native engine in the foreground app process. A separate
-             :engine process was repeatedly killed by Huawei immediately after
-             successful JNI model load/handle publication. -->
+        <!-- Keep native failures isolated from the main UI process. -->
         <service
             android:name=".engine.EngineService"
+            android:process=":engine"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse">

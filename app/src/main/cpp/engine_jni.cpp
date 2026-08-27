@@ -354,15 +354,12 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     // LLAMA_LOAD_MODE_NONE and lets the kernel page weights in on demand.
     mp.load_mode = LLAMA_LOAD_MODE_MMAP;
 
-    LoadProgressBridge bridge{env, nullptr, nullptr, -1};
-    if (progress_cb) {
-        jclass cls = env->GetObjectClass(progress_cb);
-        bridge.cb = progress_cb;
-        bridge.mid = cls ? env->GetMethodID(cls, "onProgress", "(ILjava/lang/String;)V") : nullptr;
-        if (cls) env->DeleteLocalRef(cls);
-    }
-    mp.progress_callback = llama_load_progress_cb;
-    mp.progress_callback_user_data = &bridge;
+    // The loader must not re-enter Java through a local JNIEnv/object while
+    // it is constructing the model. Coarse progress is emitted by Service;
+    // native stage breadcrumbs remain available for diagnostics.
+    (void) progress_cb;
+    mp.progress_callback = nullptr;
+    mp.progress_callback_user_data = nullptr;
 
     append_load_stage("model_load_begin");
     llama_model * model = llama_model_load_from_file(path, mp);
