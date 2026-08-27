@@ -380,9 +380,11 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     cp.n_ctx = n_ctx;
     cp.n_threads = n_threads;
     cp.n_threads_batch = n_threads;
-    // Small batches: 512 made the first-decode compute buffer huge on 1.7B.
-    cp.n_batch = 128;
-    cp.n_ubatch = 32;
+    // Keep the first real decode bounded on memory-constrained phones.
+    // For the 1024-token fallback, 64/16 is enough and avoids a large
+    // compute scratch allocation before the first user-visible response.
+    cp.n_batch = n_ctx <= 1024 ? 64 : 128;
+    cp.n_ubatch = n_ctx <= 1024 ? 16 : 32;
     cp.n_seq_max = 1;
     cp.embeddings = false;
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
@@ -401,27 +403,14 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
 
     const llama_vocab * vocab = llama_model_get_vocab(model);
 
-    // Touch the compute graph now so a SIGILL/OOM happens during load, not
-    // 8 seconds into a silent generate.
-    append_load_stage("warmup_begin");
-    auto warm = tokenize_string(vocab, "Hi", false, false);
-    if (!warm.empty()) {
-        int n = std::min(1, static_cast<int>(warm.size()));
-        llama_batch wb = llama_batch_get_one(warm.data(), n);
-        int wr = llama_decode(ctx, wb);
-        LOGI("warmup decode rc=%d", wr);
-        if (wr != 0) {
-            append_load_stage("warmup_failed");
-            LOGE("warmup decode failed rc=%d; refusing half-initialized model", wr);
-            llama_free(ctx);
-            llama_model_free(model);
-            env->ReleaseStringUTFChars(model_path, path);
-            return -6;
-        }
-        llama_memory_clear(llama_get_memory(ctx), true);
-    }
-    log_rss("after-warmup");
-    append_load_stage("warmup_done");
+    // Do not decode during model load. On Android this first tiny decode
+    // materializes the full compute graph and can jump RSS from ~374 MB to
+    // ~1.45 GB before the caller receives onLoadResult, which lets Huawei's
+    // LMK kill the isolated process. The first real prompt performs the
+    // decode while the app is foreground and the failure is observable.
+    append_load_stage("warmup_deferred");
+    LOGI("warmup deferred until first generation");
+    log_rss("after-load-no-warmup");
 
     int n_embd = llama_model_n_embd(model);
     int n_layers = llama_model_n_layer(model);

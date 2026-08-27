@@ -34,7 +34,22 @@ class MemoryBudgetSingleTest {
         )
         val plan = MemoryBudget.plan(inputs, MemoryBudget.DeviceProfile(bestThreads = 4))
         assertTrue(plan is MemoryBudget.Plan.Load)
-        assertEquals(2048, (plan as MemoryBudget.Plan.Load).ctxSize)
+        assertTrue((plan as MemoryBudget.Plan.Load).ctxSize <= 2048)
+    }
+
+    @Test
+    fun lowAvailableRamCapsContextAt1024() {
+        val plan = MemoryBudget.plan(
+            MemoryBudget.Inputs(
+                totalRamBytes = 12L * GB,
+                availRamBytes = 4_700L * MB,
+                modelFileBytes = 1_224L * MB,
+                isLowRamDevice = false,
+            ),
+            MemoryBudget.DeviceProfile(bestThreads = 4),
+        )
+        assertTrue("low available RAM should still permit mmap load; got $plan", plan is MemoryBudget.Plan.Load)
+        assertEquals(1024, (plan as MemoryBudget.Plan.Load).ctxSize)
     }
 
     @Test

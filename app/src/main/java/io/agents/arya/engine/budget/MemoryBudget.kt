@@ -79,7 +79,12 @@ object MemoryBudget {
         modelFileBytes + kvBytes(ctx, meta, modelFileBytes)
 
     fun plan(i: Inputs, profile: DeviceProfile?): Plan {
-        val nThreads = (profile?.bestThreads ?: 4).coerceIn(1, 6)
+        val requestedThreads = (profile?.bestThreads ?: 4).coerceIn(1, 6)
+        val nThreads = if (i.isLowRamDevice || i.availRamBytes < 6L * 1024 * 1024 * 1024) {
+            requestedThreads.coerceAtMost(2)
+        } else {
+            requestedThreads
+        }
 
         if (i.modelFileBytes > (i.totalRamBytes * 0.45)) {
             return Plan.Refuse(
@@ -110,10 +115,13 @@ object MemoryBudget {
 
         // Mobile chat never needs 4096. 4096 doubles KV + compute and is
         // what OOM-killed :engine on Huawei 1.7B after a "successful" mmap.
-        val candidates = if (i.isLowRamDevice) {
-            listOf(1024, 512)
-        } else {
-            listOf(2048, 1024, 512)
+        // Also avoid the 2048 compute graph when the whole device currently
+        // has less than 6 GB available; the first real prompt will materialize
+        // it after load, so choosing 1024 here reduces the peak deterministically.
+        val candidates = when {
+            i.isLowRamDevice -> listOf(1024, 512)
+            i.availRamBytes < 6L * 1024 * 1024 * 1024 -> listOf(1024, 512)
+            else -> listOf(2048, 1024, 512)
         }
 
         for (ctx in candidates) {
