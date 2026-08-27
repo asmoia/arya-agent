@@ -88,7 +88,12 @@ class EngineClient(private val app: Context) {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             try {
                 val remote = service ?: throw IllegalStateException("EngineService returned a null binder")
-                remote.linkToDeath(deathRecipient, 0)
+                // EngineService is intentionally in-process on Huawei: a local
+                // Binder cannot be linked to a remote death recipient. The
+                // remote branch keeps the old protection for other deployments.
+                if (remote !is android.os.Binder) {
+                    remote.linkToDeath(deathRecipient, 0)
+                }
                 val bound = IEngine.Stub.asInterface(remote)
                 engineBinder = bound
                 val model = activeModelPath
