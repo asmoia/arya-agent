@@ -438,7 +438,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     append_load_stage("complete");
     auto * mc = new ModelContext{
         model, ctx, vocab, load_time, model_size,
-        n_threads, n_ctx, cp.n_ubatch, n_embd, n_layers,
+        n_threads, n_ctx, static_cast<int>(cp.n_ubatch), n_embd, n_layers,
         static_cast<int>(model_size * 8.0 / 4.3 / 1e9), false
     };
     return reinterpret_cast<jlong>(mc);
