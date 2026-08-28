@@ -33,27 +33,11 @@ set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
 set(GGML_SYCL OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# Fetch manually so the pinned upstream loader can be patched before it is
-# added as a subdirectory. b10603 calls init_mappings(true), which passes
-# -1 to llama_mmap and enables MAP_POPULATE for the whole GGUF. That defeats
-# lazy mmap and can make a 1.28 GB model resident at once on Android.
-FetchContent_GetProperties(llama_cpp)
-if(NOT llama_cpp_POPULATED)
-    FetchContent_Populate(llama_cpp)
-endif()
-
-set(LLAMA_MODEL_SOURCE "${llama_cpp_SOURCE_DIR}/src/llama-model.cpp")
-file(READ "${LLAMA_MODEL_SOURCE}" LLAMA_MODEL_TEXT)
-set(LLAMA_PREFETCH_CALL "ml.init_mappings(true, use_mlock ? &pimpl->mlock_mmaps : nullptr);")
-set(LLAMA_LAZY_CALL "ml.init_mappings(false, use_mlock ? &pimpl->mlock_mmaps : nullptr);")
-if(LLAMA_MODEL_TEXT MATCHES "ml\\.init_mappings\\(true, use_mlock")
-    string(REPLACE "${LLAMA_PREFETCH_CALL}" "${LLAMA_LAZY_CALL}" LLAMA_MODEL_TEXT "${LLAMA_MODEL_TEXT}")
-    file(WRITE "${LLAMA_MODEL_SOURCE}" "${LLAMA_MODEL_TEXT}")
-elseif(NOT LLAMA_MODEL_TEXT MATCHES "ml\\.init_mappings\\(false, use_mlock")
-    message(FATAL_ERROR "Pinned llama.cpp source did not contain the expected init_mappings call")
-endif()
-
-add_subdirectory("${llama_cpp_SOURCE_DIR}" "${llama_cpp_BINARY_DIR}")
+# Do NOT patch llama.cpp into lazy mmap. 1.2.7 flipped init_mappings(true) to
+# false so a 1.28 GB GGUF could "load" with ~70 MB RSS; the first generate
+# then died on Huawei. engine_jni.cpp uses LLAMA_LOAD_MODE_NONE so weights
+# are actually read into RAM. Leave upstream mapping behaviour alone.
+FetchContent_MakeAvailable(llama_cpp)
 
 add_library(arya-engine SHARED engine_jni.cpp)
 

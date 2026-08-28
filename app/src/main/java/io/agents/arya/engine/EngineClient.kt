@@ -197,9 +197,19 @@ class EngineClient(private val app: Context) {
                         override fun onLoadResult(id: Int, infoJson: String?) {
                             if (id != requestId && id != 0) return
                             deathListeners.remove(onDied)
-                            _loadProgress.value = EngineLoadProgress(100, "Model ready")
+                            val json = infoJson ?: "{}"
+                            if (!isReallyLoaded(json, modelPath)) {
+                                EngineLog.e("EngineClient", "onLoadResult rejected non-resident json=${json.take(280)}")
+                                if (cont.isActive) {
+                                    cont.resumeWithException(
+                                        IllegalStateException("Engine reported ready without resident weights"),
+                                    )
+                                }
+                                return
+                            }
+                            _loadProgress.value = EngineLoadProgress(100, "Model in RAM")
                             _state.value = EngineState.Ready(modelPath)
-                            if (cont.isActive) cont.resume(infoJson ?: "{}")
+                            if (cont.isActive) cont.resume(json)
                         }
                     }
                     try {
@@ -334,14 +344,10 @@ class EngineClient(private val app: Context) {
     fun isQuarantined(modelPath: String): Boolean = quarantinedModels.contains(modelPath)
 
     private fun isReallyLoaded(json: String, requestedPath: String = ""): Boolean {
-        if (json.isBlank()) return false
+        if (!ModelPaths.isResident(json)) return false
+        if (requestedPath.isBlank()) return true
         return try {
             val o = org.json.JSONObject(json)
-            if (!o.optBoolean("loaded", false)) return false
-            val sizeMb = o.optJSONObject("model_info")?.optDouble("model_size_mb", 0.0) ?: 0.0
-            // Real GGUF reports hundreds of MB. ~70 MB is an empty process / failed mmap.
-            if (sizeMb < 80.0) return false
-            if (requestedPath.isBlank()) return true
             val loadedPath = o.optString("model_path")
             loadedPath.isBlank() || ModelPaths.sameModel(loadedPath, requestedPath)
         } catch (_: Exception) {

@@ -14,6 +14,7 @@ class StreamAssembler(
     private val buffer = StringBuilder()
     private var inToolCall = false
     private var inThinking = false
+    private var emittedVisible = false
     private val toolCallBuffer = StringBuilder()
 
     private val toolCallOpener = "<tool_call>"
@@ -34,6 +35,7 @@ class StreamAssembler(
                 if (toolIdx >= 0 && (thinkIdx < 0 || toolIdx < thinkIdx)) {
                     if (toolIdx > 0) {
                         events.add(LlmEvent.Text(buffer.substring(0, toolIdx)))
+                        emittedVisible = true
                     }
                     events.add(LlmEvent.ToolCallStart(null))
                     buffer.delete(0, toolIdx + toolCallOpener.length)
@@ -45,6 +47,7 @@ class StreamAssembler(
                 if (thinkIdx >= 0) {
                     if (thinkIdx > 0) {
                         events.add(LlmEvent.Text(buffer.substring(0, thinkIdx)))
+                        emittedVisible = true
                     }
                     buffer.delete(0, thinkIdx + thinkOpener.length)
                     inThinking = true
@@ -59,11 +62,13 @@ class StreamAssembler(
                     val safeLen = buffer.length - holdbackLen
                     if (safeLen > 0) {
                         events.add(LlmEvent.Text(buffer.substring(0, safeLen)))
+                        emittedVisible = true
                         buffer.delete(0, safeLen)
                     }
                     break
                 } else {
                     events.add(LlmEvent.Text(buffer.toString()))
+                    emittedVisible = true
                     buffer.clear()
                 }
             } else if (inThinking) {

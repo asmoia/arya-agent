@@ -58,6 +58,7 @@ struct ModelContext {
     size_t model_size_bytes;
     int n_threads_used;
     int n_ctx;
+    int n_ubatch;
     int n_embd;
     int n_layers;
     int n_params_b;
@@ -264,15 +265,12 @@ static bool llama_load_progress_cb(float progress, void * user_data) {
     auto * p = static_cast<LoadProgressBridge *>(user_data);
     if (pct == 0 || pct == 100 || (pct % 10) == 0) {
         if (!p || pct != p->last_logged) {
-            LOGI("nativeLoadModel progress=%d%%", pct);
+            LOGI("nativeLoadModel progress=%d%% rss_kb=%ld", pct, get_self_rss_kb());
             if (p) p->last_logged = pct;
+            char stage[40];
+            snprintf(stage, sizeof(stage), "weights_pct_%d", pct);
+            append_load_stage(stage);
         }
-    }
-    if (p && p->env && p->cb && p->mid) {
-        jstring phase = p->env->NewStringUTF("Reading weights into RAM");
-        p->env->CallVoidMethod(p->cb, p->mid, pct, phase);
-        if (p->env->ExceptionCheck()) p->env->ExceptionClear();
-        if (phase) p->env->DeleteLocalRef(phase);
     }
     return true;
 }
@@ -332,7 +330,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     const char * path = env->GetStringUTFChars(model_path, nullptr);
     if (!path) return -1;
     double t0 = now_ms();
-    LOGI("Loading model: %s n_ctx=%d n_threads=%d (load_mode=MMAP; source must be internal fast path)", path, n_ctx, n_threads);
+    LOGI("Loading model: %s n_ctx=%d n_threads=%d (load_mode=NONE)", path, n_ctx, n_threads);
     log_rss("before-load");
 
     if (n_threads <= 0) n_threads = detect_inference_threads();
@@ -346,20 +344,18 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0;
     // Keep Android CPU loading on the default host buffer. Extra CPU buffer
-    // types may select a repacking allocator, which defeats mmap's low-RSS
-    // behavior and is not needed when no GPU layers are requested.
+    // types may select a repacking allocator, which is not needed with no GPU.
     mp.use_extra_bufts = false;
-    // ModelFileLocalizer has already copied FUSE/external files to ext4 under
-    // filesDir/models/fast. mmap there avoids the large anonymous allocation of
-    // LLAMA_LOAD_MODE_NONE and lets the kernel page weights in on demand.
-    mp.load_mode = LLAMA_LOAD_MODE_MMAP;
+    // Force a real read into anonymous RAM. mmap (even on ext4, even with
+    // MAP_POPULATE) "succeeds" in ~3s with ~70 MB RSS on Huawei; the first
+    // llama_decode then dies. NONE makes load slow and honest.
+    mp.load_mode = LLAMA_LOAD_MODE_NONE;
 
-    // The loader must not re-enter Java through a local JNIEnv/object while
-    // it is constructing the model. Coarse progress is emitted by Service;
-    // native stage breadcrumbs remain available for diagnostics.
+    // Log native progress only. Do not re-enter Java from the loader.
     (void) progress_cb;
-    mp.progress_callback = nullptr;
-    mp.progress_callback_user_data = nullptr;
+    LoadProgressBridge bridge{nullptr, nullptr, nullptr, -1};
+    mp.progress_callback = llama_load_progress_cb;
+    mp.progress_callback_user_data = &bridge;
 
     append_load_stage("model_load_begin");
     llama_model * model = llama_model_load_from_file(path, mp);
@@ -400,25 +396,49 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
 
     const llama_vocab * vocab = llama_model_get_vocab(model);
 
-    // Do not decode during model load. On Android this first tiny decode
-    // materializes the full compute graph and can jump RSS from ~374 MB to
-    // ~1.45 GB before the caller receives onLoadResult, which lets Huawei's
-    // LMK kill the isolated process. The first real prompt performs the
-    // decode while the app is foreground and the failure is observable.
-    append_load_stage("warmup_deferred");
-    LOGI("warmup deferred until first generation");
-    log_rss("after-load-no-warmup");
+    // Touch the compute graph now so a SIGILL/OOM happens during load, not
+    // 8 seconds into a silent generate. 1.2.8 deferred this and the crash
+    // moved to generate — which is worse for the user.
+    append_load_stage("warmup_begin");
+    auto warm = tokenize_string(vocab, "Hi", false, false);
+    if (!warm.empty()) {
+        int n = std::min(1, static_cast<int>(warm.size()));
+        llama_batch wb = llama_batch_get_one(warm.data(), n);
+        int wr = llama_decode(ctx, wb);
+        LOGI("warmup decode rc=%d rss_kb=%ld", wr, get_self_rss_kb());
+        if (wr != 0) {
+            append_load_stage("warmup_failed");
+            LOGE("warmup decode failed rc=%d", wr);
+            llama_free(ctx);
+            llama_model_free(model);
+            return -4;
+        }
+        llama_memory_clear(llama_get_memory(ctx), true);
+    }
+    append_load_stage("warmup_done");
+    log_rss("after-warmup");
+
+    long rss_kb = get_self_rss_kb();
+    long rss_mb = rss_kb >= 0 ? rss_kb / 1024 : -1;
+    long file_mb = static_cast<long>(model_size / (1024 * 1024));
+    if (file_mb >= 80 && rss_mb >= 0 && rss_mb < 200) {
+        append_load_stage("rss_too_low");
+        LOGE("fake ready rejected: file_mb=%ld rss_mb=%ld", file_mb, rss_mb);
+        llama_free(ctx);
+        llama_model_free(model);
+        return -6;
+    }
 
     int n_embd = llama_model_n_embd(model);
     int n_layers = llama_model_n_layer(model);
     double load_time = now_ms() - t0;
-    LOGI("load complete ms=%.0f size_mb=%.1f n_embd=%d n_layer=%d n_ctx=%d",
-         load_time, model_size / (1024.0 * 1024.0), n_embd, n_layers, n_ctx);
+    LOGI("load complete ms=%.0f size_mb=%.1f rss_mb=%ld n_embd=%d n_layer=%d n_ctx=%d",
+         load_time, model_size / (1024.0 * 1024.0), rss_mb, n_embd, n_layers, n_ctx);
 
     append_load_stage("complete");
     auto * mc = new ModelContext{
         model, ctx, vocab, load_time, model_size,
-        n_threads, n_ctx, n_embd, n_layers,
+        n_threads, n_ctx, cp.n_ubatch, n_embd, n_layers,
         static_cast<int>(model_size * 8.0 / 4.3 / 1e9), false
     };
     return reinterpret_cast<jlong>(mc);
@@ -569,7 +589,7 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     }
 
     if (n_prompt > 0) {
-        const int chunk = 32;
+        const int chunk = std::max(1, mc->n_ubatch > 0 ? mc->n_ubatch : 32);
         for (int i = 0; i < n_prompt; ) {
             if (mc->cancel_flag.load()) {
                 return env->NewStringUTF("{\"error\": \"cancelled\"}");
@@ -711,12 +731,14 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_io_agents_arya_engine_EngineNative_nativeGetModelInfo(JNIEnv * env, jobject, jlong handle) {
     auto * mc = handle_to_ctx(handle);
     if (!mc) return env->NewStringUTF("{}");
-    char buf[512];
+    long rss_kb = get_self_rss_kb();
+    double rss_mb = rss_kb >= 0 ? rss_kb / 1024.0 : -1.0;
+    char buf[640];
     snprintf(buf, sizeof(buf),
-        "{\"load_time_ms\":%.0f,\"model_size_mb\":%.1f,\"n_threads\":%d,"
-        "\"n_ctx\":%d,\"n_embd\":%d,\"n_layers\":%d,\"n_params_b\":%d,\"uses_mmap\":%s}",
-        mc->load_time_ms, mc->model_size_bytes / (1024.0 * 1024.0), mc->n_threads_used,
-        mc->n_ctx, mc->n_embd, mc->n_layers, mc->n_params_b,
+        "{\"load_time_ms\":%.0f,\"model_size_mb\":%.1f,\"rss_mb\":%.1f,\"n_threads\":%d,"
+        "\"n_ctx\":%d,\"n_ubatch\":%d,\"n_embd\":%d,\"n_layers\":%d,\"n_params_b\":%d,\"uses_mmap\":%s}",
+        mc->load_time_ms, mc->model_size_bytes / (1024.0 * 1024.0), rss_mb, mc->n_threads_used,
+        mc->n_ctx, mc->n_ubatch, mc->n_embd, mc->n_layers, mc->n_params_b,
         mc->uses_mmap ? "true" : "false");
     return env->NewStringUTF(buf);
 }

@@ -1,5 +1,19 @@
 # Redesign v1 changelog
 
+## 1.2.12
+
+Stop lying about local-model ready. 1.2.6–1.2.11 oscillated mmap/process/fallback
+and never made Qwen3 1.7B actually resident before generate.
+
+- `LLAMA_LOAD_MODE_NONE` again — read weights into RAM during load (1.2.5)
+- Restore 1-token warmup `llama_decode` so SIGILL/OOM happens before "Writing…"
+- Reject ready unless process RSS is at least 200 MB for a ≥200 MB GGUF
+- Remove the 1.2.7 CMake patch that forced lazy `init_mappings(false)`
+- Keep isolated `:engine` + FGS; 0.6B remains last-resort after an honest failure
+- Engine FGS notification id 21001 (was 1001, colliding with ForegroundService)
+- Qwen3 hard switch: prefill `<think>\\n\\n</think>\\n\\n` (official tokenizer template); drop raw `/no_think`
+- Watchdog stall uses request `tokenDeadlineMs` (12s), not a hardcoded 6s
+
 ## 1.2.6
 
 Official rebuild from the signed v1.2.5 source tag with the v1.2.6 version metadata (versionCode 110, versionName 1.2.6). This hotfix carries the recovered model-loading, engine-lifecycle, cancellation, voice, external-routing, security and localization fixes from the review work.

@@ -96,6 +96,14 @@ class StreamAssemblerTest {
     }
 
     @Test
+    fun unclosedThinkWithNoVisibleAnswerIsSurfaced() {
+        val assembler = StreamAssembler()
+        val events = assembler.feed("<think>only a monologue") + assembler.finish()
+        val visible = events.filterIsInstance<LlmEvent.Text>().filter { !it.isReasoning }
+        assertTrue(visible.joinToString("") { it.delta }.contains("only a monologue"))
+    }
+
+    @Test
     fun persianZwnjSplitDoesNotCrash() {
         val a = StreamAssembler()
         val s = "می‌خواهم تلگرام را باز کنم"

@@ -23,6 +23,15 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class EngineService : Service() {
 
+    companion object {
+        /**
+         * Per-package notification IDs. Must not reuse [io.agents.arya.service.ForegroundService.NOTIFICATION_ID]
+         * (1001). NotificationManager.cancel(1001) from the UI process would drop this
+         * isolated :engine FGS and let Huawei LMK kill the resident model.
+         */
+        const val NOTIFICATION_ID = 21001
+    }
+
     private lateinit var engineCore: EngineCore
     private lateinit var profileManager: DeviceProfileManager
     private lateinit var inferenceThread: HandlerThread
@@ -44,6 +53,8 @@ class EngineService : Service() {
     @Volatile
     private var requestDeadlineMs: Long = 0L
     @Volatile
+    private var requestTokenDeadlineMs: Long = 12_000L
+    @Volatile
     private var activeRequestId: Int = -1
 
     private val nextRequestId = AtomicInteger(1)
@@ -61,9 +72,13 @@ class EngineService : Service() {
         override fun run() {
             if (!engineCore.isBusy) return
             val now = System.currentTimeMillis()
-            val tokenGap = if (lastTokenMs == 0L) 0L else now - lastTokenMs
-            val overdue = requestDeadlineMs > 0 && now > requestDeadlineMs
-            val stalled = lastTokenMs > 0 && tokenGap > 6_000L
+            val overdue = EngineWatchdog.isOverdue(now, requestDeadlineMs)
+            val stalled = EngineWatchdog.isStalled(
+                now,
+                lastTokenMs,
+                requestTokenDeadlineMs,
+                lastTokenMs > 0L,
+            )
             val noFirstToken = lastTokenMs == 0L && generateStartedMs > 0L &&
                 now - generateStartedMs > 90_000L
             if (overdue || stalled || noFirstToken) {
@@ -86,7 +101,9 @@ class EngineService : Service() {
             // Binder-thread fast path only. Full mmap + bench must go through requestLoad.
             if (engineCore.isLoaded) {
                 val stats = engineCore.stats()
-                if (ModelPaths.statsLooksLike(stats, modelPath)) return stats
+                if (ModelPaths.isResident(stats) && ModelPaths.statsLooksLike(stats, modelPath)) {
+                    return stats
+                }
             }
             // Do not throw: a RemoteException here shows up as a scary JavaBinder
             // stack even though requestLoad is the intended path.
@@ -187,6 +204,7 @@ class EngineService : Service() {
                 EngineRequest(prompt = "")
             }
             requestDeadlineMs = System.currentTimeMillis() + req.deadlineMs
+            requestTokenDeadlineMs = if (req.tokenDeadlineMs > 0L) req.tokenDeadlineMs else 12_000L
             val wrapped = object : IEngineCallback.Stub() {
                 override fun onDelta(id: Int, textDelta: String?) {
                     val first = lastTokenMs == 0L
@@ -359,7 +377,7 @@ class EngineService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
-        startForeground(1001, notification)
+        startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun touch() {
@@ -381,6 +399,7 @@ class EngineService : Service() {
         watchdogHandler.removeCallbacks(watchdogRunnable)
         activeRequestId = -1
         requestDeadlineMs = 0L
+        requestTokenDeadlineMs = 12_000L
     }
 
     private fun acquireWorkLock() {

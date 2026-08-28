@@ -47,8 +47,13 @@ class EngineCore(private val context: Context) {
             // Same GGUF under a different path (FUSE vs filesDir/fast) must
             // NOT unload+reload. That race was killing generate on Huawei.
             if (handle != 0L && ModelPaths.sameModel(currentModelPath, modelPath)) {
-                EngineLog.i("EngineCore", "already loaded ${currentModelPath} (asked $modelPath ctx=$ctxSize have=$currentCtxSize)")
-                return statsLocked()
+                val existing = statsLocked()
+                if (ModelPaths.isResident(existing)) {
+                    EngineLog.i("EngineCore", "already loaded ${currentModelPath} (asked $modelPath ctx=$ctxSize have=$currentCtxSize)")
+                    return existing
+                }
+                EngineLog.w("EngineCore", "handle present but not resident, reloading")
+                unloadLocked()
             }
             if (generating.get()) {
                 throw EngineLoadException(EngineError.ERR_BUSY, "Cannot switch models while generation is active")
@@ -107,7 +112,15 @@ class EngineCore(private val context: Context) {
                     )
                     EngineLog.i("EngineCore", "nativeLoadModel done handle=$newHandle ms=${System.currentTimeMillis() - t0}")
                     if (newHandle <= 0) {
-                        throw EngineLoadException(EngineError.ERR_LOAD_FAILED, "native load code $newHandle")
+                        val why = when (newHandle) {
+                            -2L -> "llama_model_load_from_file failed"
+                            -3L -> "llama_init_from_model failed"
+                            -4L -> "warmup decode failed"
+                            -6L -> "weights were not resident in RAM"
+                            -7L, -8L -> "native exception during load"
+                            else -> "native load code $newHandle"
+                        }
+                        throw EngineLoadException(EngineError.ERR_LOAD_FAILED, why)
                     }
                     handle = newHandle
                     unloadWhenIdle = false
@@ -119,7 +132,17 @@ class EngineCore(private val context: Context) {
                     committedPrefixKey = null
                     nPast = 0
                     prefixCache.deleteStale(modelHash8)
-                    return statsLocked()
+                    val stats = statsLocked()
+                    if (!ModelPaths.isResident(stats)) {
+                        EngineLog.e("EngineCore", "rejecting fake-ready load stats=${stats.take(280)}")
+                        unloadLocked()
+                        throw EngineLoadException(
+                            EngineError.ERR_LOAD_FAILED,
+                            "native load was not resident in RAM",
+                        )
+                    }
+                    EngineLog.i("EngineCore", "resident load ok ${stats.take(280)}")
+                    return stats
                 }
             }
         }

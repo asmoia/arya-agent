@@ -200,13 +200,29 @@ class LocalLlmClient(
 }
 
 object ChatMlPrompt {
+    /**
+     * Official Qwen3 hard switch from tokenizer_config.json
+     * (Qwen/Qwen3-1.7B, also 0.6B / 4B):
+     *
+     *     {%- if add_generation_prompt %}
+     *         {{- '<|im_start|>assistant\n' }}
+     *         {%- if enable_thinking is defined and enable_thinking is false %}
+     *             {{- '<think>\n\n</think>\n\n' }}
+     *         {%- endif %}
+     *     {%- endif %}
+     *
+     * `/no_think` is only a *soft* switch and is ignored when enable_thinking=False.
+     * Prefilling the empty think block is what actually stops the model from
+     * spending the whole token budget on a hidden monologue.
+     */
+    const val QWEN3_NO_THINK_PREFILL = "<think>\n\n</think>\n\n"
+
     fun build(messages: List<ChatMsg>, tools: List<ToolSpec>, enableThinking: Boolean): String {
         val sb = StringBuilder()
         for (msg in messages) {
             when (msg.role) {
                 Role.SYSTEM -> {
                     sb.append("<|im_start|>system\n").append(msg.content)
-                    if (!enableThinking) sb.append("\n/no_think")
                     if (tools.isNotEmpty()) {
                         sb.append("\n\nYou may emit tool calls as <tool_call>{\"name\":\"...\",\"arguments\":{...}}</tool_call>\nTools:\n")
                         for (t in tools) {
@@ -230,7 +246,7 @@ object ChatMlPrompt {
             }
         }
         sb.append("<|im_start|>assistant\n")
-        if (!enableThinking) sb.append("/no_think\n")
+        if (!enableThinking) sb.append(QWEN3_NO_THINK_PREFILL)
         return sb.toString()
     }
 }

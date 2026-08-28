@@ -31,6 +31,7 @@ class ForegroundService : Service() {
         private const val MONITOR_HEALTH_POLL_MS = 5_000L
         private const val TELEMETRY_POLL_MS = 15_000L
         const val CHANNEL_ID = "Arya_foreground_channel"
+        // UI-process FGS only. EngineService uses 21001 — IDs are per-package.
         const val NOTIFICATION_ID = 1001
         private const val EXTRA_TITLE = "extra_title"
         private const val EXTRA_TEXT = "extra_text"
