@@ -3,8 +3,8 @@ package io.agents.arya.engine
 /**
  * JNI wrapper for libarya-engine.so.
  *
- * MUST ONLY be referenced from the `:engine` process (EngineCore / EngineService /
- * DeviceProfileManager). Main-process code must never load this class.
+ * Loaded by EngineService (now the foreground app process on Huawei).
+ * UI code still must not touch this class directly — go through EngineClient.
  */
 object EngineNative {
     init {

@@ -330,7 +330,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     const char * path = env->GetStringUTFChars(model_path, nullptr);
     if (!path) return -1;
     double t0 = now_ms();
-    LOGI("Loading model: %s n_ctx=%d n_threads=%d (load_mode=NONE)", path, n_ctx, n_threads);
+    LOGI("Loading model: %s n_ctx=%d n_threads=%d (load_mode=MMAP+prefetch)", path, n_ctx, n_threads);
     log_rss("before-load");
 
     if (n_threads <= 0) n_threads = detect_inference_threads();
@@ -346,10 +346,11 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     // Keep Android CPU loading on the default host buffer. Extra CPU buffer
     // types may select a repacking allocator, which is not needed with no GPU.
     mp.use_extra_bufts = false;
-    // Force a real read into anonymous RAM. mmap (even on ext4, even with
-    // MAP_POPULATE) "succeeds" in ~3s with ~70 MB RSS on Huawei; the first
-    // llama_decode then dies. NONE makes load slow and honest.
-    mp.load_mode = LLAMA_LOAD_MODE_NONE;
+    // File-backed mmap. LOAD_MODE_NONE put 1.5 GB anonymous RSS in :engine
+    // and Huawei SIGKILL'd it 16s into generate (ADY-LX9 log 2026-08-28).
+    // mmap lets LMK reclaim pages instead of killing. ModelFileLocalizer
+    // already copied off FUSE onto ext4. Prefetch + warmup fault the pages.
+    mp.load_mode = LLAMA_LOAD_MODE_MMAP;
 
     // Log native progress only. Do not re-enter Java from the loader.
     (void) progress_cb;
@@ -368,6 +369,22 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     }
     log_rss("after-weights");
 
+    append_load_stage("prefetch_begin");
+    {
+        int pfd = open(path, O_RDONLY);
+        if (pfd >= 0) {
+#ifdef POSIX_FADV_WILLNEED
+            posix_fadvise(pfd, 0, 0, POSIX_FADV_SEQUENTIAL);
+            posix_fadvise(pfd, 0, 0, POSIX_FADV_WILLNEED);
+#endif
+            std::vector<char> buf(1024 * 1024);
+            while (read(pfd, buf.data(), buf.size()) > 0) {}
+            close(pfd);
+        }
+    }
+    append_load_stage("prefetch_done");
+    log_rss("after-prefetch");
+
     append_load_stage("weights_loaded");
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx = n_ctx;
@@ -376,11 +393,11 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     // Keep the first real decode bounded on memory-constrained phones.
     // For the 1024-token fallback, 64/16 is enough and avoids a large
     // compute scratch allocation before the first user-visible response.
-    cp.n_batch = n_ctx <= 1024 ? 64 : 128;
-    cp.n_ubatch = n_ctx <= 1024 ? 16 : 32;
+    cp.n_batch = n_ctx <= 1024 ? 32 : 64;
+    cp.n_ubatch = n_ctx <= 1024 ? 8 : 16;
     cp.n_seq_max = 1;
     cp.embeddings = false;
-    cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
 
     append_load_stage("context_init_begin");
     llama_context * ctx = llama_init_from_model(model, cp);
@@ -554,6 +571,7 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     }
 
     mc->cancel_flag.store(false);
+    append_load_stage("generate_enter");
 
     const char * prompt_str = env->GetStringUTFChars(prompt, nullptr);
     if (!prompt_str) return env->NewStringUTF("{\"error\": \"null_prompt\"}");
@@ -589,7 +607,8 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     }
 
     if (n_prompt > 0) {
-        const int chunk = std::max(1, mc->n_ubatch > 0 ? mc->n_ubatch : 32);
+        append_load_stage("prefill_begin");
+        const int chunk = std::max(1, mc->n_ubatch > 0 ? mc->n_ubatch : 8);
         for (int i = 0; i < n_prompt; ) {
             if (mc->cancel_flag.load()) {
                 return env->NewStringUTF("{\"error\": \"cancelled\"}");

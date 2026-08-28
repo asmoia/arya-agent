@@ -1,5 +1,17 @@
 # Redesign v1 changelog
 
+## 1.2.13
+
+Huawei ADY-LX9 / Kirin 9000S lab (1.2.12 signed): load **succeeded**
+(`rss_mb=1475`, warmup_done) then `:engine` was **SIGKILL'd 16s into generate**.
+No `native-crash.txt` — LMK, not SIGILL. 12 GB RAM, 4 GB free; isolated
+anonymous 1.5 GB is what EMUI kills.
+
+- Drop `android:process=":engine"` — infer in the foreground app process
+- `LLAMA_LOAD_MODE_MMAP` + sequential prefetch of the ext4 copy (file-backed)
+- Disable flash-attn; smaller n_batch/n_ubatch for first decode
+- Huawei wakelock tag `LocationManagerService` (dontkillmyapp EMUI workaround)
+
 ## 1.2.12
 
 Stop lying about local-model ready. 1.2.6–1.2.11 oscillated mmap/process/fallback
