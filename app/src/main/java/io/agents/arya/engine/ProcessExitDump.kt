@@ -49,28 +49,23 @@ object ProcessExitDump {
     }
 
     fun reasonName(reason: Int): String {
-        if (Build.VERSION.SDK_INT < 30) return "reason=$reason"
+        // Numeric constants: some OEM compile SDKs omit later ApplicationExitInfo fields.
         return when (reason) {
-            ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
-            ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
-            ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
-            ApplicationExitInfo.REASON_CRASH -> "CRASH_JAVA"
-            ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
-            ApplicationExitInfo.REASON_ANR -> "ANR"
-            ApplicationExitInfo.REASON_INITIALIZATION -> "INITIALIZATION"
-            ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "PERMISSION_CHANGE"
-            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE"
-            ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
-            ApplicationExitInfo.REASON_USER_STOPPED -> "USER_STOPPED"
-            ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
-            ApplicationExitInfo.REASON_OTHER -> "OTHER_OEM"
-            else -> {
-                if (Build.VERSION.SDK_INT >= 31 && reason == ApplicationExitInfo.REASON_FREEZER) {
-                    "FREEZER"
-                } else {
-                    "UNKNOWN_$reason"
-                }
-            }
+            1 -> "EXIT_SELF"
+            2 -> "SIGNALED"
+            3 -> "LOW_MEMORY"
+            4 -> "CRASH_JAVA"
+            5 -> "CRASH_NATIVE"
+            6 -> "ANR"
+            7 -> "INITIALIZATION"
+            8 -> "PERMISSION_CHANGE"
+            9 -> "EXCESSIVE_RESOURCE"
+            10 -> "USER_REQUESTED"
+            11 -> "USER_STOPPED"
+            12 -> "DEPENDENCY_DIED"
+            13 -> "OTHER_OEM"
+            14 -> "FREEZER"
+            else -> "UNKNOWN_$reason"
         }
     }
 
@@ -96,7 +91,9 @@ object ProcessExitDump {
             appendLine("process=${info.processName}")
             appendLine("pid=${info.pid} realUid=${info.realUid} packageUid=${info.packageUid}")
             appendLine("reason=${reasonName(reason)} ($reason)")
-            appendLine("status=$status ${if (reason == ApplicationExitInfo.REASON_SIGNALED) signalName(status) else ""}".trimEnd())
+            appendLine(
+                "status=$status ${if (reason == ApplicationExitInfo.REASON_SIGNALED) signalName(status) else ""}".trimEnd(),
+            )
             appendLine("importance=${info.importance} pss_kb=${info.pss} rss_kb=${info.rss}")
             appendLine("description=${info.description ?: "(none)"}")
         }
