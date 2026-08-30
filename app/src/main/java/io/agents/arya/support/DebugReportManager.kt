@@ -28,7 +28,7 @@ import java.util.zip.ZipOutputStream
 object DebugReportManager {
 
     private const val REPORT_DIR = "debug_reports"
-    private const val LOGCAT_LINES = "400"
+    private const val LOGCAT_LINES = "2500"
     private const val MAX_HTTP_LOGS = 5
 
     fun buildReport(context: Context): File {
@@ -38,8 +38,11 @@ object DebugReportManager {
 
         ZipOutputStream(FileOutputStream(output)).use { zip ->
             addText(zip, "summary.txt", buildSummary(context))
+            addText(zip, "process-exit.txt", io.agents.arya.engine.ProcessExitDump.dumpText(context))
             addText(zip, "bug-report-template.txt", buildBugReportTemplate(context))
             collectLogcat().takeIf { it.isNotBlank() }?.let { addText(zip, "app-logcat.txt", it) }
+            collectLogcatCrashBuffer().takeIf { it.isNotBlank() }?.let { addText(zip, "crash-buffer.txt", it) }
+            collectProcSnippets().takeIf { it.isNotBlank() }?.let { addText(zip, "proc-snippets.txt", it) }
             addRecentAppLogs(zip, context)
             addEngineLogs(zip, context)
             addRecentHttpLogs(zip, context.cacheDir)
@@ -75,6 +78,9 @@ object DebugReportManager {
         return buildString {
             appendLine("Arya Debug Report")
             appendLine("Generated: ${Date()}")
+            appendLine()
+            appendLine("LAST ENGINE DEATH (read this first)")
+            appendLine(lastEngineDeathBlock(context))
             appendLine()
             appendLine("App")
             appendLine("- Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
@@ -196,6 +202,22 @@ object DebugReportManager {
         }
     }
 
+    private fun lastEngineDeathBlock(context: Context): String {
+        val dir = File(context.cacheDir, "engine_logs")
+        fun tail(name: String, n: Int): String {
+            val f = File(dir, name)
+            if (!f.isFile) return "(missing $name)"
+            return runCatching { f.readText().takeLast(n).trim() }.getOrDefault("(read failed $name)")
+        }
+        return buildString {
+            appendLine("- heartbeat: ${tail("native-heartbeat.txt", 400)}")
+            appendLine("- crash: ${tail("native-crash.txt", 600)}")
+            appendLine("- last stages: ${tail("native-load-stage.txt", 700).replace("\n", " ; ")}")
+            appendLine("- process-exit (API 30+):")
+            appendLine(io.agents.arya.engine.ProcessExitDump.dumpText(context).take(1200))
+        }
+    }
+
     private fun collectLogcat(): String {
         return runCatching {
             val process = ProcessBuilder(
@@ -214,6 +236,7 @@ object DebugReportManager {
                 "EngineHolder:V",
                 "AryaEngineLog:V",
                 "AryaEngineJNI:V",
+                "AryaLlama:V",
                 "EngineService:V",
                 "EngineClient:V",
                 "LocalLlmClient:V",
@@ -222,10 +245,64 @@ object DebugReportManager {
                 "ChatSessionController:V",
                 "InputTextTool:V",
                 "SendMessageTool:V",
-                "*:S",
+                "DEBUG:V",
+                "libc:I",
+                "tombstoned:I",
+                "ActivityManager:I",
+                "am_proc_died:I",
+                "am_kill:I",
+                "am_crash:I",
+                "lmkd:V",
+                "AndroidRuntime:V",
+                "Zygote:I",
+                "HwSystemManager:I",
+                "AwareLog:I",
+                "*:E",
             ).redirectErrorStream(true).start()
             process.inputStream.bufferedReader().use { it.readText() }
         }.getOrElse { "Failed to collect logcat: ${it.message}" }
+    }
+
+    private fun collectLogcatCrashBuffer(): String {
+        return runCatching {
+            val process = ProcessBuilder(
+                "logcat", "-d", "-b", "crash", "-v", "threadtime", "-t", "200",
+            ).redirectErrorStream(true).start()
+            process.inputStream.bufferedReader().use { it.readText() }
+        }.getOrElse { "Failed to collect crash buffer: ${it.message}" }
+    }
+
+    private fun collectProcSnippets(): String {
+        return buildString {
+            appendLine("=== /proc/cpuinfo ===")
+            appendLine(readCappedFile("/proc/cpuinfo", 12_000))
+            appendLine("=== cpu present/possible ===")
+            appendLine(readCappedFile("/sys/devices/system/cpu/present", 128))
+            appendLine(readCappedFile("/sys/devices/system/cpu/possible", 128))
+            for (i in 0 until 16) {
+                val freq = readCappedFile("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq", 64).trim()
+                if (freq.isNotBlank()) appendLine("cpu$i max_khz=$freq")
+            }
+            appendLine("=== getprop subset ===")
+            appendLine(runCatching {
+                val p = ProcessBuilder("getprop").redirectErrorStream(true).start()
+                p.inputStream.bufferedReader().use { reader ->
+                    reader.lineSequence()
+                        .filter { line ->
+                            listOf("ro.hardware", "ro.board", "ro.product", "ro.build.fingerprint",
+                                "ro.huawei", "persist.sys", "ro.arch", "ro.soc").any { line.contains(it) }
+                        }
+                        .take(80)
+                        .joinToString("\n")
+                }
+            }.getOrElse { "getprop failed: ${it.message}" })
+        }
+    }
+
+    private fun readCappedFile(path: String, cap: Int): String {
+        return runCatching {
+            File(path).takeIf { it.isFile }?.readText()?.take(cap) ?: "(missing $path)"
+        }.getOrDefault("(read failed $path)")
     }
 
     private fun addRecentHttpLogs(zip: ZipOutputStream, cacheDir: File) {

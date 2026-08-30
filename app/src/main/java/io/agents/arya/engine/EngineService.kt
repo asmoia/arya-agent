@@ -130,9 +130,9 @@ class EngineService : Service() {
                     }
                     val src = java.io.File(modelPath)
                     val diagnosticsDir = java.io.File(cacheDir, "engine_logs").apply { mkdirs() }
-                    java.io.File(diagnosticsDir, "native-crash.txt").delete()
-                    java.io.File(diagnosticsDir, "native-load-stage.txt").delete()
-                    EngineLog.i("EngineService", "native diagnostics reset id=$requestId")
+                    rotateDiag(java.io.File(diagnosticsDir, "native-crash.txt"))
+                    rotateDiag(java.io.File(diagnosticsDir, "native-load-stage.txt"))
+                    EngineLog.breadcrumb("EngineService", "native diagnostics rotated id=$requestId")
                     val fast = ModelFileLocalizer.ensureFastPath(this@EngineService, src) { pct, phase ->
                         emitProgress(requestId, 10 + (pct * 0.35).toInt(), phase)
                     }
@@ -175,7 +175,10 @@ class EngineService : Service() {
             touch()
             acquireWorkLock()
             val cb = sessionCallback
-            EngineLog.i("EngineService", "generate binder chars=${requestJson.length} loaded=${engineCore.isLoaded} busy=${engineCore.isBusy} cb=${cb != null}")
+            EngineLog.breadcrumb(
+                "EngineService",
+                "generate binder chars=${requestJson.length} loaded=${engineCore.isLoaded} busy=${engineCore.isBusy} cb=${cb != null} rssHint=${android.os.Debug.getPss()}",
+            )
             if (cb == null) {
                 EngineLog.e("EngineService", "generate aborted: no callback registered")
                 return -1
@@ -284,6 +287,7 @@ class EngineService : Service() {
     override fun onCreate() {
         super.onCreate()
         EngineLog.init(this)
+        installUncaughtHandler()
         EngineLog.i("EngineService", "onCreate pid=${android.os.Process.myPid()}")
         runCatching {
             val diagnosticsDir = java.io.File(cacheDir, "engine_logs").apply { mkdirs() }
@@ -400,6 +404,29 @@ class EngineService : Service() {
         activeRequestId = -1
         requestDeadlineMs = 0L
         requestTokenDeadlineMs = 12_000L
+    }
+
+    private fun rotateDiag(file: java.io.File) {
+        if (!file.exists()) return
+        val prev = java.io.File(file.parentFile, file.name.removeSuffix(".txt") + ".prev.txt")
+        if (prev.exists()) prev.delete()
+        file.renameTo(prev)
+    }
+
+    private fun installUncaughtHandler() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            EngineLog.e("EngineService", "uncaught thread=${thread.name}", error)
+            runCatching {
+                val file = java.io.File(cacheDir, "engine_logs/java-crash.txt")
+                file.parentFile?.mkdirs()
+                file.appendText(
+                    "${java.util.Date()} thread=${thread.name} ${error.javaClass.name}: ${error.message}\n" +
+                        android.util.Log.getStackTraceString(error) + "\n",
+                )
+            }
+            previous?.uncaughtException(thread, error)
+        }
     }
 
     private fun acquireWorkLock() {

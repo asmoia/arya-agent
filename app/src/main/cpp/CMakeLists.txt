@@ -44,8 +44,8 @@ endif()
 
 # Do NOT patch llama.cpp into lazy mmap. 1.2.7 flipped init_mappings(true) to
 # false so a 1.28 GB GGUF could "load" with ~70 MB RSS; the first generate
-# then died on Huawei. engine_jni.cpp uses LLAMA_LOAD_MODE_NONE so weights
-# are actually read into RAM. Leave upstream mapping behaviour alone.
+# then died on Huawei. engine_jni.cpp uses LLAMA_LOAD_MODE_MMAP + prefetch.
+# Leave upstream mapping behaviour alone.
 FetchContent_MakeAvailable(llama_cpp)
 
 add_library(arya-engine SHARED engine_jni.cpp)

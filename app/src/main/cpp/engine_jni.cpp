@@ -17,6 +17,10 @@
  *   llama_model_params has NO use_mmap / use_mlock (removed)
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif
+
 #include <jni.h>
 #include <android/log.h>
 #include <string>
@@ -35,8 +39,13 @@
 #include <errno.h>
 #include <stdio.h>
 #include <exception>
+#include <stdint.h>
+#include <sys/auxv.h>
+#include <sys/syscall.h>
+#include <ucontext.h>
 
 #include "llama.h"
+#include "ggml.h"
 
 #define LOG_TAG "AryaEngineJNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -140,6 +149,11 @@ static bool detect_gpu_available() {
 
 static char g_crash_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/native-crash.txt";
 static char g_stage_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/native-load-stage.txt";
+static char g_heartbeat_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/native-heartbeat.txt";
+static char g_env_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/native-env.txt";
+static char g_llama_log_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/llama-cpp.log";
+static char g_maps_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/native-maps.txt";
+static char g_last_stage[128] = "boot";
 
 static long get_self_rss_kb() {
     FILE * f = fopen("/proc/self/status", "r");
@@ -157,74 +171,212 @@ static long get_self_rss_kb() {
     return rss;
 }
 
-static void append_load_stage(const char * stage) {
-    if (!stage || !stage[0]) return;
-    char line[320];
-    long long monotonic_ms = static_cast<long long>(now_ms());
-    int n = snprintf(
-        line, sizeof(line),
-        "t_ms=%lld pid=%ld stage=%s rss_kb=%ld avail_mb=%ld\n",
-        monotonic_ms, static_cast<long>(getpid()), stage, get_self_rss_kb(), get_available_ram_mb());
-    if (n <= 0) return;
-    int fd = open(g_stage_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd < 0) return;
-    ssize_t remaining = n;
-    const char * cursor = line;
+static void set_path_buf(char * dst, size_t dst_sz, const char * src) {
+    if (!src || !src[0] || !dst || dst_sz == 0) return;
+    strncpy(dst, src, dst_sz - 1);
+    dst[dst_sz - 1] = '\0';
+}
+
+static void derive_sibling(char * dst, size_t dst_sz, const char * any_path, const char * filename) {
+    if (!dst || dst_sz == 0 || !filename) return;
+    const char * slash = nullptr;
+    if (any_path) {
+        for (const char * p = any_path; *p; ++p) {
+            if (*p == '/') slash = p;
+        }
+    }
+    if (!slash) {
+        snprintf(dst, dst_sz, "/data/user/0/io.agents.arya/cache/engine_logs/%s", filename);
+        return;
+    }
+    size_t dir_len = static_cast<size_t>(slash - any_path);
+    size_t name_len = strlen(filename);
+    if (dir_len + 1 + name_len + 1 > dst_sz) {
+        snprintf(dst, dst_sz, "/data/user/0/io.agents.arya/cache/engine_logs/%s", filename);
+        return;
+    }
+    memcpy(dst, any_path, dir_len);
+    dst[dir_len] = '/';
+    memcpy(dst + dir_len + 1, filename, name_len + 1);
+}
+
+static long get_tid() {
+    return static_cast<long>(syscall(__NR_gettid));
+}
+
+static int get_cpu() {
+    int c = sched_getcpu();
+    return c < 0 ? -1 : c;
+}
+
+static void remember_stage(const char * stage) {
+    if (!stage) return;
+    size_t n = 0;
+    while (stage[n] && n + 1 < sizeof(g_last_stage)) {
+        g_last_stage[n] = stage[n];
+        ++n;
+    }
+    g_last_stage[n] = '\0';
+}
+
+static void write_all(int fd, const char * buf, size_t n) {
+    const char * cursor = buf;
+    ssize_t remaining = static_cast<ssize_t>(n);
     while (remaining > 0) {
         ssize_t written = write(fd, cursor, static_cast<size_t>(remaining));
         if (written <= 0) break;
         cursor += written;
         remaining -= written;
     }
+}
+
+static void write_cstr(int fd, const char * s) {
+    if (!s) return;
+    size_t n = 0;
+    while (s[n]) ++n;
+    write_all(fd, s, n);
+}
+
+static void write_dec_fd(int fd, long long v) {
+    if (v < 0) {
+        write_cstr(fd, "-");
+        v = -v;
+    }
+    char digits[32];
+    int n = 0;
+    if (v == 0) {
+        digits[n++] = '0';
+    } else {
+        while (v > 0 && n < 31) {
+            digits[n++] = static_cast<char>('0' + (v % 10));
+            v /= 10;
+        }
+    }
+    for (int i = n - 1; i >= 0; --i) {
+        char c = digits[i];
+        write(fd, &c, 1);
+    }
+}
+
+static void write_hex_fd(int fd, uint64_t v) {
+    write_cstr(fd, "0x");
+    char buf[16];
+    for (int i = 15; i >= 0; --i) {
+        int nib = static_cast<int>((v >> (static_cast<unsigned>(i) * 4)) & 0xF);
+        buf[15 - i] = static_cast<char>(nib < 10 ? '0' + nib : 'a' + (nib - 10));
+    }
+    write_all(fd, buf, 16);
+}
+
+static void append_to_path(const char * path, const char * data, size_t n, bool do_fsync) {
+    if (!path || !path[0] || !data || n == 0) return;
+    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) return;
+    write_all(fd, data, n);
+    if (do_fsync) fsync(fd);
+    close(fd);
+}
+
+static void overwrite_path(const char * path, const char * data, size_t n) {
+    if (!path || !path[0] || !data) return;
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return;
+    write_all(fd, data, n);
     fsync(fd);
     close(fd);
 }
 
-static void crash_handler(int sig) {
-    // Do not call snprintf or other lock-taking libc helpers from a signal
-    // handler: a fault may have happened while libc was already locked.
-    const char prefix[] = "native signal ";
-    char buf[64];
-    size_t pos = 0;
-    for (size_t i = 0; i < sizeof(prefix) - 1 && pos < sizeof(buf) - 1; ++i) {
-        buf[pos++] = prefix[i];
-    }
-    unsigned int value = sig < 0 ? 0U : static_cast<unsigned int>(sig);
-    char digits[16];
-    size_t digit_count = 0;
-    do {
-        digits[digit_count++] = static_cast<char>('0' + (value % 10U));
-        value /= 10U;
-    } while (value > 0U && digit_count < sizeof(digits));
-    while (digit_count > 0 && pos < sizeof(buf) - 2) {
-        buf[pos++] = digits[--digit_count];
-    }
-    buf[pos++] = '\n';
+static void format_stage_line(char * line, size_t cap, const char * stage) {
+    snprintf(
+        line, cap,
+        "t_ms=%lld pid=%ld tid=%ld cpu=%d rss_kb=%ld avail_mb=%ld stage=%s\n",
+        static_cast<long long>(now_ms()), static_cast<long>(getpid()), get_tid(), get_cpu(),
+        get_self_rss_kb(), get_available_ram_mb(), stage);
+}
+
+static void heartbeat_only(const char * stage) {
+    if (!stage || !stage[0]) return;
+    remember_stage(stage);
+    char line[384];
+    format_stage_line(line, sizeof(line), stage);
+    overwrite_path(g_heartbeat_path, line, strlen(line));
+}
+
+static void append_load_stage(const char * stage) {
+    if (!stage || !stage[0]) return;
+    remember_stage(stage);
+    char line[384];
+    format_stage_line(line, sizeof(line), stage);
+    LOGI("stage %s pid=%ld tid=%ld cpu=%d rss_kb=%ld", stage,
+         static_cast<long>(getpid()), get_tid(), get_cpu(), get_self_rss_kb());
+    append_to_path(g_stage_path, line, strlen(line), true);
+    overwrite_path(g_heartbeat_path, line, strlen(line));
+}
+
+static void crash_handler(int sig, siginfo_t * si, void * uctx) {
+    // Async-signal-safe only: open/write/fsync/close/_exit. No snprintf.
     int fd = open(g_crash_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd >= 0) {
-        ssize_t remaining = static_cast<ssize_t>(pos);
-        const char * cursor = buf;
-        while (remaining > 0) {
-            ssize_t written = write(fd, cursor, static_cast<size_t>(remaining));
-            if (written <= 0) break;
-            cursor += written;
-            remaining -= written;
+        write_cstr(fd, "native_signal sig=");
+        write_dec_fd(fd, sig);
+        write_cstr(fd, " code=");
+        write_dec_fd(fd, si ? si->si_code : 0);
+        write_cstr(fd, " addr=");
+        write_hex_fd(fd, si ? static_cast<uint64_t>(reinterpret_cast<uintptr_t>(si->si_addr)) : 0);
+        write_cstr(fd, " pid=");
+        write_dec_fd(fd, static_cast<long long>(getpid()));
+        write_cstr(fd, " tid=");
+        write_dec_fd(fd, static_cast<long long>(syscall(__NR_gettid)));
+#if defined(__aarch64__)
+        if (uctx) {
+            ucontext_t * uc = static_cast<ucontext_t *>(uctx);
+            write_cstr(fd, " pc=");
+            write_hex_fd(fd, static_cast<uint64_t>(uc->uc_mcontext.pc));
+            write_cstr(fd, " lr=");
+            write_hex_fd(fd, static_cast<uint64_t>(uc->uc_mcontext.regs[30]));
+            write_cstr(fd, " sp=");
+            write_hex_fd(fd, static_cast<uint64_t>(uc->uc_mcontext.sp));
+            write_cstr(fd, " fault=");
+            write_hex_fd(fd, static_cast<uint64_t>(uc->uc_mcontext.fault_address));
         }
+#endif
+        write_cstr(fd, " stage=");
+        write_cstr(fd, g_last_stage);
+        write_cstr(fd, "\n");
+        if (sig == SIGILL) write_cstr(fd, "name=SIGILL\n");
+        else if (sig == SIGSEGV) write_cstr(fd, "name=SIGSEGV\n");
+        else if (sig == SIGBUS) write_cstr(fd, "name=SIGBUS\n");
+        else if (sig == SIGABRT) write_cstr(fd, "name=SIGABRT\n");
+        else if (sig == SIGFPE) write_cstr(fd, "name=SIGFPE\n");
+        fsync(fd);
         close(fd);
+    }
+    int hb = open(g_heartbeat_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (hb >= 0) {
+        write_cstr(hb, "CRASH sig=");
+        write_dec_fd(hb, sig);
+        write_cstr(hb, " stage=");
+        write_cstr(hb, g_last_stage);
+        write_cstr(hb, "\n");
+        fsync(hb);
+        close(hb);
     }
     _exit(128 + sig);
 }
 
+static void install_crash_handler();
+
 static void set_crash_log_path(const char * path) {
-    if (!path || !path[0]) return;
-    strncpy(g_crash_path, path, sizeof(g_crash_path) - 1);
-    g_crash_path[sizeof(g_crash_path) - 1] = '\0';
+    set_path_buf(g_crash_path, sizeof(g_crash_path), path);
+    install_crash_handler();
 }
 
 static void set_stage_log_path(const char * path) {
-    if (!path || !path[0]) return;
-    strncpy(g_stage_path, path, sizeof(g_stage_path) - 1);
-    g_stage_path[sizeof(g_stage_path) - 1] = '\0';
+    set_path_buf(g_stage_path, sizeof(g_stage_path), path);
+    derive_sibling(g_heartbeat_path, sizeof(g_heartbeat_path), path, "native-heartbeat.txt");
+    derive_sibling(g_env_path, sizeof(g_env_path), path, "native-env.txt");
+    derive_sibling(g_llama_log_path, sizeof(g_llama_log_path), path, "llama-cpp.log");
+    derive_sibling(g_maps_path, sizeof(g_maps_path), path, "native-maps.txt");
 }
 
 static void install_crash_handler() {
@@ -233,12 +385,163 @@ static void install_crash_handler() {
     if (!installed.compare_exchange_strong(expected, true)) return;
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = crash_handler;
+    sa.sa_sigaction = crash_handler;
+    sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+    sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, nullptr);
     sigaction(SIGABRT, &sa, nullptr);
     sigaction(SIGBUS, &sa, nullptr);
     sigaction(SIGILL, &sa, nullptr);
     sigaction(SIGFPE, &sa, nullptr);
+}
+
+static void llama_log_bridge(enum ggml_log_level level, const char * text, void * /*user*/) {
+    if (!text) return;
+    int prio = ANDROID_LOG_INFO;
+    if (level == GGML_LOG_LEVEL_ERROR) prio = ANDROID_LOG_ERROR;
+    else if (level == GGML_LOG_LEVEL_WARN) prio = ANDROID_LOG_WARN;
+    else if (level == GGML_LOG_LEVEL_DEBUG) prio = ANDROID_LOG_DEBUG;
+    __android_log_print(prio, "AryaLlama", "%s", text);
+    if (level == GGML_LOG_LEVEL_ERROR || level == GGML_LOG_LEVEL_WARN) {
+        size_t n = strlen(text);
+        append_to_path(g_llama_log_path, text, n, level == GGML_LOG_LEVEL_ERROR);
+        if (n == 0 || text[n - 1] != '\n') {
+            append_to_path(g_llama_log_path, "\n", 1, level == GGML_LOG_LEVEL_ERROR);
+        }
+    }
+}
+
+#ifndef HWCAP_ASIMDDP
+#define HWCAP_ASIMDDP (1UL << 20)
+#endif
+#ifndef HWCAP_ASIMD
+#define HWCAP_ASIMD (1UL << 1)
+#endif
+#ifndef HWCAP_FP
+#define HWCAP_FP (1UL << 0)
+#endif
+#ifndef HWCAP2_I8MM
+#define HWCAP2_I8MM (1UL << 13)
+#endif
+
+static void dump_cpuinfo_and_env(const char * model_path, int n_ctx, int n_threads) {
+    FILE * out = fopen(g_env_path, "w");
+    if (!out) return;
+    fprintf(out, "arya_engine_diag=1.2.17\n");
+    fprintf(out, "pid=%ld tid=%ld cpu=%d\n", static_cast<long>(getpid()), get_tid(), get_cpu());
+    fprintf(out, "model_path=%s\n", model_path ? model_path : "");
+    fprintf(out, "n_ctx=%d n_threads_arg=%d forced_threads=1 n_batch=1 n_ubatch=1 load_mode=MMAP+prefetch\n", n_ctx, n_threads);
+#ifdef __ARM_FEATURE_DOTPROD
+    fprintf(out, "compiled_arm_feature_dotprod=1\n");
+#else
+    fprintf(out, "compiled_arm_feature_dotprod=0\n");
+#endif
+#ifdef __ARM_FEATURE_MATMUL_INT8
+    fprintf(out, "compiled_arm_feature_i8mm=1\n");
+#else
+    fprintf(out, "compiled_arm_feature_i8mm=0\n");
+#endif
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+    fprintf(out, "compiled_arm_feature_fp16=1\n");
+#else
+    fprintf(out, "compiled_arm_feature_fp16=0\n");
+#endif
+#if defined(__aarch64__)
+    unsigned long hwcap = getauxval(AT_HWCAP);
+    unsigned long hwcap2 = getauxval(AT_HWCAP2);
+    fprintf(out, "hwcap=0x%lx hwcap2=0x%lx\n", hwcap, hwcap2);
+    fprintf(out, "hwcap_fp=%d hwcap_asimd=%d hwcap_asimddp=%d hwcap2_i8mm=%d\n",
+            (hwcap & HWCAP_FP) != 0,
+            (hwcap & HWCAP_ASIMD) != 0,
+            (hwcap & HWCAP_ASIMDDP) != 0,
+            (hwcap2 & HWCAP2_I8MM) != 0);
+#endif
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+        fprintf(out, "affinity=");
+        for (int i = 0; i < 16; i++) {
+            if (CPU_ISSET(i, &set)) fprintf(out, "%d ", i);
+        }
+        fprintf(out, "\n");
+    }
+    fprintf(out, "nprocs=%d ram_total_mb=%ld ram_avail_mb=%ld rss_kb=%ld\n",
+            get_nprocs_onln(), get_total_ram_mb(), get_available_ram_mb(), get_self_rss_kb());
+    const char * sys = llama_print_system_info();
+    if (sys) fprintf(out, "llama_system_info=%s\n", sys);
+    fprintf(out, "--- /proc/self/status ---\n");
+    FILE * st = fopen("/proc/self/status", "r");
+    if (st) {
+        char line[256];
+        while (fgets(line, sizeof(line), st)) {
+            if (strncmp(line, "Vm", 2) == 0 || strncmp(line, "Threads", 7) == 0 ||
+                strncmp(line, "Cpus_allowed", 12) == 0 || strncmp(line, "SigCgt", 6) == 0) {
+                fputs(line, out);
+            }
+        }
+        fclose(st);
+    }
+    fprintf(out, "--- cpu max freq ---\n");
+    for (int i = 0; i < 16; i++) {
+        char path[128];
+        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i);
+        FILE * f = fopen(path, "r");
+        if (!f) continue;
+        long freq = 0;
+        if (fscanf(f, "%ld", &freq) == 1) fprintf(out, "cpu%d_max_khz=%ld\n", i, freq);
+        fclose(f);
+    }
+    fprintf(out, "--- /proc/cpuinfo ---\n");
+    FILE * ci = fopen("/proc/cpuinfo", "r");
+    if (ci) {
+        char line[256];
+        int bytes = 0;
+        while (fgets(line, sizeof(line), ci) && bytes < 8000) {
+            fputs(line, out);
+            bytes += static_cast<int>(strlen(line));
+        }
+        fclose(ci);
+    }
+    fflush(out);
+    fclose(out);
+
+    FILE * maps_in = fopen("/proc/self/maps", "r");
+    FILE * maps_out = fopen(g_maps_path, "w");
+    if (maps_in && maps_out) {
+        char line[512];
+        while (fgets(line, sizeof(line), maps_in)) {
+            if (strstr(line, "arya") || strstr(line, "ggml") || strstr(line, "llama") ||
+                strstr(line, "libarya") || strstr(line, "[vdso]") || strstr(line, "linker")) {
+                fputs(line, maps_out);
+            }
+        }
+    }
+    if (maps_in) fclose(maps_in);
+    if (maps_out) fclose(maps_out);
+}
+
+static bool should_log_prefill(int i) {
+    if (i < 16) return true;
+    if (i < 64) return (i % 8) == 0;
+    return (i % 32) == 0;
+}
+
+static int decode_logged(llama_context * ctx, llama_batch batch, const char * tag, int i, int n_total, int tok, bool verbose) {
+    char before[96];
+    snprintf(before, sizeof(before), "%s_in_%d_of_%d_tok_%d_cpu_%d", tag, i, n_total, tok, get_cpu());
+    if (verbose) append_load_stage(before);
+    else heartbeat_only(before);
+    double t0 = now_ms();
+    int rc = llama_decode(ctx, batch);
+    int ms = static_cast<int>(now_ms() - t0);
+    char after[96];
+    snprintf(after, sizeof(after), "%s_ok_%d_rc_%d_ms_%d_cpu_%d", tag, i, rc, ms, get_cpu());
+    if (verbose || rc != 0) append_load_stage(after);
+    else heartbeat_only(after);
+    if (rc != 0) {
+        LOGE("%s decode rc=%d i=%d/%d tok=%d ms=%d", tag, rc, i, n_total, tok, ms);
+    }
+    return rc;
 }
 
 static void log_rss(const char * tag) {
@@ -326,11 +629,18 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
 {
     try {
     install_crash_handler();
+    llama_log_set(llama_log_bridge, nullptr);
     append_load_stage("enter");
     const char * path = env->GetStringUTFChars(model_path, nullptr);
     if (!path) return -1;
     double t0 = now_ms();
     LOGI("Loading model: %s n_ctx=%d n_threads=%d (load_mode=MMAP+prefetch)", path, n_ctx, n_threads);
+#ifdef __ARM_FEATURE_DOTPROD
+    append_load_stage("compiled_with_dotprod");
+#else
+    append_load_stage("compiled_without_dotprod");
+#endif
+    dump_cpuinfo_and_env(path, n_ctx, n_threads);
     log_rss("before-load");
 
     // Kirin 9000S: 2-thread batched decode dies at prefill_begin even for
@@ -421,7 +731,7 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     if (!warm.empty()) {
         int n = std::min(1, static_cast<int>(warm.size()));
         llama_batch wb = llama_batch_get_one(warm.data(), n);
-        int wr = llama_decode(ctx, wb);
+        int wr = decode_logged(ctx, wb, "warmup", 0, n, static_cast<int>(warm[0]), true);
         LOGI("warmup decode rc=%d rss_kb=%ld", wr, get_self_rss_kb());
         if (wr != 0) {
             append_load_stage("warmup_failed");
@@ -581,6 +891,7 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     if (prompt_mode && mode_str) env->ReleaseStringUTFChars(prompt_mode, mode_str);
 
     bool add_bos = !is_delta && llama_vocab_get_add_bos(mc->vocab);
+    append_load_stage(is_delta ? "tokenize_delta" : (add_bos ? "tokenize_full_bos" : "tokenize_full_nobos"));
     auto tokens = tokenize_string(mc->vocab, std::string(prompt_str), add_bos, true);
     env->ReleaseStringUTFChars(prompt, prompt_str);
 
@@ -590,11 +901,24 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
 
     const int n_ctx = llama_n_ctx(mc->ctx);
     const int n_prompt = static_cast<int>(tokens.size());
+    {
+        char tok_stage[48];
+        snprintf(tok_stage, sizeof(tok_stage), "tokenize_done_n_%d", n_prompt);
+        append_load_stage(tok_stage);
+        char ids[160];
+        int used = snprintf(ids, sizeof(ids), "prompt_toks");
+        int show = std::min(12, n_prompt);
+        for (int k = 0; k < show && used > 0 && used < static_cast<int>(sizeof(ids)) - 12; k++) {
+            int w = snprintf(ids + used, sizeof(ids) - static_cast<size_t>(used), "_%d", static_cast<int>(tokens[k]));
+            if (w > 0) used += w;
+        }
+        append_load_stage(ids);
+    }
 
     double t_start = now_ms();
     double t_last_token = t_start;
-    LOGI("generate start n_prompt=%d n_ctx=%d max_tokens=%d delta=%d",
-         n_prompt, n_ctx, max_tokens, is_delta ? 1 : 0);
+    LOGI("generate start n_prompt=%d n_ctx=%d max_tokens=%d delta=%d add_bos=%d cpu=%d",
+         n_prompt, n_ctx, max_tokens, is_delta ? 1 : 0, add_bos ? 1 : 0, get_cpu());
     log_rss("generate-start");
 
     if (n_prompt >= n_ctx) {
@@ -602,8 +926,10 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     }
 
     if (!is_delta) {
+        append_load_stage("kv_clear");
         llama_memory_clear(llama_get_memory(mc->ctx), true);
         mc->current_n_past = 0;
+        append_load_stage("kv_clear_done");
     }
 
     if (n_prompt > 0) {
@@ -612,16 +938,14 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
         const int chunk = 1;
         for (int i = 0; i < n_prompt; ) {
             if (mc->cancel_flag.load()) {
+                append_load_stage("prefill_cancelled");
                 return env->NewStringUTF("{\"error\": \"cancelled\"}");
             }
             int n = std::min(chunk, n_prompt - i);
-            if ((i % 32) == 0) {
-                char st[48];
-                snprintf(st, sizeof(st), "prefill_%d_%d", i, n_prompt);
-                append_load_stage(st);
-            }
             llama_batch pb = llama_batch_get_one(const_cast<llama_token*>(tokens.data() + i), n);
-            int rc = llama_decode(mc->ctx, pb);
+            int rc = decode_logged(
+                mc->ctx, pb, "prefill", i, n_prompt,
+                static_cast<int>(tokens[i]), should_log_prefill(i));
             if (rc != 0) {
                 LOGE("prefill decode failed rc=%d at %d/%d", rc, i, n_prompt);
                 return env->NewStringUTF("{\"error\": \"decode_failed\"}");
@@ -634,6 +958,7 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     LOGI("prefill done ms=%.0f n_prompt=%d", prompt_eval_ms, n_prompt);
 
     // Sampler setup (b10603: penalties is still n_vocab, last_n, repeat, freq, present)
+    append_load_stage("sampler_init");
     auto * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     const int32_t n_vocab = llama_vocab_n_tokens(mc->vocab);
     if (repeat_penalty > 0.01f && repeat_penalty != 1.0f) {
@@ -685,7 +1010,8 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
         }
 
         llama_batch ob = llama_batch_get_one(&tok, 1);
-        if (llama_decode(mc->ctx, ob) != 0) {
+        bool verbose_gen = (i < 8) || ((i % 16) == 0);
+        if (decode_logged(mc->ctx, ob, "gen", i, max_tokens, static_cast<int>(tok), verbose_gen) != 0) {
             finish_reason = "decode_error";
             break;
         }
@@ -730,6 +1056,11 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     double gen_ms = gen_end - gen_start;
 
     llama_sampler_free(smpl);
+    {
+        char done[80];
+        snprintf(done, sizeof(done), "generate_done_%s_tok_%d", finish_reason.c_str(), gen_tokens);
+        append_load_stage(done);
+    }
     LOGI("generate done reason=%s gen_tokens=%d prompt_ms=%.0f gen_ms=%.0f",
          finish_reason.c_str(), gen_tokens, prompt_eval_ms, gen_ms);
 

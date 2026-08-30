@@ -98,7 +98,7 @@ class EngineCore(private val context: Context) {
                     throw EngineLoadException(EngineError.ERR_OOM_PREVENTED, plan.reasonEn)
                 }
                 is MemoryBudget.Plan.Load -> {
-                    EngineLog.i("EngineCore", "nativeLoadModel begin path=$modelPath ctx=${plan.ctxSize} threads=${plan.nThreads} fileBytes=${file.length()}")
+                    EngineLog.breadcrumb("EngineCore", "nativeLoadModel begin path=$modelPath ctx=${plan.ctxSize} threads=${plan.nThreads} fileBytes=${file.length()}")
                     val t0 = System.currentTimeMillis()
                     val newHandle = EngineNative.nativeLoadModel(
                         modelPath,
@@ -190,9 +190,9 @@ class EngineCore(private val context: Context) {
                 }
             }
 
-            EngineLog.i(
+            EngineLog.breadcrumb(
                 "EngineCore",
-                "generateStream begin id=$requestId promptChars=${prompt.length} mode=$mode maxTokens=${req.maxTokens} deadline=${req.deadlineMs}",
+                "generateStream begin id=$requestId promptChars=${prompt.length} mode=$mode maxTokens=${req.maxTokens} deadline=${req.deadlineMs} tokenDeadline=${req.tokenDeadlineMs} handle=$h",
             )
             val stopJson = JSONArray(req.stop).toString()
             val nativeCb = object : EngineNative.NativeStreamCallback {

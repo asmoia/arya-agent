@@ -90,8 +90,17 @@ class LocalLlmClient(
         }
 
         val assembler = StreamAssembler()
-        val promptText = ChatMlPrompt.build(promptMessages, tools, enableThinking = false)
-        XLog.i(TAG, "generate promptChars=${promptText.length}")
+        val useGemma = isFunctionGemma(modelPath)
+        val promptText = if (useGemma) {
+            FunctionGemmaPrompt.build(promptMessages, tools)
+        } else {
+            ChatMlPrompt.build(promptMessages, tools, enableThinking = false)
+        }
+        XLog.i(TAG, "generate template=${if (useGemma) "functiongemma" else "chatml"} promptChars=${promptText.length} tools=${tools.size}")
+        io.agents.arya.engine.EngineLog.breadcrumb(
+            TAG,
+            "generate template=${if (useGemma) "functiongemma" else "chatml"} path=${modelPath.takeLast(80)} chars=${promptText.length} tools=${tools.size} head=${promptText.take(180).replace('\n', ' ')}",
+        )
         val req = EngineRequest(
             prompt = promptText,
             promptMode = "full",

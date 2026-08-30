@@ -52,6 +52,10 @@ class EngineClient(private val app: Context) {
     private val deathRecipient = IBinder.DeathRecipient {
         val reason = engineDeathReason()
         EngineLog.e("EngineClient", "engine binder died model=$activeModelPath reason=$reason")
+        runCatching { ProcessExitDump.writeToEngineLogs(app) }
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            runCatching { ProcessExitDump.writeToEngineLogs(app) }
+        }, 500L)
         _state.value = EngineState.Crashed(reason)
         val model = activeModelPath
         if (model != null) recordCrash(model)
@@ -72,15 +76,26 @@ class EngineClient(private val app: Context) {
         val diagnosticsDir = java.io.File(app.cacheDir, "engine_logs")
         val crashFile = java.io.File(diagnosticsDir, "native-crash.txt")
         val stageFile = java.io.File(diagnosticsDir, "native-load-stage.txt")
+        val heartbeatFile = java.io.File(diagnosticsDir, "native-heartbeat.txt")
         val crash = runCatching {
-            if (crashFile.isFile) crashFile.readText().takeLast(160).trim().replace('\n', ' ')
+            if (crashFile.isFile) crashFile.readText().takeLast(400).trim().replace('\n', ' ')
+            else ""
+        }.getOrDefault("")
+        val heartbeat = runCatching {
+            if (heartbeatFile.isFile) heartbeatFile.readText().trim().replace('\n', ' ')
             else ""
         }.getOrDefault("")
         val stage = runCatching {
-            if (stageFile.isFile) stageFile.readText().takeLast(240).trim().replace("\n", "; ")
+            if (stageFile.isFile) stageFile.readText().takeLast(400).trim().replace("\n", "; ")
             else ""
         }.getOrDefault("")
-        val detail = listOf(crash, stage).filter { it.isNotBlank() }.joinToString(" | ")
+        val exits = runCatching { ProcessExitDump.dumpText(app).take(500).replace('\n', ' | ') }.getOrDefault("")
+        val detail = listOf(
+            crash.takeIf { it.isNotBlank() }?.let { "crash=$it" },
+            heartbeat.takeIf { it.isNotBlank() }?.let { "hb=$it" },
+            stage.takeIf { it.isNotBlank() }?.let { "stage=$it" },
+            exits.takeIf { it.isNotBlank() }?.let { "exit=$it" },
+        ).filterNotNull().joinToString(" || ")
         return if (detail.isBlank()) "Engine process died" else "Engine process died: $detail"
     }
 

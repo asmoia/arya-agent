@@ -23,6 +23,17 @@ object EngineLog {
     private const val NATIVE_LOAD_STAGE = "native-load-stage.txt"
     private const val MAX_BYTES = 768L * 1024L
 
+    private val EXTRA_DIAG_NAMES = listOf(
+        "native-crash.prev.txt",
+        "native-load-stage.prev.txt",
+        "native-heartbeat.txt",
+        "native-env.txt",
+        "native-maps.txt",
+        "llama-cpp.log",
+        "exit-info.txt",
+        "java-crash.txt",
+    )
+
     @Volatile
     private var appContext: Context? = null
     private val lock = Any()
@@ -35,26 +46,35 @@ object EngineLog {
     }
 
     @JvmStatic
-    fun i(tag: String, message: String) = write("I", tag, message, null)
+    fun i(tag: String, message: String) = write("I", tag, message, null, false)
 
     @JvmStatic
-    fun w(tag: String, message: String, err: Throwable? = null) = write("W", tag, message, err)
+    fun w(tag: String, message: String, err: Throwable? = null) = write("W", tag, message, err, false)
 
     @JvmStatic
-    fun e(tag: String, message: String, err: Throwable? = null) = write("E", tag, message, err)
+    fun e(tag: String, message: String, err: Throwable? = null) = write("E", tag, message, err, false)
+
+    /** Death-critical line: same as [i] plus fsync so SIGKILL still leaves the last breadcrumb. */
+    @JvmStatic
+    fun breadcrumb(tag: String, message: String) = write("I", tag, message, null, true)
 
     @JvmStatic
     fun listFiles(context: Context): List<File> {
         val dir = resolveDir(context) ?: return emptyList()
-        return listOf(
-            File(dir, PREV),
-            File(dir, ACTIVE),
-            File(dir, NATIVE_CRASH),
-            File(dir, NATIVE_LOAD_STAGE),
-        ).filter { it.exists() && it.isFile && it.length() > 0L }
+        val named = buildList {
+            add(File(dir, PREV))
+            add(File(dir, ACTIVE))
+            add(File(dir, NATIVE_CRASH))
+            add(File(dir, NATIVE_LOAD_STAGE))
+            EXTRA_DIAG_NAMES.forEach { add(File(dir, it)) }
+        }
+        val extras = dir.listFiles()
+            ?.filter { it.isFile && it.length() > 0L && it.name.startsWith("exit-tombstone-") }
+            .orEmpty()
+        return (named + extras).filter { it.exists() && it.isFile && it.length() > 0L }.distinct()
     }
 
-    private fun write(level: String, tag: String, message: String, err: Throwable?) {
+    private fun write(level: String, tag: String, message: String, err: Throwable?, fsync: Boolean) {
         val line = buildString {
             val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS Z", Locale.US).format(Date())
             append(ts).append(' ').append(level).append('/').append(tag)
@@ -84,6 +104,7 @@ object EngineLog {
                 FileOutputStream(active, true).use {
                     it.write(bytes)
                     it.flush()
+                    if (fsync) it.fd.sync()
                 }
             }
         }
