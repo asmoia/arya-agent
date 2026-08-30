@@ -89,7 +89,7 @@ class EngineClient(private val app: Context) {
             if (stageFile.isFile) stageFile.readText().takeLast(400).trim().replace("\n", "; ")
             else ""
         }.getOrDefault("")
-        val exits = runCatching { ProcessExitDump.dumpText(app).take(500).replace('\n', ' | ') }.getOrDefault("")
+        val exits = runCatching { ProcessExitDump.dumpText(app).take(500).replace("\n", " | ") }.getOrDefault("")
         val detail = listOf(
             crash.takeIf { it.isNotBlank() }?.let { "crash=$it" },
             heartbeat.takeIf { it.isNotBlank() }?.let { "hb=$it" },

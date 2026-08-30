@@ -25,7 +25,7 @@ object ProcessExitDump {
             File(dir, "exit-info.txt").writeText(text)
         }
         writeTombstones(context, dir)
-        EngineLog.i("ProcessExitDump", text.take(800).replace('\n', ' | '))
+        EngineLog.i("ProcessExitDump", text.take(800).replace("\n", " | "))
     }
 
     fun dumpText(context: Context): String {
@@ -94,7 +94,7 @@ object ProcessExitDump {
         return buildString {
             appendLine("timestamp=${timeFmt.format(Date(info.timestamp))}")
             appendLine("process=${info.processName}")
-            appendLine("pid=${info.pid} uid=${info.uid}")
+            appendLine("pid=${info.pid} realUid=${info.realUid} packageUid=${info.packageUid}")
             appendLine("reason=${reasonName(reason)} ($reason)")
             appendLine("status=$status ${if (reason == ApplicationExitInfo.REASON_SIGNALED) signalName(status) else ""}".trimEnd())
             appendLine("importance=${info.importance} pss_kb=${info.pss} rss_kb=${info.rss}")
