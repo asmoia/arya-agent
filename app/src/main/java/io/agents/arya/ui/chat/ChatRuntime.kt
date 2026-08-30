@@ -267,6 +267,13 @@ class ChatRuntime(
         val prompt = lastUserPrompt ?: return
         send(prompt, agentConfig)
     }
+
+    fun clearChat() {
+        stopStreaming()
+        historyStore.deleteConversation(conversationId)
+        lastUserPrompt = null
+        _uiState.value = ChatUiState(conversationId = conversationId)
+    }
 }
 
 object ChatRuntimeRegistry {
