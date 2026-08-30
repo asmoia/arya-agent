@@ -29,7 +29,7 @@ class LongSummaryEngineTest {
 
     @Test
     fun `long input splits into many chunks that each fit the budget`() {
-        val parts = List(300) { "Message number $it says something useful and vague. " }
+        val parts = List(300) { "Message $it: " + "Some useful content that should be summarized carefully. ".repeat(3) }
         val e = engine { it }
         val chunks = e.splitChunks(parts)
         assertTrue("expected many chunks for 300 messages", chunks.size > 5)
@@ -41,7 +41,7 @@ class LongSummaryEngineTest {
 
     @Test
     fun `reduce collapses many chunk summaries into one`() {
-        val parts = List(120) { "Line $it of a very long chat log. " }
+        val parts = List(120) { "Line $it: " + "A record of the conversation that needs to be reduced. ".repeat(3) }
         // A "summarize" that compresses by half each call, so reduce terminates.
         val e = engine { s -> s.substring(0, (s.length / 2).coerceAtLeast(1)) }
         val r = e.summarizeAll(parts)
