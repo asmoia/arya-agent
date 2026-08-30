@@ -228,6 +228,12 @@ class ComposeChatActivity : ComponentActivity() {
 
     private fun prewarmIfPossible() {
         val gate = readiness as? ModelReadiness.Local ?: return
+        // Prewarming 1.7B on Huawei starts a death spiral before the user chats.
+        if (gate.path.contains("1.7B", ignoreCase = true) ||
+            gate.path.contains("qwen3-1.7b", ignoreCase = true)
+        ) {
+            return
+        }
         val client = (application as ClawApplication).engineClient
         Thread({
             try {

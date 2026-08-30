@@ -1,5 +1,15 @@
 # Redesign v1 changelog
 
+## 1.2.14
+
+1.2.13 put the engine in the UI process — the whole app crashed on load.
+ADY-LX9 still cannot keep 1.7B alive through generate (EMUI SIGKILL).
+
+- Restore isolated `:engine` (UI must not die)
+- Keep file-backed mmap + prefetch
+- Huawei/Honor default to **Qwen3 0.6B** (~484 MB), skip 1.7B prewarm
+- FunctionGemma 270M is not a chat model (Google: "not intended for dialogue")
+
 ## 1.2.13
 
 Huawei ADY-LX9 / Kirin 9000S lab (1.2.12 signed): load **succeeded**

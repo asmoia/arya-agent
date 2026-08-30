@@ -31,10 +31,20 @@ class LocalLlmClient(
     }
 
     override fun chatStream(messages: List<ChatMsg>, tools: List<ToolSpec>): Flow<LlmEvent> = flow {
-        val modelPath = config.baseUrl
+        var modelPath = config.baseUrl
         if (modelPath.isEmpty()) {
             emit(LlmEvent.Error(2, "No local model path configured"))
             return@flow
+        }
+        if (LocalModelManager.oemKillsHeavyLocalModels() && isKnownHeavyQwen(modelPath)) {
+            emit(LlmEvent.Status("Huawei/Honor: using Qwen3 0.6B (1.7B is killed by EMUI after load)."))
+            val small = ensureSmallFallback()
+            if (small.isNullOrBlank()) {
+                emit(LlmEvent.Error(3, "Download Qwen3 0.6B. EMUI kills the 1.7B engine after a successful load."))
+                return@flow
+            }
+            ModelConfigRepository.saveLocalDefault(small, "qwen3-0.6b", activateNow = true)
+            modelPath = small
         }
         val promptMessages = if (messages.any { it.role == Role.SYSTEM }) {
             messages

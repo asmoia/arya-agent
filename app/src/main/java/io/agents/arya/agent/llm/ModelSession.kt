@@ -82,7 +82,16 @@ object ModelSession {
         val configured = snapshot.local.modelPath.takeIf { it.isNotBlank() }?.let(::File)
         if (configured != null && LocalModelManager.isUsableModelFile(configured)) {
             val model = modelForPath(snapshot, configured)
-            if (model != null) return LocalCandidate(model, configured.absolutePath)
+            if (model != null) {
+                if (LocalModelManager.oemKillsHeavyLocalModels() && model.id == "qwen3-1.7b") {
+                    val small = LocalModelManager.AVAILABLE_MODELS.firstOrNull { it.id == "qwen3-0.6b" }
+                    val smallPath = small?.let { LocalModelManager.getModelPath(context, it) }
+                    if (small != null && smallPath != null) {
+                        return LocalCandidate(small, smallPath)
+                    }
+                }
+                return LocalCandidate(model, configured.absolutePath)
+            }
         }
 
         val configuredModel = LocalModelManager.AVAILABLE_MODELS.firstOrNull { model ->
@@ -98,7 +107,13 @@ object ModelSession {
         val catalogCandidate = LocalModelManager.catalog(context)
             .asSequence()
             .filter { it.isDownloaded && it.isSupported && it.path != null }
-            .maxByOrNull { it.model.minRamGb }
+            .let { seq ->
+                if (LocalModelManager.oemKillsHeavyLocalModels()) {
+                    seq.minByOrNull { it.model.minRamGb }
+                } else {
+                    seq.maxByOrNull { it.model.minRamGb }
+                }
+            }
         if (catalogCandidate?.path != null) {
             return LocalCandidate(catalogCandidate.model, catalogCandidate.path)
         }

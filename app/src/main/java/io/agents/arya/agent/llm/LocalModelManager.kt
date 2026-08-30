@@ -94,7 +94,7 @@ object LocalModelManager {
         ),
         ModelInfo(
             id = "qwen3-1.7b",
-            displayName = "Qwen3 1.7B (default)",
+            displayName = "Qwen3 1.7B",
             url = "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main/Qwen_Qwen3-1.7B-Q4_K_M.gguf",
             fileName = "Qwen_Qwen3-1.7B-Q4_K_M.gguf",
             sizeBytes = 1_282_439_584L,
@@ -110,10 +110,21 @@ object LocalModelManager {
         ),
     )
 
+    fun oemKillsHeavyLocalModels(): Boolean {
+        val m = android.os.Build.MANUFACTURER.uppercase()
+        return m.contains("HUAWEI") || m.contains("HONOR")
+    }
+
     fun recommendedModel(context: Context): ModelInfo? {
-        return catalog(context).firstOrNull { it.isSupported && it.model.id == "qwen3-1.7b" }
-            ?.model
-            ?: catalog(context).firstOrNull { it.isSupported }?.model
+        val entries = catalog(context)
+        // ADY-LX9: 1.7B loads then EMUI SIGKILLs :engine. 0.6B (~484 MB) is the
+        // size that actually generates on this OEM.
+        if (oemKillsHeavyLocalModels()) {
+            return entries.firstOrNull { it.isSupported && it.model.id == "qwen3-0.6b" }?.model
+                ?: entries.firstOrNull { it.isSupported }?.model
+        }
+        return entries.firstOrNull { it.isSupported && it.model.id == "qwen3-1.7b" }?.model
+            ?: entries.firstOrNull { it.isSupported }?.model
     }
 
     /** Blocks retired large Gemma selections left in old app preferences. */
@@ -144,7 +155,7 @@ object LocalModelManager {
     }
 
     fun bestSupportedModel(context: Context): ModelInfo? {
-        return deviceSupport(context).bestSupportedModel
+        return recommendedModel(context)
     }
 
     fun isModelSupportedOnDevice(context: Context, model: ModelInfo): Boolean {

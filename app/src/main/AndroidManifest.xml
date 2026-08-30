@@ -182,12 +182,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <!-- Run in the foreground app process. Huawei ADY-LX9 (Kirin 9000S)
-             SIGKILLs isolated :engine ~16s into generate after a successful
-             1.5 GB LOAD_MODE_NONE (no native-crash.txt). File-backed mmap in
-             the visible app is what LMK will not treat as anonymous junk. -->
+        <!-- Isolated :engine so a native death does not crash the UI.
+             1.2.13 ran in the UI process and the whole app crashed on load.
+             Keep mmap inside :engine; Huawei default model is Qwen3 0.6B. -->
         <service
             android:name=".engine.EngineService"
+            android:process=":engine"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse">
