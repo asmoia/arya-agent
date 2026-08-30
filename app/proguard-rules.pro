@@ -136,11 +136,21 @@
 -keep class io.agents.arya.engine.EngineNative { *; }
 -keep class io.agents.arya.engine.EngineNative$* { *; }
 -keep interface io.agents.arya.engine.EngineNative$* { *; }
+-keep class io.agents.arya.engine.EngineNative$NativeStreamCallback { *; }
+-keep class io.agents.arya.engine.EngineNative$NativeLoadCallback { *; }
+-keep class io.agents.arya.engine.EngineNative$StreamBridge { *; }
+-keepclassmembers class io.agents.arya.engine.EngineNative$StreamBridge {
+    public <methods>;
+}
 -keep class * implements io.agents.arya.engine.EngineNative$NativeStreamCallback { *; }
 -keepclassmembers class * implements io.agents.arya.engine.EngineNative$NativeStreamCallback {
     public <methods>;
 }
 -keep class * implements io.agents.arya.engine.EngineNative$NativeLoadCallback { *; }
+# native methods keep their C entry-point names; llama.cpp bridge reflects on them.
+-keepclasseswithmembernames,includedescriptorclasses class * {
+    native <methods>;
+}
 
 # ============================================================
 # Glide

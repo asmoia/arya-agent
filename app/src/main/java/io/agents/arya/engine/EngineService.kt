@@ -286,6 +286,12 @@ class EngineService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // Post the foreground notification *first*. This service is started with
+        // startForegroundService() from EngineClient; if onCreate spends more
+        // than 5s before startForeground() (EngineCore init / EngineNative load)
+        // Android throws ForegroundServiceDidNotStartInTimeException and kills
+        // the whole :engine process, which is what the debug report shows.
+        startForegroundIfNeeded()
         EngineLog.init(this)
         installUncaughtHandler()
         EngineLog.i("EngineService", "onCreate pid=${android.os.Process.myPid()}")
@@ -306,7 +312,6 @@ class EngineService : Service() {
         profileManager = DeviceProfileManager(this)
         inferenceThread = HandlerThread("inference").apply { start() }
         inferenceHandler = Handler(inferenceThread.looper)
-        startForegroundIfNeeded()
         EngineLog.i("EngineService", "onCreate done foreground=started thread=${inferenceThread.id}")
     }
 
@@ -381,7 +386,17 @@ class EngineService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
-        startForeground(NOTIFICATION_ID, notification)
+        try {
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            } else {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE
+            }
+            androidx.core.app.ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
+        } catch (t: Throwable) {
+            EngineLog.w("EngineService", "startForeground failed; stopping to avoid ANR", t)
+            stopSelf()
+        }
     }
 
     private fun touch() {

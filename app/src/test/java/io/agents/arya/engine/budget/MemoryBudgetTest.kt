@@ -38,7 +38,11 @@ class MemoryBudgetSingleTest {
     }
 
     @Test
-    fun lowAvailableRamCapsContextAt1024() {
+    fun lowAvailableRamStillServesTheNeededWindow() {
+        // Regression: the planner used to pick 1024 whenever avail < 6 GB, but
+        // the on-device prompt tokenises to ~1.2k-4.6k tokens, so every single
+        // generate died with "prompt_exceeds_ctx". It must now honour the window
+        // the caller needs (minCtxSize, default 2048) as long as it fits.
         val plan = MemoryBudget.plan(
             MemoryBudget.Inputs(
                 totalRamBytes = 12L * GB,
@@ -49,7 +53,24 @@ class MemoryBudgetSingleTest {
             MemoryBudget.DeviceProfile(bestThreads = 4),
         )
         assertTrue("low available RAM should still permit mmap load; got $plan", plan is MemoryBudget.Plan.Load)
-        assertEquals(1024, (plan as MemoryBudget.Plan.Load).ctxSize)
+        assertEquals(2048, (plan as MemoryBudget.Plan.Load).ctxSize)
+    }
+
+    @Test
+    fun minCtxIsRespectedEvenWithLittleAvailableRam() {
+        // If the caller explicitly needs 2048 and it physically fits, load 2048.
+        val plan = MemoryBudget.plan(
+            MemoryBudget.Inputs(
+                totalRamBytes = 12L * GB,
+                availRamBytes = 4_300L * MB,
+                modelFileBytes = 500L * MB,
+                isLowRamDevice = false,
+                minCtxSize = 2048,
+            ),
+            MemoryBudget.DeviceProfile(bestThreads = 4),
+        )
+        assertTrue(plan is MemoryBudget.Plan.Load)
+        assertEquals(2048, (plan as MemoryBudget.Plan.Load).ctxSize)
     }
 
     @Test
@@ -154,7 +175,7 @@ class MemoryBudgetTableTest(
             arrayOf("8GB 1.2GB model 4096", 8.0, 4096L, 1200L, false, true, 4096),
             arrayOf("8GB only 700MB free", 8.0, 700L, 500L, false, false, null),
             arrayOf("12GB 2.5GB model", 12.0, 8192L, 2500L, false, true, 4096),
-            arrayOf("low-ram device cap 1024", 2.0, 1200L, 500L, true, true, 1024),
+            arrayOf("low-ram device still 2048 when it fits", 2.0, 1300L, 500L, true, true, 2048),
         )
     }
 }

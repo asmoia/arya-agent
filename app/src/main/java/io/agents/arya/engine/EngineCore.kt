@@ -85,6 +85,10 @@ class EngineCore(private val context: Context) {
                     isLowRamDevice = mem.lowRam,
                     modelMeta = meta,
                     processMemoryLimitBytes = mem.processLimit,
+                    // The caller knows how long its prompt (and its reserved
+                    // generation budget) is. Never load a window smaller than
+                    // that, or every generate will fail with prompt_exceeds_ctx.
+                    minCtxSize = ctxSize,
                 ),
                 profile,
             )

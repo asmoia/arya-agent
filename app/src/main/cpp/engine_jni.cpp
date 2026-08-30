@@ -155,6 +155,26 @@ static char g_llama_log_path[256] = "/data/user/0/io.agents.arya/cache/engine_lo
 static char g_maps_path[256] = "/data/user/0/io.agents.arya/cache/engine_logs/native-maps.txt";
 static char g_last_stage[128] = "boot";
 
+// Resolve the onDeltaPiece method against the *kept* interface
+// (EngineNative$NativeStreamCallback) instead of the runtime object's class.
+// GetMethodID on a concrete obfuscated class was returning a slot whose
+// signature no longer matched after R8 renamed the method, which surfaced as
+// "NoSuchMethodError: no non-static method L<cls>;.onDeltaPiece(...)". The
+// interface is covered by a -keep rule, so its method id stays stable.
+static jclass g_stream_cb_class = nullptr;
+static jclass stream_cb_class(JNIEnv * env) {
+    if (!g_stream_cb_class) {
+        jclass local = env->FindClass("io/agents/arya/engine/EngineNative$NativeStreamCallback");
+        if (local) {
+            g_stream_cb_class = static_cast<jclass>(env->NewGlobalRef(local));
+            env->DeleteLocalRef(local);
+        } else {
+            env->ExceptionClear();
+        }
+    }
+    return g_stream_cb_class;
+}
+
 static long get_self_rss_kb() {
     FILE * f = fopen("/proc/self/status", "r");
     if (!f) return -1;
@@ -996,9 +1016,9 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     else
         llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-    jclass cb_class = stream_callback ? env->GetObjectClass(stream_callback) : nullptr;
+    jclass cb_class = stream_callback ? stream_cb_class(env) : nullptr;
     jmethodID on_delta_method = nullptr;
-    if (cb_class) {
+    if (cb_class && stream_callback) {
         on_delta_method = env->GetMethodID(cb_class, "onDeltaPiece", "(Ljava/lang/String;)V");
         if (env->ExceptionCheck()) {
             env->ExceptionDescribe();

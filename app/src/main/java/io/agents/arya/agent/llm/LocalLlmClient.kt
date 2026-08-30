@@ -28,6 +28,17 @@ class LocalLlmClient(
 
     companion object {
         private const val TAG = "LocalLlmClient"
+
+        /** Generation budget shared with the request built below. */
+        const val MAX_TOKENS = 192
+
+        /**
+         * On-device inference window. Kept at 2048 (not larger) so the planner
+         * reliably supplies it even on constrained devices, and the 270M model
+         * stays crisp. LocalPromptBudget trims history/tools to fit this, so a
+         * prompt never overflows the window with "prompt_exceeds_ctx".
+         */
+        const val DEFAULT_CTX = 2048
     }
 
     override fun chatStream(messages: List<ChatMsg>, tools: List<ToolSpec>): Flow<LlmEvent> = flow {
@@ -57,11 +68,30 @@ class LocalLlmClient(
                 ),
             ) + messages
         }
+        val useGemma = isFunctionGemma(modelPath)
+
+        // Size the window from the *actual* prompt and trim history/tools so it
+        // always fits. Previously the engine loaded ctx=1024 while the prompt
+        // was 1100–4600 tokens → every generation died with prompt_exceeds_ctx.
+        val prepared = LocalPromptBudget.prepare(
+            messages = promptMessages,
+            tools = tools,
+            gemma = useGemma,
+            ctxSize = DEFAULT_CTX,
+            maxTokens = MAX_TOKENS,
+        )
+        val trimmedMessages = prepared.messages
+        val trimmedTools = prepared.tools
+        val promptText = if (useGemma) {
+            FunctionGemmaPrompt.build(trimmedMessages, trimmedTools)
+        } else {
+            ChatMlPrompt.build(trimmedMessages, trimmedTools, enableThinking = false)
+        }
         try {
             emit(LlmEvent.Status("Starting local engine… reading weights into RAM"))
-            XLog.i(TAG, "ensureLoaded $modelPath")
+            XLog.i(TAG, "ensureLoaded $modelPath ctx=${prepared.ctxSize}")
             withTimeout(240_000L) {
-                engineClient.ensureLoaded(modelPath)
+                engineClient.ensureLoaded(modelPath, ctxSize = prepared.ctxSize)
             }
             emit(LlmEvent.Status("Model in RAM. Writing…"))
         } catch (e: Exception) {
@@ -79,7 +109,7 @@ class LocalLlmClient(
             try {
                 ModelConfigRepository.saveLocalDefault(fallback, "qwen3-0.6b", activateNow = true)
                 withTimeout(240_000L) {
-                    engineClient.ensureLoaded(fallback, ctxSize = 1024, nThreads = 2)
+                    engineClient.ensureLoaded(fallback, ctxSize = prepared.ctxSize, nThreads = 2)
                 }
                 emit(LlmEvent.Status("Qwen3 0.6B ready. Writing…"))
             } catch (fallbackError: Exception) {
@@ -90,21 +120,15 @@ class LocalLlmClient(
         }
 
         val assembler = StreamAssembler()
-        val useGemma = isFunctionGemma(modelPath)
-        val promptText = if (useGemma) {
-            FunctionGemmaPrompt.build(promptMessages, tools)
-        } else {
-            ChatMlPrompt.build(promptMessages, tools, enableThinking = false)
-        }
-        XLog.i(TAG, "generate template=${if (useGemma) "functiongemma" else "chatml"} promptChars=${promptText.length} tools=${tools.size}")
+        XLog.i(TAG, "generate template=${if (useGemma) "functiongemma" else "chatml"} promptChars=${promptText.length} tools=${trimmedTools.size} ctx=${prepared.ctxSize}")
         io.agents.arya.engine.EngineLog.breadcrumb(
             TAG,
-            "generate template=${if (useGemma) "functiongemma" else "chatml"} path=${modelPath.takeLast(80)} chars=${promptText.length} tools=${tools.size} head=${promptText.take(180).replace('\n', ' ')}",
+            "generate template=${if (useGemma) "functiongemma" else "chatml"} path=${modelPath.takeLast(80)} chars=${promptText.length} tools=${trimmedTools.size} ctx=${prepared.ctxSize} head=${promptText.take(180).replace('\n', ' ')}",
         )
         val req = EngineRequest(
             prompt = promptText,
             promptMode = "full",
-            maxTokens = 192,
+            maxTokens = MAX_TOKENS,
             temperature = 0.2,
             topP = 0.9,
             topK = 20,
@@ -160,7 +184,7 @@ class LocalLlmClient(
             ModelConfigRepository.saveLocalDefault(fallback, "qwen3-0.6b", activateNow = true)
             emit(LlmEvent.Status("Loading Qwen3 0.6B fallback…"))
             withTimeout(240_000L) {
-                engineClient.ensureLoaded(fallback, ctxSize = 1024, nThreads = 2)
+                engineClient.ensureLoaded(fallback, ctxSize = prepared.ctxSize, nThreads = 2)
             }
             emit(LlmEvent.Status("Qwen3 0.6B ready. Retrying this request…"))
             val fallbackError = generateOnce(StreamAssembler())
@@ -231,6 +255,98 @@ class LocalLlmClient(
             modelName = config.modelName.ifEmpty { config.baseUrl },
         )
     }
+}
+
+/**
+ * Trims a chat history + tool list so the rendered prompt always fits the
+ * engine's context window, and reports the window that should be requested.
+ *
+ * Why this exists: the engine refuses to generate whenever `n_prompt >= n_ctx`.
+ * On the customer's Kirin device the planner used to load ctx=1024 while the
+ * FunctionGemma prompt (system + 9 tools) tokenized to ~1.2k and the full
+ * agent prompt (29 tools) to ~4.6k, so *every* message failed immediately with
+ * "prompt_exceeds_ctx". We now (a) request a window large enough for the prompt
+ * and (b) drop oldest turns / shrink the tool list so the prompt can never
+ * overflow whichever window we end up with.
+ */
+object LocalPromptBudget {
+    private const val RESERVE_TOKENS = 64
+    private const val TOKENS_PER_CHAR = 0.28
+    private const val TOKEN_OVERHEAD = 32
+    private const val MAX_TOOLS_LOCAL = 12
+    private const val MIN_TOOLS_LOCAL = 3
+
+    data class PreparedPrompt(
+        val messages: List<ChatMsg>,
+        val tools: List<ToolSpec>,
+        val ctxSize: Int,
+    )
+
+    /** Conservative token estimate (over-counts ~28% of chars) -> never under-budgets. */
+    fun estimateTokens(text: CharSequence): Int =
+        (text.length * TOKENS_PER_CHAR).toInt() + TOKEN_OVERHEAD
+
+    fun prepare(
+        messages: List<ChatMsg>,
+        tools: List<ToolSpec>,
+        gemma: Boolean,
+        ctxSize: Int,
+        maxTokens: Int,
+    ): PreparedPrompt {
+        val budget = ctxSize - maxTokens - RESERVE_TOKENS
+        // A 270M on-device model uses a small, focused tool set well.
+        val initialTools = tools.take(MAX_TOOLS_LOCAL)
+        val msgs = messages.toMutableList()
+        var tl = initialTools
+
+        while (true) {
+            val rendered = render(msgs, tl, gemma)
+            if (estimateTokens(rendered) <= budget) break
+
+            // (1) Drop the oldest conversation turn that is not the final user
+            // one. Recompute the final-user index every pass: removing earlier
+            // messages shifts indices and a stale index would let us delete the
+            // very message the model is supposed to answer.
+            val lastUserIdx = msgs.indexOfLast { it.role == Role.USER }
+            val lastUser = msgs.getOrNull(lastUserIdx)
+            val droppableIdx = msgs.indexOfFirst { it.role != Role.SYSTEM && it !== lastUser }
+            if (droppableIdx >= 0) {
+                msgs.removeAt(droppableIdx)
+                continue
+            }
+
+            // (2) Shrink the tool list down to the minimum safe set.
+            if (tl.size > MIN_TOOLS_LOCAL) {
+                tl = tl.take(tl.size - 2)
+                continue
+            }
+
+            // (3) Nothing left to drop: a single oversized user/assistant message
+            // must be truncated rather than removed (removing it would leave the
+            // model with nothing to answer).
+            var truncated = false
+            for (k in msgs.indices) {
+                if (msgs[k].role == Role.SYSTEM) continue
+                val trimmed = truncate(msgs[k].content, budget)
+                if (trimmed.length < msgs[k].content.length) {
+                    msgs[k] = msgs[k].copy(content = trimmed)
+                    truncated = true
+                    break
+                }
+            }
+            if (!truncated) break
+        }
+        return PreparedPrompt(msgs, tl, ctxSize)
+    }
+
+    private fun truncate(text: String, maxTokens: Int): String {
+        if (text.length <= maxTokens * 2) return text
+        return text.take(maxTokens) + "\n… (truncated for on-device context)"
+    }
+
+    private fun render(messages: List<ChatMsg>, tools: List<ToolSpec>, gemma: Boolean): String =
+        if (gemma) FunctionGemmaPrompt.build(messages, tools)
+        else ChatMlPrompt.build(messages, tools, enableThinking = false)
 }
 
 object ChatMlPrompt {

@@ -113,10 +113,21 @@ class ForegroundService : Service() {
 
         fun start(context: Context, title: String = context.getString(R.string.notification_content_title),
             text: String = context.getString(R.string.notification_content_text)): Boolean {
-            if (!hasNotificationPermission(context)) return false
+            // Do NOT gate on POST_NOTIFICATIONS: goForeground() handles a missing
+            // permission gracefully, and a task should keep the process alive even
+            // if the notification is hidden.
             return try {
                 val intent = Intent(context, ForegroundService::class.java).apply { putExtra(EXTRA_TITLE, title); putExtra(EXTRA_TEXT, text) }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        context.startForegroundService(intent)
+                    } catch (e: Exception) {
+                        // API 31+ may reject background-sourced FGS starts; fall back
+                        // to a normal start so the task still runs (with no keep-alive).
+                        XLog.w(TAG, "startForegroundService rejected (${e.message}), falling back to startService")
+                        context.startService(intent)
+                    }
+                } else context.startService(intent)
                 true
             } catch (e: Exception) { XLog.w(TAG, "Service start failed", e); false }
         }
@@ -151,9 +162,17 @@ class ForegroundService : Service() {
     }
 
     override fun onCreate() {
-        super.onCreate(); _isRunning = true; createNotificationChannel()
-        if (hasNotificationPermission(this)) startForeground(NOTIFICATION_ID, buildNotification(this, DEFAULT_TASK_TITLE, DEFAULT_TASK_TEXT))
-        else { stopSelf(); return }
+        super.onCreate(); _isRunning = true
+        // Create the channel first (fast, no I/O), then startForeground. A
+        // service started with startForegroundService() must reach
+        // startForeground() within 5s or Android 12 throws
+        // ForegroundServiceDidNotStartInTimeException — which is exactly what
+        // the Arya debug report shows multiple times. Both calls come early and
+        // neither does any heavy work, so the window is easily met. The
+        // notification shows regardless of POST_NOTIFICATIONS; only its
+        // *visibility* is gated by that permission.
+        createNotificationChannel()
+        goForeground(DEFAULT_TASK_TITLE, DEFAULT_TASK_TEXT)
         healthHandler.post(healthRunnable); telemetryHandler.post(telemetryRunnable)
         requestIgnoreBatteryOptimizations(this)
         XLog.i(TAG, "ForegroundService created with WakeLock + telemetry")
@@ -175,8 +194,35 @@ class ForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, buildNotification(this, intent?.getStringExtra(EXTRA_TITLE) ?: DEFAULT_TASK_TITLE, intent?.getStringExtra(EXTRA_TEXT) ?: DEFAULT_TASK_TEXT))
+        goForeground(
+            intent?.getStringExtra(EXTRA_TITLE) ?: DEFAULT_TASK_TITLE,
+            intent?.getStringExtra(EXTRA_TEXT) ?: DEFAULT_TASK_TEXT,
+        )
         return START_STICKY
+    }
+
+    /**
+     * Emit the foreground notification unconditionally and immediately. Silently
+     * ignores missing POST_NOTIFICATIONS (the FGS itself still counts as started,
+     * which is what prevents the API 31 DidNotStartInTime crash). Never throws.
+     */
+    private fun goForeground(title: String, text: String) {
+        try {
+            // ServiceCompat handles the type semantics per-API (ignored below
+            // Q, required/validated on Android 14+). The manifest declares
+            // specialUse for this service.
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            } else {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE
+            }
+            androidx.core.app.ServiceCompat.startForeground(
+                this, NOTIFICATION_ID, buildNotification(this, title, text), type,
+            )
+        } catch (t: Throwable) {
+            XLog.w(TAG, "startForeground failed; stopping service to avoid ANR", t)
+            stopSelf()
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

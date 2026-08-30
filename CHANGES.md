@@ -2,6 +2,22 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v1.2.21 — Fix "does not work at all": prompt/context, FGS crash, JNI callback
+
+**Recovered from the user debug ZIP (arya-debug-20260830_162929, Huawei ADY-LX9 / Kirin 9000S, Android 12).**
+
+- **fixed «prompt_exceeds_ctx» — the real blocker.** The engine loaded ctx=1024 while the FunctionGemma prompt tokenised to ~1.2k–4.6k, so *every* message failed immediately.
+  - `MemoryBudget.plan` now takes `minCtxSize` and never silently picks a window smaller than the caller needs (it used to drop to 1024 whenever `avail RAM < 6 GB`). It also caps the window at 2048 so we never request more than the model's trained context and never re-bloat the KV cache that OOM-killed the 1.7B engine.
+  - `EngineCore.ensureLoaded` forwards the caller's requested context into the planner as a floor.
+  - New `LocalPromptBudget` in `LocalLlmClient`: sizes the window from the *actual* prompt and trims oldest history (never the latest user turn) or shrinks the tool list so the prompt can never overflow whichever window is loaded. Persian messages that are too big are truncated, never dropped.
+  - The user-facing chat path and the full 29-tool agent path both route through this, so both now produce output instead of dying with `prompt_exceeds_ctx`.
+
+- **fixed `ForegroundServiceDidNotStartInTimeException` (main-process crash).** A service started with `startForegroundService()` must call `startForeground()` within 5 s. `onCreate` no longer bails out to `stopSelf()` before posting the foreground notification, `goForeground()` emits the notification unconditionally (a missing `POST_NOTIFICATIONS` only hides it, it can't trigger the crash), and `start()` falls back to `startService()` if Android rejects a background-sourced `startForegroundService`. Uses `ServiceCompat.startForeground` with the declared `specialUse` type so it is correct on Android 14+ too.
+
+- **fixed `NoSuchMethodError` on the native stream callback.** `NoSuchMethodError: no non-static method L<cls>;.onDeltaPiece(...)` was thrown from `EngineNative.nativeGenerateStream` when R8 obfuscated the callback slot. The JNI now resolves `onDeltaPiece` against the `@Keep`-annotated `EngineNative$NativeStreamCallback` interface (cached global ref) instead of the runtime object class, and ProGuard keeps `EngineNative`, `NativeStreamCallback`, `NativeLoadCallback` and `StreamBridge`. `onProgress` was already dead in the loader (it no longer re-enters Java); keep rules added for it as well.
+
+- Bump default version to **1.2.21 (126)**.
+
 ## v0.5.1 — Fixed model download + robust tool calling
 
 - **مدل پیش‌فرض Qwen2.5-1.5B-Instruct** (Q4_K_M, 940 MB) جایگزین BitNet شد

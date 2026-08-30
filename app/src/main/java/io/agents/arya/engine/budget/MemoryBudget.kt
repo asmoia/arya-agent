@@ -20,6 +20,16 @@ object MemoryBudget {
         val modelMeta: ModelMeta? = null,
         /** Android's per-process large-heap class in bytes; 0 means unavailable. */
         val processMemoryLimitBytes: Long = 0L,
+        /**
+         * The context the caller needs in order for its prompt to fit
+         * (prompt tokens + maxTokens + reserve). The planner never picks a
+         * context smaller than this: a prompt will always be regenerated long
+         * before a 1024-token window is enough, so loading at 1024 and then
+         * failing every generation with "prompt_exceeds_ctx" is worse than
+         * either loading bigger or refusing. Default 2048 (was the old default
+         * ceiling) so a too-small window is never silently selected.
+         */
+        val minCtxSize: Int = 2048,
     )
 
     data class ModelMeta(
@@ -113,33 +123,51 @@ object MemoryBudget {
             )
         }
 
-        // Mobile chat never needs 4096. 4096 doubles KV + compute and is
-        // what OOM-killed :engine on Huawei 1.7B after a "successful" mmap.
-        // Also avoid the 2048 compute graph when the whole device currently
-        // has less than 6 GB available; the first real prompt will materialize
-        // it after load, so choosing 1024 here reduces the peak deterministically.
-        val candidates = when {
-            i.isLowRamDevice -> listOf(1024, 512)
-            i.availRamBytes < 6L * 1024 * 1024 * 1024 -> listOf(1024, 512)
-            else -> listOf(2048, 1024, 512)
-        }
+        // The context must be big enough for the caller's prompt. We cap at
+        // 2048 for two reasons: (1) 2048 is the largest window that is safe to
+        // request without exceeding the model's trained context (n_ctx_train)
+        // for the small on-device GEMs we ship — requesting 4096 can make
+        // llama_init_from_model fail outright; and (2) it keeps the KV cache and
+        // compute graph small, which is what OOM-killed :engine on Huawei 1.7B.
+        // The client trims its prompt to fit this window, so generation always
+        // has room. We never silently drop below minCtxSize — if a 1024 window
+        // is all that fits, loading it and then failing every generate with
+        // "prompt_exceeds_ctx" is strictly worse than refusing up front.
+        val requestedCtx = i.minCtxSize.coerceIn(512, 2048)
+        val highCtx = 2048
+        val candidates = listOf(
+            highCtx,
+            requestedCtx.coerceAtMost(highCtx),
+            minOf(2048, highCtx),
+            1024,
+            512,
+        ).distinct().sortedByDescending { it }
 
-        for (ctx in candidates) {
+        val fits = { ctx: Int ->
             val working = modelWorkingSet(i.modelFileBytes, ctx, i.modelMeta)
             val fitsSystemRam = i.availRamBytes - working >= MARGIN_BYTES
-            val fitsProcessBudget = processBudget <= 0L || (kvBytes(ctx, i.modelMeta, i.modelFileBytes) + NATIVE_TRANSIENT_RESERVE_BYTES) <= processBudget
-            if (fitsSystemRam && fitsProcessBudget) {
-                return Plan.Load(
-                    ctxSize = ctx,
-                    nThreads = nThreads,
-                    useMlock = false,
-                )
-            }
+            val fitsProcessBudget = processBudget <= 0L ||
+                (kvBytes(ctx, i.modelMeta, i.modelFileBytes) + NATIVE_TRANSIENT_RESERVE_BYTES) <= processBudget
+            fitsSystemRam && fitsProcessBudget
         }
 
+        // Prefer the largest context that both fits memory and satisfies the
+        // caller's minimum window, so short prompts still get room to grow.
+        val accepted = candidates.firstOrNull { it >= requestedCtx && fits(it) }
+        if (accepted != null) {
+            return Plan.Load(
+                ctxSize = accepted,
+                nThreads = nThreads,
+                useMlock = false,
+            )
+        }
+
+        // Nothing big enough fits. If a *smaller* window would physically fit,
+        // it is still unusable for the caller's prompt — refuse with a clear
+        // reason instead of loading something that will fail every generate.
         return Plan.Refuse(
-            reasonEn = "Not enough free RAM to load this model",
-            reasonFa = "حافظه رم آزاد کافی برای اجرای مدل وجود ندارد",
+            reasonEn = "Not enough free RAM for a context that fits this prompt (requested $requestedCtx). Free memory or use a smaller model.",
+            reasonFa = "حافظه رم آزاد برای پنجرهٔ متنی (context) کافی برای این پیام وجود ندارد. حافظه آزاد کنید یا از مدل کوچکتری استفاده کنید.",
             suggestSmallerModel = true,
         )
     }
