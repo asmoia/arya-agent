@@ -427,7 +427,7 @@ static void llama_log_bridge(enum ggml_log_level level, const char * text, void 
 static void dump_cpuinfo_and_env(const char * model_path, int n_ctx, int n_threads) {
     FILE * out = fopen(g_env_path, "w");
     if (!out) return;
-    fprintf(out, "arya_engine_diag=1.2.17\n");
+    fprintf(out, "arya_engine_diag=1.2.18\n");
     fprintf(out, "pid=%ld tid=%ld cpu=%d\n", static_cast<long>(getpid()), get_tid(), get_cpu());
     fprintf(out, "model_path=%s\n", model_path ? model_path : "");
     fprintf(out, "n_ctx=%d n_threads_arg=%d forced_threads=1 n_batch=1 n_ubatch=1 load_mode=MMAP+prefetch\n", n_ctx, n_threads);
@@ -619,6 +619,30 @@ static std::string extract_complete_utf8(std::string &stream_buf) {
     std::string complete = stream_buf;
     stream_buf.clear();
     return complete;
+}
+
+
+static std::string json_escape(const std::string & s) {
+    std::string o;
+    o.reserve(s.size() + 16);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"': o += "\\\""; break;
+            case '\\': o += "\\\\"; break;
+            case '\n': o += "\\n"; break;
+            case '\r': o += "\\r"; break;
+            case '\t': o += "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    char buf[8];
+                    snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    o += buf;
+                } else {
+                    o += static_cast<char>(c);
+                }
+        }
+    }
+    return o;
 }
 
 // ==================== JNI IMPLEMENTATION ====================
@@ -973,7 +997,17 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
         llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
     jclass cb_class = stream_callback ? env->GetObjectClass(stream_callback) : nullptr;
-    jmethodID on_delta_method = cb_class ? env->GetMethodID(cb_class, "onDeltaPiece", "(Ljava/lang/String;)V") : nullptr;
+    jmethodID on_delta_method = nullptr;
+    if (cb_class) {
+        on_delta_method = env->GetMethodID(cb_class, "onDeltaPiece", "(Ljava/lang/String;)V");
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+            on_delta_method = nullptr;
+            append_load_stage("jni_onDeltaPiece_missing");
+            LOGE("GetMethodID onDeltaPiece failed — R8 stripped the JNI callback");
+        }
+    }
 
     std::string accumulated;
     std::string pending_utf8;
@@ -1028,6 +1062,13 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
                 jstring jdelta = env->NewStringUTF(delta.c_str());
                 env->CallVoidMethod(stream_callback, on_delta_method, jdelta);
                 env->DeleteLocalRef(jdelta);
+                if (env->ExceptionCheck()) {
+                    env->ExceptionDescribe();
+                    env->ExceptionClear();
+                    on_delta_method = nullptr;
+                    append_load_stage("jni_onDeltaPiece_threw");
+                    LOGE("onDeltaPiece threw — continuing without streaming");
+                }
             }
         }
         gen_tokens++;
@@ -1050,6 +1091,10 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
         jstring jdelta = env->NewStringUTF(pending_utf8.c_str());
         env->CallVoidMethod(stream_callback, on_delta_method, jdelta);
         env->DeleteLocalRef(jdelta);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            on_delta_method = nullptr;
+        }
     }
 
     double gen_end = now_ms();
@@ -1064,14 +1109,16 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
     LOGI("generate done reason=%s gen_tokens=%d prompt_ms=%.0f gen_ms=%.0f",
          finish_reason.c_str(), gen_tokens, prompt_eval_ms, gen_ms);
 
-    char stats[512];
-    snprintf(stats, sizeof(stats),
+    std::string text_for_json = accumulated.size() > 4000 ? accumulated.substr(0, 4000) : accumulated;
+    char head[384];
+    snprintf(head, sizeof(head),
         "{\"prompt_eval_ms\":%.1f,\"prompt_tokens\":%d,\"gen_ms\":%.1f,\"gen_tokens\":%d,"
-        "\"gen_tok_per_s\":%.1f,\"finish_reason\":\"%s\"}",
+        "\"gen_tok_per_s\":%.1f,\"finish_reason\":\"%s\",\"text\":\"",
         prompt_eval_ms, n_prompt, gen_ms, gen_tokens,
         gen_ms > 0 ? gen_tokens / (gen_ms / 1000.0) : 0, finish_reason.c_str());
+    std::string stats = std::string(head) + json_escape(text_for_json) + ""}";
 
-    return env->NewStringUTF(stats);
+    return env->NewStringUTF(stats.c_str());
     } catch (const std::exception& e) {
         LOGE("nativeGenerateStream exception: %s", e.what());
         return env->NewStringUTF("{\"error\":\"native_exception\"}");

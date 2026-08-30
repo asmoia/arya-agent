@@ -195,12 +195,12 @@ class EngineCore(private val context: Context) {
                 "generateStream begin id=$requestId promptChars=${prompt.length} mode=$mode maxTokens=${req.maxTokens} deadline=${req.deadlineMs} tokenDeadline=${req.tokenDeadlineMs} handle=$h",
             )
             val stopJson = JSONArray(req.stop).toString()
-            val nativeCb = object : EngineNative.NativeStreamCallback {
-                override fun onDeltaPiece(piece: String) {
-                    try {
-                        callback.onDelta(requestId, piece)
-                    } catch (_: Exception) {
-                    }
+            var gotDelta = false
+            val nativeCb = EngineNative.StreamBridge { piece ->
+                gotDelta = true
+                try {
+                    callback.onDelta(requestId, piece)
+                } catch (_: Exception) {
                 }
             }
 
@@ -262,11 +262,23 @@ class EngineCore(private val context: Context) {
                 savePrefixState(prefixKey)
             }
 
+            if (!gotDelta) {
+                val fallback = stats.optString("text")
+                if (fallback.isNotEmpty()) {
+                    EngineLog.w("EngineCore", "streaming callback missed; delivering ${fallback.length} chars from stats")
+                    try {
+                        callback.onDelta(requestId, fallback)
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+
             try {
                 callback.onDone(requestId, statsJson)
             } catch (_: Exception) {
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            EngineLog.e("EngineCore", "generateStream throwable id=$requestId", e)
             safeError(callback, requestId, EngineError.ERR_NATIVE, e.message ?: "generation error")
         } finally {
             generating.set(false)

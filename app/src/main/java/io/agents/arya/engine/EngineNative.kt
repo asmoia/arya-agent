@@ -18,6 +18,7 @@ object EngineNative {
         progress: NativeLoadCallback?,
     ): Long
 
+    @androidx.annotation.Keep
     interface NativeLoadCallback {
         fun onProgress(pct: Int, phase: String)
     }
@@ -50,7 +51,16 @@ object EngineNative {
     external fun nativeBench(nThreads: Int): String
     external fun nativeClearKv(handle: Long)
 
+    @androidx.annotation.Keep
     interface NativeStreamCallback {
         fun onDeltaPiece(piece: String)
+    }
+
+    /** Named JNI target so R8 cannot rename onDeltaPiece on an anonymous class. */
+    @androidx.annotation.Keep
+    class StreamBridge(private val sink: (String) -> Unit) : NativeStreamCallback {
+        override fun onDeltaPiece(piece: String) {
+            sink(piece)
+        }
     }
 }

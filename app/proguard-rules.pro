@@ -131,6 +131,17 @@
     native <methods>;
 }
 
+# JNI CallVoidMethod looks up onDeltaPiece by name on the runtime class
+# (ADY-LX9 1.2.17: generate_done_eos_tok_37 then NoSuchMethodError Lye;.onDeltaPiece).
+-keep class io.agents.arya.engine.EngineNative { *; }
+-keep class io.agents.arya.engine.EngineNative$* { *; }
+-keep interface io.agents.arya.engine.EngineNative$* { *; }
+-keep class * implements io.agents.arya.engine.EngineNative$NativeStreamCallback { *; }
+-keepclassmembers class * implements io.agents.arya.engine.EngineNative$NativeStreamCallback {
+    public <methods>;
+}
+-keep class * implements io.agents.arya.engine.EngineNative$NativeLoadCallback { *; }
+
 # ============================================================
 # Glide
 # ============================================================
