@@ -1,5 +1,15 @@
 # Redesign v1 changelog
 
+## 1.2.16
+
+ADY-LX9 1.2.15: FunctionGemma **and** Qwen3-0.6B both loaded (rss 394 / 710 MB,
+warmup_done) then died at `prefill_begin`. 4 GB free — not LMK. 1-token
+warmup lived; batched ubatch=8 decode died. Kirin 9000S Taishan.
+
+- Prefill **1 token at a time** (same as warmup)
+- n_threads = n_batch = n_ubatch = 1
+- Compile ggml/llama.cpp with `-march=armv8-a` (not just engine_jni)
+
 ## 1.2.15
 
 Add **FunctionGemma 270M** (bartowski Q4_K_M, 253 MB) as a real catalog model

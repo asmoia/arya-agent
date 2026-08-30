@@ -33,6 +33,15 @@ set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
 set(GGML_SYCL OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
+# Kirin 9000S: ggml runtime/compile +dotprod SIGILLs on Taishan during
+# batched llama_decode. Warmup of 1 token survived; prefill n_ubatch=8 died
+# (ADY-LX9 1.2.15 log, FunctionGemma AND Qwen3-0.6B). Force plain armv8-a
+# on EVERY translation unit including llama.cpp/ggml, not just engine_jni.
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    add_compile_options(-march=armv8-a)
+    set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "" FORCE)
+endif()
+
 # Do NOT patch llama.cpp into lazy mmap. 1.2.7 flipped init_mappings(true) to
 # false so a 1.28 GB GGUF could "load" with ~70 MB RSS; the first generate
 # then died on Huawei. engine_jni.cpp uses LLAMA_LOAD_MODE_NONE so weights

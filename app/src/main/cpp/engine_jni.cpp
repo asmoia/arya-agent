@@ -333,7 +333,9 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     LOGI("Loading model: %s n_ctx=%d n_threads=%d (load_mode=MMAP+prefetch)", path, n_ctx, n_threads);
     log_rss("before-load");
 
-    if (n_threads <= 0) n_threads = detect_inference_threads();
+    // Kirin 9000S: 2-thread batched decode dies at prefill_begin even for
+    // 270M (rss 394 MB, 4 GB free — not LMK). 1-token warmup always lived.
+    n_threads = 1;
 
     struct stat st; size_t model_size = 0;
     if (stat(path, &st) == 0) model_size = st.st_size;
@@ -388,13 +390,11 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     append_load_stage("weights_loaded");
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx = n_ctx;
-    cp.n_threads = n_threads;
-    cp.n_threads_batch = n_threads;
-    // Keep the first real decode bounded on memory-constrained phones.
-    // For the 1024-token fallback, 64/16 is enough and avoids a large
-    // compute scratch allocation before the first user-visible response.
-    cp.n_batch = n_ctx <= 1024 ? 32 : 64;
-    cp.n_ubatch = n_ctx <= 1024 ? 8 : 16;
+    cp.n_threads = 1;
+    cp.n_threads_batch = 1;
+    // Same shape as the surviving warmup decode (n_tokens=1).
+    cp.n_batch = 1;
+    cp.n_ubatch = 1;
     cp.n_seq_max = 1;
     cp.embeddings = false;
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
@@ -608,12 +608,18 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
 
     if (n_prompt > 0) {
         append_load_stage("prefill_begin");
-        const int chunk = std::max(1, mc->n_ubatch > 0 ? mc->n_ubatch : 8);
+        // Always 1 token — matches warmup, which never died on ADY-LX9.
+        const int chunk = 1;
         for (int i = 0; i < n_prompt; ) {
             if (mc->cancel_flag.load()) {
                 return env->NewStringUTF("{\"error\": \"cancelled\"}");
             }
             int n = std::min(chunk, n_prompt - i);
+            if ((i % 32) == 0) {
+                char st[48];
+                snprintf(st, sizeof(st), "prefill_%d_%d", i, n_prompt);
+                append_load_stage(st);
+            }
             llama_batch pb = llama_batch_get_one(const_cast<llama_token*>(tokens.data() + i), n);
             int rc = llama_decode(mc->ctx, pb);
             if (rc != 0) {
@@ -621,12 +627,10 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
                 return env->NewStringUTF("{\"error\": \"decode_failed\"}");
             }
             i += n;
-            if (i == n || (i % 64) == 0 || i == n_prompt) {
-                LOGI("prefill %d/%d", i, n_prompt);
-            }
         }
     }
     double prompt_eval_ms = now_ms() - t_start;
+    append_load_stage("prefill_done");
     LOGI("prefill done ms=%.0f n_prompt=%d", prompt_eval_ms, n_prompt);
 
     // Sampler setup (b10603: penalties is still n_vocab, last_n, repeat, freq, present)
