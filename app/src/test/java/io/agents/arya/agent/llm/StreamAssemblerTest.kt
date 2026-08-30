@@ -107,11 +107,18 @@ class StreamAssemblerTest {
     }
 
     @Test
-    fun unclosedThinkWithNoVisibleAnswerIsSurfaced() {
+    fun unclosedThinkWithNoVisibleAnswerIsNotDropped() {
         val assembler = StreamAssembler()
         val events = assembler.feed("<think>only a monologue") + assembler.finish()
-        val visible = events.filterIsInstance<LlmEvent.Text>().filter { !it.isReasoning }
-        assertTrue(visible.joinToString("") { it.delta }.contains("only a monologue"))
+        // An unclosed <think> monologue must still be surfaced to the user (as a
+        // reasoning block), never silently swallowed. The on-device model
+        // sometimes emits only thinking content then EOS; showing it avoids an
+        // apparently-empty reply.
+        val reasoning = events.filterIsInstance<LlmEvent.Text>().filter { it.isReasoning }
+        assertTrue(
+            "unclosed think content should be surfaced as reasoning; got none",
+            reasoning.joinToString("") { it.delta }.contains("only a monologue"),
+        )
     }
 
     @Test

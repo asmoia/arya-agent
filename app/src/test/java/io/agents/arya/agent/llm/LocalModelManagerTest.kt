@@ -11,11 +11,18 @@ import java.io.RandomAccessFile
 class LocalModelManagerTest {
 
     @Test
-    fun `catalog is three verified Qwen3 Q4_K_M GGUFs and no BitNet`() {
+    fun `catalog is FunctionGemma 270M plus three verified Qwen3 Q4_K_M GGUFs and no BitNet`() {
         val models = LocalModelManager.AVAILABLE_MODELS
-        assertEquals(3, models.size)
-        assertTrue(models.all { it.displayName.contains("Qwen3") })
-        assertTrue(models.all { it.fileName.contains("Qwen3") && it.fileName.endsWith("Q4_K_M.gguf") })
+        // Since 1.2.15 the catalog ships FunctionGemma 270M as the on-device
+        // tool-calling default, alongside the three Qwen3 GEMs.
+        assertEquals(4, models.size)
+        // The FunctionGemma default + the three Qwen3 models are all the configs.
+        assertEquals(setOf("functiongemma-270m", "qwen3-0.6b", "qwen3-1.7b", "qwen3-4b"), models.map { it.id }.toSet())
+        // Qwen3 entries must be real Q4_K_M GGUFs.
+        val qwen3 = models.filter { it.id.startsWith("qwen3") }
+        assertEquals(3, qwen3.size)
+        assertTrue(qwen3.all { it.displayName.contains("Qwen3") })
+        assertTrue(qwen3.all { it.fileName.contains("Qwen3") && it.fileName.endsWith("Q4_K_M.gguf") })
         assertTrue(models.none { it.id.contains("bitnet", ignoreCase = true) || it.url.contains("bitnet", ignoreCase = true) })
         assertEquals(484_220_320L, models.first { it.id == "qwen3-0.6b" }.sizeBytes)
         assertEquals(1_282_439_584L, models.first { it.id == "qwen3-1.7b" }.sizeBytes)
@@ -23,6 +30,8 @@ class LocalModelManagerTest {
         assertEquals(3, models.first { it.id == "qwen3-0.6b" }.minRamGb)
         assertEquals(4, models.first { it.id == "qwen3-1.7b" }.minRamGb)
         assertEquals(8, models.first { it.id == "qwen3-4b" }.minRamGb)
+        // FunctionGemma 270M default must be present and report its RAM class.
+        assertEquals(2, models.first { it.id == "functiongemma-270m" }.minRamGb)
     }
 
 
