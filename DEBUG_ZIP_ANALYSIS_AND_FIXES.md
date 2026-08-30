@@ -215,3 +215,30 @@ The `NoSuchMethodError` and `ForegroundServiceDidNotStartInTimeException` stacks
   12 GB Huawei before shipping.
 * The planner now refuses (rather than silently loads 1024) on devices that genuinely can't fit 2048. That
   is intentional, but do message it in the UI so low‑RAM users know to free memory or use a cloud model.
+
+---
+
+## 6. Update — second debug bundle (arya-debug-20260830_171625) → v1.2.22
+
+The 1.2.21 build installed (version `1.2.21 (126)`), and the **`ForegroundServiceDidNotStartInTimeException`
+is gone** (the log now shows `ForegroundService created with WakeLock + telemetry`, no crash). But a
+new, self-inflicted regression surfaced:
+
+- `arya-engine.log` shows `:engine` being **forked and dying ~1s later on every attempt**:
+  pid `12749→12809`, `13211→13238`, `13330→13360`, `13548→13577`, `13629→13659`. Every `ensureLoaded`
+  timed out at 15s and **no model ever loaded** (the app fell back to the direct-tool path).
+- **Root cause:** my v1.2.21 `EngineService.onCreate` reorder put `startForegroundIfNeeded()` before
+  `engineCore = EngineCore(this)`, and that method reads `engineCore.isLoaded` → 
+  `UninitializedPropertyAccessException` → `:engine` crashed on every cold start.
+- **Fixes in v1.2.22:**
+  - `startForegroundIfNeeded()` + `emitProgress()` now guard the read with `::engineCore.isInitialized`
+    (the early `startForeground` is kept, so the 5s FGS window is still beaten).
+  - `EngineClient.getOrBindService()` bind timeout raised 15s → 30s for throttled cold starts.
+  - Version bumped to **1.2.22 (127)**.
+- The `native-load-stage.txt` / `native-env.txt` / `native-heartbeat.txt` files in this bundle are
+  **stale** (pid 31066, `n_ctx=1024`, from the 16:29 run) — they belong to the pre-fix engine and
+  should be ignored; the new pid sequence tells the real story.
+
+**Why this matters for publishing:** a task must be able to actually *load the model*. With this
+regression the app looked "working" (no FGS crash, no `prompt_exceeds_ctx`) but still couldn't run
+local inference, which is the whole point.

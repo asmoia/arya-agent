@@ -351,7 +351,11 @@ class EngineService : Service() {
                 ),
             )
         }
-        val text = if (engineCore.isLoaded) {
+        // startForegroundIfNeeded() is deliberately called first in onCreate so we
+        // always beat the 5s foreground-service window. At that point engineCore
+        // may not be initialised yet, so guard the read instead of crashing the
+        // whole :engine process.
+        val text = if (::engineCore.isInitialized && engineCore.isLoaded) {
             "Local model is ready"
         } else {
             "Starting local engine"
@@ -371,7 +375,7 @@ class EngineService : Service() {
         } catch (_: RemoteException) {
         }
         val text = if (pct in 1..99) "$phase ($pct%)" else phase.ifBlank {
-            if (engineCore.isLoaded) "Local model is ready" else "Starting local engine"
+            if (::engineCore.isInitialized && engineCore.isLoaded) "Local model is ready" else "Starting local engine"
         }
         updateForeground(text)
     }

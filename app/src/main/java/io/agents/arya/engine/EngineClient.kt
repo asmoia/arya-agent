@@ -383,7 +383,13 @@ class EngineClient(private val app: Context) {
             app.startService(intent)
         }
 
-        return withTimeout(15_000L) {
+        // Cold start of :engine involves forking a fresh process + service
+        // onCreate + native lib load. On a throttled / low-memory device that can
+        // take well over 15s (a 17:14 run on the Huawei showed the engine still
+        // crash-looping inside onCreate). Give the bind a generous window; the FGS
+        // keeps the service legal meanwhile, and a 30s wait is far better than
+        // silently failing every task.
+        return withTimeout(30_000L) {
             suspendCancellableCoroutine { cont ->
                 pendingBind.set(cont)
                 val already = engineBinder

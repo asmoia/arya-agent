@@ -2,6 +2,26 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v1.2.22 — Fix :engine crash-loop on cold start (regression from 1.2.21)
+
+**Recovered from the second debug ZIP (arya-debug-20260830_171625, same Huawei ADY-LX9).**
+The 1.2.21 build installed and the foreground-service crash was fixed, but a new / serious
+problem appeared: the `:engine` process was **recreated on every ensureLoaded attempt and
+died about 1s after fork** (arya-engine.log shows `:engine` pid 12749→12809, 13211→13238,
+… over and over). Every `ensureLoaded` timed out at 15s and **no model ever loaded**.
+
+- **fixed: `UninitializedPropertyAccessException` in `EngineService.onCreate`.** To beat the
+  5s foreground-service window I had moved `startForegroundIfNeeded()` to the top of
+  `onCreate`, but that method reads `engineCore.isLoaded` **before `engineCore = EngineCore(this)`
+  runs**, so `:engine` crashed on every start. `startForegroundIfNeeded()` and `emitProgress()`
+  now guard the read with `::engineCore.isInitialized` (and the early startForeground stays).
+
+- **fixed: cold-start bind timeout too tight.** `EngineClient.getOrBindService()` waited only
+  15s for `bindService()`. On a throttled/low-memory device spawning `:engine` (fork + onCreate
+  + native lib load) can exceed that. Raised to 30s — a wait is better than a silent task failure.
+
+- Bump default version to **1.2.22 (127)**.
+
 ## v1.2.21 — Fix "does not work at all": prompt/context, FGS crash, JNI callback
 
 **Recovered from the user debug ZIP (arya-debug-20260830_162929, Huawei ADY-LX9 / Kirin 9000S, Android 12).**
