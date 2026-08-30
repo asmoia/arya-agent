@@ -37,13 +37,14 @@ class LocalLlmClient(
             return@flow
         }
         if (LocalModelManager.oemKillsHeavyLocalModels() && isKnownHeavyQwen(modelPath)) {
-            emit(LlmEvent.Status("Huawei/Honor: using Qwen3 0.6B (1.7B is killed by EMUI after load)."))
+            emit(LlmEvent.Status("Huawei/Honor: using a small on-device model (1.7B is killed by EMUI)."))
             val small = ensureSmallFallback()
             if (small.isNullOrBlank()) {
-                emit(LlmEvent.Error(3, "Download Qwen3 0.6B. EMUI kills the 1.7B engine after a successful load."))
+                emit(LlmEvent.Error(3, "Download FunctionGemma 270M or Qwen3 0.6B. EMUI kills the 1.7B engine after load."))
                 return@flow
             }
-            ModelConfigRepository.saveLocalDefault(small, "qwen3-0.6b", activateNow = true)
+            val smallId = if (small.contains("functiongemma", ignoreCase = true)) "functiongemma-270m" else "qwen3-0.6b"
+            ModelConfigRepository.saveLocalDefault(small, smallId, activateNow = true)
             modelPath = small
         }
         val promptMessages = if (messages.any { it.role == Role.SYSTEM }) {
@@ -98,6 +99,11 @@ class LocalLlmClient(
             temperature = 0.2,
             topP = 0.9,
             topK = 20,
+            stop = if (isFunctionGemma(modelPath)) {
+                listOf("<end_of_turn>", "<end_function_call>", "<start_function_response>")
+            } else {
+                listOf("<|im_end|>", "</tool_call>")
+            },
             deadlineMs = 90_000L,
             tokenDeadlineMs = 12_000L,
         )
@@ -162,8 +168,17 @@ class LocalLlmClient(
         path.endsWith("Qwen_Qwen3-1.7B-Q4_K_M.gguf", ignoreCase = true) ||
             path.contains("qwen3-1.7b", ignoreCase = true)
 
+    private fun isFunctionGemma(path: String): Boolean =
+        path.contains("functiongemma", ignoreCase = true)
+
     private suspend fun ensureSmallFallback(): String? {
-        val model = LocalModelManager.AVAILABLE_MODELS.firstOrNull { it.id == "qwen3-0.6b" }
+        val preferred = listOf("functiongemma-270m", "qwen3-0.6b")
+        for (id in preferred) {
+            val model = LocalModelManager.AVAILABLE_MODELS.firstOrNull { it.id == id } ?: continue
+            LocalModelManager.getModelPath(context, model)?.let { return it }
+        }
+        val model = LocalModelManager.AVAILABLE_MODELS.firstOrNull { it.id == "functiongemma-270m" }
+            ?: LocalModelManager.AVAILABLE_MODELS.firstOrNull { it.id == "qwen3-0.6b" }
             ?: return null
         LocalModelManager.getModelPath(context, model)?.let { return it }
         return suspendCancellableCoroutine { continuation ->
@@ -258,5 +273,99 @@ object ChatMlPrompt {
         sb.append("<|im_start|>assistant\n")
         if (!enableThinking) sb.append(QWEN3_NO_THINK_PREFILL)
         return sb.toString()
+    }
+}
+
+/**
+ * Official FunctionGemma turn format (bartowski GGUF card + Google docs):
+ *
+ *   <bos><start_of_turn>developer
+ *   ...tools...
+ *   <end_of_turn>
+ *   <start_of_turn>user
+ *   ...
+ *   <end_of_turn>
+ *   <start_of_turn>model
+ *
+ * Tool calls look like:
+ *   <start_function_call>call:name{arg:value}<end_function_call>
+ */
+object FunctionGemmaPrompt {
+    fun build(messages: List<ChatMsg>, tools: List<ToolSpec>): String {
+        val sb = StringBuilder()
+        val system = messages.filter { it.role == Role.SYSTEM }.joinToString("\n") { it.content }
+        sb.append("<start_of_turn>developer\n")
+        sb.append(
+            system.ifBlank {
+                "You are a model that can do function calling using the provided functions."
+            }.trim(),
+        )
+        for (t in tools) {
+            sb.append("<start_function_declaration>")
+            sb.append("declaration:").append(t.name)
+            sb.append("{description:<escape>").append(t.descriptionFa.replace("<", " ")).append("<escape>")
+            sb.append(",parameters:{properties:{")
+            val props = simpleProps(t.paramsJsonSchema)
+            sb.append(props)
+            sb.append("},type:<escape>OBJECT<escape>}}")
+            sb.append("<end_function_declaration>")
+        }
+        sb.append("<end_of_turn>\n")
+        for (msg in messages) {
+            when (msg.role) {
+                Role.SYSTEM -> Unit
+                Role.USER -> sb.append("<start_of_turn>user\n").append(msg.content.trim()).append("<end_of_turn>\n")
+                Role.ASSISTANT -> {
+                    sb.append("<start_of_turn>model\n")
+                    if (msg.content.isNotBlank()) sb.append(msg.content.trim())
+                    for (tc in msg.toolCalls) {
+                        sb.append("<start_function_call>call:").append(tc.name).append("{")
+                        sb.append(flattenArgs(tc.argumentsJson))
+                        sb.append("}<end_function_call>")
+                    }
+                    sb.append("<end_of_turn>\n")
+                }
+                Role.TOOL -> {
+                    sb.append("<start_function_response>response:tool{value:<escape>")
+                    sb.append(msg.content.take(400)).append("<escape>}<end_function_response>")
+                }
+            }
+        }
+        sb.append("<start_of_turn>model\n")
+        return sb.toString()
+    }
+
+    private fun simpleProps(schemaJson: String): String {
+        if (schemaJson.isBlank() || schemaJson == "{}") return ""
+        return try {
+            val o = org.json.JSONObject(schemaJson)
+            val props = o.optJSONObject("properties") ?: return ""
+            val parts = mutableListOf<String>()
+            val keys = props.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val p = props.optJSONObject(k)
+                val desc = p?.optString("description").orEmpty().ifBlank { k }
+                parts += "$k:{description:<escape>$desc<escape>,type:<escape>STRING<escape>}"
+            }
+            parts.joinToString(",")
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun flattenArgs(json: String): String {
+        return try {
+            val o = org.json.JSONObject(json)
+            val keys = o.keys()
+            val parts = mutableListOf<String>()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                parts += "$k:<escape>${o.optString(k)}<escape>"
+            }
+            parts.joinToString(",")
+        } catch (_: Exception) {
+            json.trim().removePrefix("{").removeSuffix("}").replace("\"", "")
+        }
     }
 }

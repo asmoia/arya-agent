@@ -85,6 +85,14 @@ object LocalModelManager {
      */
     val AVAILABLE_MODELS: List<ModelInfo> = listOf(
         ModelInfo(
+            id = "functiongemma-270m",
+            displayName = "FunctionGemma 270M (on-device tools)",
+            url = "https://huggingface.co/bartowski/google_functiongemma-270m-it-GGUF/resolve/main/google_functiongemma-270m-it-Q4_K_M.gguf",
+            fileName = "google_functiongemma-270m-it-Q4_K_M.gguf",
+            sizeBytes = 253_127_392L,
+            minRamGb = 2,
+        ),
+        ModelInfo(
             id = "qwen3-0.6b",
             displayName = "Qwen3 0.6B (very light)",
             url = "https://huggingface.co/bartowski/Qwen_Qwen3-0.6B-GGUF/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.gguf",
@@ -120,7 +128,8 @@ object LocalModelManager {
         // ADY-LX9: 1.7B loads then EMUI SIGKILLs :engine. 0.6B (~484 MB) is the
         // size that actually generates on this OEM.
         if (oemKillsHeavyLocalModels()) {
-            return entries.firstOrNull { it.isSupported && it.model.id == "qwen3-0.6b" }?.model
+            return entries.firstOrNull { it.isSupported && it.model.id == "functiongemma-270m" }?.model
+                ?: entries.firstOrNull { it.isSupported && it.model.id == "qwen3-0.6b" }?.model
                 ?: entries.firstOrNull { it.isSupported }?.model
         }
         return entries.firstOrNull { it.isSupported && it.model.id == "qwen3-1.7b" }?.model

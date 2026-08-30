@@ -84,10 +84,13 @@ object ModelSession {
             val model = modelForPath(snapshot, configured)
             if (model != null) {
                 if (LocalModelManager.oemKillsHeavyLocalModels() && model.id == "qwen3-1.7b") {
-                    val small = LocalModelManager.AVAILABLE_MODELS.firstOrNull { it.id == "qwen3-0.6b" }
-                    val smallPath = small?.let { LocalModelManager.getModelPath(context, it) }
-                    if (small != null && smallPath != null) {
-                        return LocalCandidate(small, smallPath)
+                    val smallIds = listOf("functiongemma-270m", "qwen3-0.6b")
+                    for (id in smallIds) {
+                        val small = LocalModelManager.AVAILABLE_MODELS.firstOrNull { it.id == id }
+                        val smallPath = small?.let { LocalModelManager.getModelPath(context, it) }
+                        if (small != null && smallPath != null) {
+                            return LocalCandidate(small, smallPath)
+                        }
                     }
                 }
                 return LocalCandidate(model, configured.absolutePath)

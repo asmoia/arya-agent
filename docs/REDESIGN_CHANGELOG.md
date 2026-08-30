@@ -1,5 +1,14 @@
 # Redesign v1 changelog
 
+## 1.2.15
+
+Add **FunctionGemma 270M** (bartowski Q4_K_M, 253 MB) as a real catalog model
+with Gemma turn template + `<start_function_call>` parser.
+
+Google: not a general chat model. On Huawei it is the *small enough to live*
+tool-calling brain (~250 MB vs 1.5 GB that EMUI SIGKILLs). Qwen3 0.6B remains
+the small *chat* option.
+
 ## 1.2.14
 
 1.2.13 put the engine in the UI process — the whole app crashed on load.

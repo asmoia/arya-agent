@@ -19,6 +19,8 @@ class StreamAssembler(
 
     private val toolCallOpener = "<tool_call>"
     private val toolCallCloser = "</tool_call>"
+    private val gemmaCallOpener = "<start_function_call>"
+    private val gemmaCallCloser = "<end_function_call>"
     private val thinkOpener = "<think>"
     private val thinkCloser = "</think>"
 
@@ -30,15 +32,24 @@ class StreamAssembler(
             if (!inToolCall && !inThinking) {
                 // Check if buffer contains <tool_call>
                 val toolIdx = buffer.indexOf(toolCallOpener)
+                val gemmaIdx = buffer.indexOf(gemmaCallOpener)
                 val thinkIdx = buffer.indexOf(thinkOpener)
 
-                if (toolIdx >= 0 && (thinkIdx < 0 || toolIdx < thinkIdx)) {
-                    if (toolIdx > 0) {
-                        events.add(LlmEvent.Text(buffer.substring(0, toolIdx)))
+                val firstTool = when {
+                    toolIdx >= 0 && gemmaIdx >= 0 -> minOf(toolIdx, gemmaIdx)
+                    toolIdx >= 0 -> toolIdx
+                    else -> gemmaIdx
+                }
+                val usingGemma = gemmaIdx >= 0 && (toolIdx < 0 || gemmaIdx <= toolIdx)
+
+                if (firstTool >= 0 && (thinkIdx < 0 || firstTool < thinkIdx)) {
+                    if (firstTool > 0) {
+                        events.add(LlmEvent.Text(buffer.substring(0, firstTool)))
                         emittedVisible = true
                     }
                     events.add(LlmEvent.ToolCallStart(null))
-                    buffer.delete(0, toolIdx + toolCallOpener.length)
+                    val openerLen = if (usingGemma) gemmaCallOpener.length else toolCallOpener.length
+                    buffer.delete(0, firstTool + openerLen)
                     inToolCall = true
                     toolCallBuffer.clear()
                     continue
@@ -90,10 +101,21 @@ class StreamAssembler(
                     break
                 }
             } else if (inToolCall) {
-                val closeIdx = buffer.indexOf(toolCallCloser)
+                val qwenClose = buffer.indexOf(toolCallCloser)
+                val gemmaClose = buffer.indexOf(gemmaCallCloser)
+                val closeIdx = when {
+                    qwenClose >= 0 && gemmaClose >= 0 -> minOf(qwenClose, gemmaClose)
+                    qwenClose >= 0 -> qwenClose
+                    else -> gemmaClose
+                }
+                val closerLen = if (gemmaClose >= 0 && (qwenClose < 0 || gemmaClose <= qwenClose)) {
+                    gemmaCallCloser.length
+                } else {
+                    toolCallCloser.length
+                }
                 if (closeIdx >= 0) {
                     toolCallBuffer.append(buffer.substring(0, closeIdx))
-                    buffer.delete(0, closeIdx + toolCallCloser.length)
+                    buffer.delete(0, closeIdx + closerLen)
                     inToolCall = false
 
                     val rawToolJson = toolCallBuffer.toString().trim()
@@ -106,7 +128,10 @@ class StreamAssembler(
                     toolCallBuffer.clear()
                     continue
                 } else {
-                    val holdback = getPartialMatchLength(buffer.toString(), toolCallCloser)
+                    val holdback = maxOf(
+                        getPartialMatchLength(buffer.toString(), toolCallCloser),
+                        getPartialMatchLength(buffer.toString(), gemmaCallCloser),
+                    )
                     val safeLen = buffer.length - holdback
                     if (safeLen > 0) {
                         val fragment = buffer.substring(0, safeLen)
@@ -141,7 +166,7 @@ class StreamAssembler(
 
     private fun getHoldbackLength(text: String): Int {
         var maxHoldback = 0
-        val candidates = stopStrings + listOf(toolCallOpener, thinkOpener)
+        val candidates = stopStrings + listOf(toolCallOpener, gemmaCallOpener, thinkOpener)
         for (cand in candidates) {
             val p = getPartialMatchLength(text, cand)
             if (p > maxHoldback) maxHoldback = p
@@ -171,6 +196,23 @@ class StreamAssembler(
             }
             if (name.isNotEmpty()) Pair(name, argsJson) else null
         } catch (_: Exception) {
+            val gemma = Regex("call:([A-Za-z0-9_]+)\\{([^}]*)\\}").find(rawJson)
+            if (gemma != null) {
+                val gName = gemma.groupValues[1]
+                val inner = gemma.groupValues[2]
+                val gArgs = JSONObject()
+                inner.split(',').forEach { part ->
+                    val kv = part.split(':', limit = 2)
+                    if (kv.size == 2) {
+                        val key = kv[0].trim().trim('"')
+                        val value = kv[1].trim().trim('"')
+                            .replace("<escape>", "")
+                            .trim()
+                        gArgs.put(key, value)
+                    }
+                }
+                return Pair(gName, gArgs.toString())
+            }
             // Attempt simple regex parse if JSON is slightly malformed
             val nameMatch = Regex(""""name"\s*:\s*"(\w+)"""").find(rawJson)
             if (nameMatch != null) {

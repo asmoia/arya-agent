@@ -96,6 +96,17 @@ class StreamAssemblerTest {
     }
 
     @Test
+    fun functionGemmaCallParsesToToolEvent() {
+        val assembler = StreamAssembler()
+        val stream = "<start_function_call>call:get_current_temperature{location:Tehran}<end_function_call>"
+        val events = assembler.feed(stream) + assembler.finish()
+        val tools = events.filterIsInstance<LlmEvent.ToolCall>()
+        assertEquals(1, tools.size)
+        assertEquals("get_current_temperature", tools[0].name)
+        assertTrue(tools[0].argsJson.contains("Tehran"))
+    }
+
+    @Test
     fun unclosedThinkWithNoVisibleAnswerIsSurfaced() {
         val assembler = StreamAssembler()
         val events = assembler.feed("<think>only a monologue") + assembler.finish()
