@@ -2,6 +2,23 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v1.2.24 — Fix: tool culling dropped the phone-control + messenger tools
+
+**The long-task tools existed but were unreachable by the model.** The on-device tool list was built by
+`LocalPromptBudget` with a plain `tools.take(12)` in *registry order*. Because the 16 generic tools are
+registered before the 13 mobile tools, `take(12)` kept only generic tools and silently dropped **every
+phone-control/messaging tool** — `tap`, `tap_node`, `swipe`, `scroll_to_find`, `find_and_tap`,
+`send_message`, `open_messaging_chat`, and `telegram_read_chat` (registered last). Result from the
+v1.2.23 device report: **0 tool calls** and canned replies to "compile my chats in tg" — the model never
+even had `telegram_read_chat` in its prompt.
+
+- `LocalPromptBudget` now selects tools in **priority order** (observe/control → long‑task messaging →
+  touch/scroll/find → context → orchestration) rather than registry order, so the messenger and
+  phone‑UI tools survive the 12‑tool cap.
+- `PhoneToolset.CHAT_TOOLS` now includes `telegram_read_chat` and `open_messaging_chat` (and dropped the
+  dead `search_browser` reference) so the chat path offers them too.
+- Version bumped to **v1.2.24 (129)**.
+
 ## v1.2.23 — Long-task support: read a whole Telegram chat + chunked summarizer
 
 - **`telegram_read_chat` tool** — opens Telegram, searches/scrolls to the requested person/group/channel,

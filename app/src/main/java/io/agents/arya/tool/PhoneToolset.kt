@@ -15,9 +15,12 @@ object PhoneToolset {
         "clipboard",
         "system_key",
         "take_screenshot",
-        "search_browser",
         "send_message",
         "get_installed_apps",
+        // Long-task messenger tools: read a whole Telegram/WhatsApp chat so the
+        // model can summarise it. Previously missing from the chat path entirely.
+        "telegram_read_chat",
+        "open_messaging_chat",
     )
 
     fun compactSpecs(): List<ToolSpec> =

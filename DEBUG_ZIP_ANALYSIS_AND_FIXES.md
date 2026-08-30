@@ -242,3 +242,112 @@ new, self-inflicted regression surfaced:
 **Why this matters for publishing:** a task must be able to actually *load the model*. With this
 regression the app looked "working" (no FGS crash, no `prompt_exceeds_ctx`) but still couldn't run
 local inference, which is the whole point.
+
+---
+
+## 7. Update — long-task support + open build gates → v1.2.23
+
+After v1.2.22 the requested capability was **reading and summarising an entire Telegram chat** so Arya
+stays useful for long, multi-turn tasks rather than only short Q&A. Because the on-device model window is
+hard-capped at 2048 tokens, this can't be done by growing context — it needs a **chunked map-reduce**
+summarizer plus a way to *pull* the transcript out of Telegram.
+
+### What was added (commit `7d8a28d`)
+
+| File | Purpose |
+|------|---------|
+| `app/.../agent/llm/LongSummaryEngine.kt` | Pure chunked map-reduce summarizer. Constructor takes `estimateTokens` + `summarize` lambdas (so it's dependency-free and unit-testable). `promptBudget = contextTokens - reserveTokens`; `splitChunks` (splits a flat message list into ≤-budget chunks, further splitting an oversized message on sentence boundaries so it's never dropped), `summarizeAll` (map once per chunk, then keep merging batch summaries until one fits), `firstBatch`. |
+| `app/.../agent/llm/LongSummaryEngineTest.kt` | Unit tests: single-chunk fit, many-chunk split within budget, reduce collapse, oversized split, empty input, map-reduce idempotence. |
+| `app/.../tool/impl/TelegramReadChatTool.kt` | `telegram_read_chat` tool. Opens Telegram via the existing `ContactListUiUtils.searchOrScrollAndFindAndClick`, opens the chat, pages upward with `performSwipe`, scrapes visible message texts (bounds-based top-to-bottom, filters the `UI_NOISE` set, de-dups), and returns JSON `{chat, complete, pages, message_count, messages}`. |
+| `app/.../tool/ToolRegistry.kt` | Registers `TelegramReadChatTool()` in `registerMobileTools()`. |
+| `app/build.gradle.kts`, `CHANGES.md` | Bump to **1.2.23 (128)** and document the feature. |
+
+### The two build gates hit after the feature landed, and their fixes
+
+**1. Kotlin compile error — `Unresolved reference 'INSTANCE'` (TelegramReadChatTool.kt:81).**
+`HermesDirectOpen` is a **Kotlin `object`**, so it must be called as `HermesDirectOpen.open(app)` from
+Kotlin; the Java-style `HermesDirectOpen.INSTANCE.open(app)` only compiles from Java. This failed
+`:compileDebugKotlin` on commit `7d8a28d`. **Fix (commit `b94c0be`):** call it directly.
+
+**2. Two `LongSummaryEngineTest` tests failed (commit `b94c0be` / run for `7d8a28d1`).** The tests were
+wrong, not the engine. With the old inputs, `tokenEstimate = len/4 + 1`:
+- the "many chunks" test used 300 short messages ≈ **4.1k tokens → 3 chunks** (test demanded `> 5`);
+- the "reduce" test used 120 short lines ≈ **1.1k tokens → 1 chunk**, so `chunkCount == 1` and
+  `reduceRounds == 0` (map-reduce never actually ran).
+
+The inputs were too small to overflow the 1920-token window and trigger the behaviour under test. I
+re-verified the engine logic with a faithful port, then sized the inputs so they genuinely cross the
+budget: the split test now uses ~12.5k tokens → **8 chunks**, and the reduce test ~5.3k tokens →
+**3 chunks / 2 reduce rounds**. **Fix (commit `471440b`):** enlarged the inputs.
+
+### Verification & release
+
+- `Build Arya APK` run `33317167259` → **success** (`:compileDebugKotlin`, `:testDebugUnitTest` with
+  **no failing tests**, `:assembleDebug`).
+- `Android Emulator Matrix QA` run `33317167293` → **success**.
+- **Signed release `v1.2.23`** published: release `379312651`, asset
+  `_v1.2.23_20260830_144428.apk` (+`SHA256SUMS.txt`); `Detect signing secrets` / `Prepare release signing` /
+  `Build signed release APK` / `Create GitHub Release` all success → an upgradeable installed build.
+
+### Notes for the follow-up
+- The summarizer is wired and tested, but **not yet exercised end-to-end on device** — the real-device
+  smoke (`Firebase Test Lab`) is an on-demand workflow and should be run against `v1.2.23` before a store
+  push. The Telegram reader depends on the accessibility service being granted and on Telegram's UI being
+  stable; scrape heuristics may need tuning on non-stock Telegram.
+- `Firebase Test Lab` is **not** auto-triggered on push (it's `workflow_dispatch`), so it has no run for
+  the v1.2.23 commit yet.
+
+---
+
+## 8. Update — full-history check of v1.2.23 bundle (arya-debug-20260830_195751)
+
+The bundle is from the same Huawei ADY‑LX9, now running **v1.2.23 (128)** (the signed release
+published this session) and a fresh install at 19:50 (package replaced). This is a *full history*: the
+`app-logcat` / `arya-engine.log` span the day (older FATAL stacks from 08‑28, the 13:42–13:46 FGS
+crashes, the 17:14–17:16 `:engine` crash‑loop, and the new session). Treat only the 19:50+ session
+(pid 12587 UI / pid 12756 engine) as current; older entries are from prior installs.
+
+### What is confirmed FIXED (all three original bugs)
+
+- **`prompt_exceeds_ctx` — gone.** `native-env.txt` now shows `n_ctx=2048`; `native-load-stage` shows
+  prefill advancing to token 1184/1246 (was dying at ~1024). `generateStream` stats no longer contain
+  `prompt_exceeds_ctx` anywhere after 19:50.
+- **`:engine` crash‑loop — gone.** No `UninitializedPropertyAccessException` after 17:16; the engine
+  (pid 12756) loads `ctx=2048` and runs `generateStream` against a live handler.
+- **`ForegroundServiceDidNotStartInTimeException` — gone.** No FGS crash in the current session.
+
+So v1.2.23 is engine‑healthy: the model loads, prefills within the window, and generates tokens.
+
+### The remaining problem that defeats the long‑task feature
+
+The user's request "can you assist me with **compiling my chats in tg**?" drove the **agent/task loop**
+(`ChatDispatch.sendPhoneAction → startTask → TaskOrchestrator → DefaultAgentService`). That path calls
+`llmClient.chatStream(messages, toolSpecs)` with `toolSpecs = ToolRegistry.toToolSpecs()` = **all 29 tools
+in registry order**, then `LocalPromptBudget.prepare` does `tools.take(MAX_TOOLS_LOCAL = 12)`.
+
+Because `registerCommonTools()` (16 tools) runs **before** `registerMobileTools()` (13 tools),
+`take(12)` keeps the *first 12 common* tools and **drops every mobile tool** — including
+`telegram_read_chat` (registered last, position 29), `open_messaging_chat`, `send_message`, `tap`,
+`swipe`, `scroll_to_find`, `find_and_tap`. Result (confirmed in telemetry):
+
+- **`Tools: 0 calls`** for the whole session — the model never emitted a tool call.
+- The trimmed prompt was `tools=12` / `tools=8`, and **`telegram_read_chat` was never in it**.
+- The model replied with canned text ("Hi! How can I help you today?", "That means I'm not able to
+  provide the system details right now…") instead of calling a Telegram reader.
+
+So `telegram_read_chat` exists in the registry (it can execute if named) but **the model is never given
+it as an option** on either path:
+1. **Agent loop** (`DefaultAgentService`): full 29 → `take(12)` (common‑first) drops it.
+2. **Chat** (`ChatRuntime` → `PhoneToolset.compactSpecs()`): `CHAT_TOOLS` omits it entirely.
+
+In other words the "read a Telegram chat and summarize it" capability the user explicitly asked for is
+**present in code but unreachable by the model** — exactly the gap the user warned against
+("a complete tool, not an amateur one"). The local on‑device agent also silently lost *all* phone‑UI
+control tools (tap/swipe/scroll/tap‑node/send_message), a second serious consequence of the same bug.
+
+### Fix
+Make the on‑device tool culling **task‑aware / priority‑ordered** instead of a naive
+`tools.take()` in registry order, so the phone‑control + messaging tools (including
+`telegram_read_chat`, `open_messaging_chat`, `send_message`, `tap`, `tap_node`, `swipe`,
+`scroll_to_find`, `find_and_tap`) are retained ahead of generic tools. Also add
+`telegram_read_chat`/`open_messaging_chat` to `PhoneToolset.CHAT_TOOLS` so the chat path offers them.

@@ -276,6 +276,31 @@ object LocalPromptBudget {
     private const val MAX_TOOLS_LOCAL = 12
     private const val MIN_TOOLS_LOCAL = 3
 
+    /**
+     * On-device agents must be able to drive the phone they are controlling.
+     * These tools are registered *after* the generic set, so a naive tools.take()
+     * in registry order silently dropped every one of them (tap/swipe/scroll,
+     * send_message, open_messaging_chat, telegram_read_chat …) — which is why the
+     * model could never call the Telegram reader the user asked for. We keep this
+     * ordered set first, then fill the budget with the remaining tools.
+     */
+    // Ordered by how essential a tool is for driving the phone on-device. The
+    // first MAX_TOOLS_LOCAL entries are what the model actually sees; the rest
+    // only fill in if there is budget. Key point: messaging/long-task tools are
+    // placed high enough to survive the 12-tool cap (they are registered after
+    // the generic set and were previously dropped by a registry-order take()).
+    private val PRIORITY_TOOLS = listOf(
+        // Observe + control the phone (always needed).
+        "get_screen_info", "find_node_info", "open_app", "input_text",
+        // Long-task messaging: read back a whole chat so the model can summarise it.
+        "telegram_read_chat", "open_messaging_chat", "send_message",
+        // Touch / scroll / find (drive the UI to reach a chat).
+        "tap", "tap_node", "long_press", "swipe", "scroll_to_find", "find_and_tap",
+        // Context + orchestration.
+        "system_key", "take_screenshot", "get_installed_apps", "get_notifications",
+        "wait", "wait_for_ui", "finish",
+    )
+
     data class PreparedPrompt(
         val messages: List<ChatMsg>,
         val tools: List<ToolSpec>,
@@ -294,8 +319,15 @@ object LocalPromptBudget {
         maxTokens: Int,
     ): PreparedPrompt {
         val budget = ctxSize - maxTokens - RESERVE_TOKENS
-        // A 270M on-device model uses a small, focused tool set well.
-        val initialTools = tools.take(MAX_TOOLS_LOCAL)
+        // A 270M on-device model uses a small, focused tool set well, but it must
+        // be the RIGHT one: prioritize phone-control/messaging tools (which are
+        // registered after the generic set and would otherwise be dropped by a
+        // plain take()). Order by priority first, then fill with the remainder.
+        val byName = tools.associateBy { it.name }
+        val prioritized = mutableListOf<ToolSpec>()
+        for (name in PRIORITY_TOOLS) byName[name]?.let { prioritized += it }
+        for (t in tools) if (t.name !in PRIORITY_TOOLS) prioritized += t
+        val initialTools = prioritized.take(MAX_TOOLS_LOCAL)
         val msgs = messages.toMutableList()
         var tl = initialTools
 
