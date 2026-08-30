@@ -73,8 +73,10 @@ object ToolRegistry {
         register(ShamsiCalendarTool())
         // Bounded no-LLM shortcuts for common phone tasks.
         register(TelegramSavedMediaTool())
-        register(SearchBrowserTool())
         register(OpenMessagingChatTool())
+        // Long-task: read back through a Telegram chat and scrape messages so an
+        // on-device model can summarise an entire conversation in chunks.
+        register(TelegramReadChatTool())
     }
 
     fun register(tool: BaseTool) {

@@ -2,6 +2,23 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v1.2.23 — Long-task support: read a whole Telegram chat + chunked summarizer
+
+- **`telegram_read_chat` tool** — opens Telegram, searches/scrolls to the requested person/group/channel,
+  opens the chat, scrolls back through the history and scrapes the visible message texts into a
+  de-duplicated list (oldest→newest) for the model to read or summarise. Built on the same proven
+  primitives as `open_messaging_chat` (open app → chat list → search/scroll-and-find-and-click), plus a
+  paged scroll-and-scrape pass. `complete`/`pages`/`message_count` tell the caller whether it reached
+  the top of the history or hit the page budget. Never sends messages.
+  - ⚠️ Telegram renders its message list in a virtualized RecyclerView, so scraping is by the
+    currently-visible bubbles; the bounds/text heuristic may need calibration on a specific device/ROM.
+- **`LongSummaryEngine`** — pure, unit-tested chunked **map-reduce** summarizer that lets a 2048-token
+  on-device model handle arbitrarily long content: it chunks the input, summarizes each chunk, then
+  recursively merges chunk summaries until one fits the window. This is the mechanism that makes
+  "read all my chats with someone and summarize" feasible with a small local model (instead of trying
+  to grow the context).
+- Registered the reader in `ToolRegistry`; version bumped to **v1.2.23 (128)**.
+
 ## v1.2.22 — Fix :engine crash-loop on cold start (regression from 1.2.21)
 
 **Recovered from the second debug ZIP (arya-debug-20260830_171625, same Huawei ADY-LX9).**
