@@ -244,17 +244,25 @@ class ComposeChatActivity : ComponentActivity() {
     }
 
     private fun trySend(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return
+        if (!ChatIntent.isChatOnly(trimmed)) {
+            ChatDispatch.sendPhoneAction(this, chatRuntime, trimmed)
+            return
+        }
         val gate = ModelSession.resolve(this)
         readiness = gate
         when (gate) {
             is ModelReadiness.NeedsSetup -> {
-                chatRuntime.setDraft(text)
+                chatRuntime.setDraft(trimmed)
                 showModels = true
             }
-            is ModelReadiness.Local -> chatRuntime.send(text, gate.config)
-            is ModelReadiness.Cloud -> chatRuntime.send(text, gate.config)
+            is ModelReadiness.Local -> chatRuntime.send(trimmed, gate.config)
+            is ModelReadiness.Cloud -> chatRuntime.send(trimmed, gate.config)
         }
     }
+
+
 
     private fun handleExternalIntent(incoming: Intent?) {
         if (incoming == null) return

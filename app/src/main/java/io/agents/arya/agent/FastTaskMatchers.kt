@@ -168,6 +168,12 @@ object FastTaskMatchers {
                 ToolMatch("system_key", mapOf("key" to "back"), "go back")
             "open youtube" ->
                 ToolMatch("open_app", mapOf("app_name" to "YouTube"), "open youtube")
+            "open telegram", "open tg" ->
+                ToolMatch("open_app", mapOf("app_name" to "Telegram"), "open telegram")
+            "open telegram x", "open telegramx" ->
+                ToolMatch("open_app", mapOf("app_name" to "Telegram X"), "open telegram x")
+            "open whatsapp", "open wa" ->
+                ToolMatch("open_app", mapOf("app_name" to "WhatsApp"), "open whatsapp")
             "open maps", "open google maps" ->
                 ToolMatch("open_app", mapOf("app_name" to "Maps"), "open maps")
             "take screenshot" ->

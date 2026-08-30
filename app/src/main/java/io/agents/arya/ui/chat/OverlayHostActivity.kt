@@ -73,7 +73,12 @@ class OverlayHostActivity : ComponentActivity() {
             onPartial = { voicePartialText = it },
             onFinal = { transcript ->
                 if (KVUtils.isVoiceAutoSend()) {
-                    runtime.send(transcript, currentConfig())
+                    val trimmed = transcript.trim()
+                    if (!ChatIntent.isChatOnly(trimmed)) {
+                        ChatDispatch.sendPhoneAction(this@OverlayHostActivity, runtime, trimmed)
+                    } else {
+                        runtime.send(trimmed, currentConfig())
+                    }
                 } else {
                     runtime.setDraft(transcript)
                 }
@@ -95,10 +100,15 @@ class OverlayHostActivity : ComponentActivity() {
                     chatUiState = chat,
                     taskState = task,
                     onSendText = { text ->
-                        when (val gate = ModelSession.resolve(this@OverlayHostActivity)) {
-                            is ModelReadiness.Local -> runtime.send(text, gate.config)
-                            is ModelReadiness.Cloud -> runtime.send(text, gate.config)
-                            is ModelReadiness.NeedsSetup -> runtime.setDraft(text)
+                        val trimmed = text.trim()
+                        if (!ChatIntent.isChatOnly(trimmed)) {
+                            ChatDispatch.sendPhoneAction(this@OverlayHostActivity, runtime, trimmed)
+                        } else {
+                            when (val gate = ModelSession.resolve(this@OverlayHostActivity)) {
+                                is ModelReadiness.Local -> runtime.send(trimmed, gate.config)
+                                is ModelReadiness.Cloud -> runtime.send(trimmed, gate.config)
+                                is ModelReadiness.NeedsSetup -> runtime.setDraft(trimmed)
+                            }
                         }
                     },
                     onStartVoiceInput = { startVoiceInput() },

@@ -217,6 +217,37 @@ class ChatRuntime(
         _uiState.value = _uiState.value.copy(draftText = text)
     }
 
+    fun ingestUser(text: String) {
+        val userMsg = ChatMessage(role = ChatMessage.Role.USER, content = text)
+        val updated = _uiState.value.messages + userMsg
+        _uiState.value = _uiState.value.copy(
+            messages = updated,
+            isStreaming = true,
+            errorMessage = null,
+            draftText = "",
+            statusLine = "در حال انجام…",
+            loadPercent = null,
+        )
+        historyStore.saveConversation(conversationId, text.take(20), updated)
+    }
+
+    fun setWorkStatus(line: String) {
+        _uiState.value = _uiState.value.copy(statusLine = line, isStreaming = true)
+    }
+
+    fun finishAssistant(text: String) {
+        val msg = ChatMessage(role = ChatMessage.Role.ASSISTANT, content = text)
+        val updated = _uiState.value.messages + msg
+        _uiState.value = _uiState.value.copy(
+            messages = updated,
+            isStreaming = false,
+            statusLine = null,
+            loadPercent = null,
+            activeToolName = null,
+        )
+        historyStore.saveConversation(conversationId, _uiState.value.title, updated)
+    }
+
     fun retry(agentConfig: AgentConfig) {
         val prompt = lastUserPrompt ?: return
         send(prompt, agentConfig)
