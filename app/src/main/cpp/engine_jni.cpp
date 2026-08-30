@@ -1116,7 +1116,10 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
         "\"gen_tok_per_s\":%.1f,\"finish_reason\":\"%s\",\"text\":\"",
         prompt_eval_ms, n_prompt, gen_ms, gen_tokens,
         gen_ms > 0 ? gen_tokens / (gen_ms / 1000.0) : 0, finish_reason.c_str());
-    std::string stats = std::string(head) + json_escape(text_for_json) + ""}";
+    std::string stats = std::string(head);
+    stats += json_escape(text_for_json);
+    stats.push_back('"');
+    stats.push_back('}');
 
     return env->NewStringUTF(stats.c_str());
     } catch (const std::exception& e) {
