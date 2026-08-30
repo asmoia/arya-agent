@@ -78,7 +78,7 @@ class TelegramReadChatTool : BaseTool() {
         try {
             val app = "Telegram"
             val packageName = OpenAppTool.resolveAppNameStatic(app) ?: app
-            val opened = HermesDirectOpen.INSTANCE.open(app)
+            val opened = HermesDirectOpen.open(app)
             if (!opened.isSuccess && !service.openApp(packageName)) {
                 return ToolResult.error("Could not open $app. Is it installed?")
             }
