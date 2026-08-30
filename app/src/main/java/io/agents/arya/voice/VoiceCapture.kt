@@ -33,16 +33,22 @@ class VoiceCapture(
     var launchFallbackIntent: ((Intent) -> Unit)? = null
 
     fun ensureReady(): Boolean {
-        if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
-            onError(activity.getString(R.string.voice_input_unavailable))
-            controller.onError("unavailable")
-            return false
-        }
         if (ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            // Activity owns ActivityResultContracts.RequestPermission — do not request here.
             onError(activity.getString(R.string.voice_need_mic))
+            return false
+        }
+        // EMUI often reports SpeechRecognizer unavailable without Google app.
+        // Fall back to the system RecognizerIntent activity instead of dying.
+        if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
+            val fallback = launchFallbackIntent
+            if (fallback != null) {
+                fallback(buildListenIntent())
+                return false
+            }
+            onError(activity.getString(R.string.voice_input_unavailable))
+            controller.onError("unavailable")
             return false
         }
         if (recognizer == null) {

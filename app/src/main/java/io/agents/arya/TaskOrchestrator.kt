@@ -308,9 +308,7 @@ class TaskOrchestrator(
         val requestedConfig = agentConfigProvider()
         if (requestedConfig.provider.isLocal &&
             route is PipelineRouter.Route.AgentLoop &&
-            !io.agents.arya.agent.llm.CatalogPolicy.canRunLocalTier3(
-                io.agents.arya.engine.budget.DeviceProfileStore.read(null)?.ramClass ?: "4GB"
-            )
+            shouldRefuseLocalAgentLoop(requestedConfig)
         ) {
             val message = io.agents.arya.agent.llm.CatalogPolicy.refuseLocalTier3Message()
             XLog.w(TAG, message)
@@ -551,6 +549,33 @@ class TaskOrchestrator(
      * turn that failure into a long CPU/model loop. Direct skill errors remain
      * explicit and the caller can retry after freeing memory or reloading GPU.
      */
+    /**
+     * The old 8 GB gate assumed E4B / 1.7B. FunctionGemma 270M and Qwen3 0.6B
+     * already run on ADY-LX9 (~400–700 MB RSS). Missing DeviceProfile used to
+     * default ramClass to "4GB" and kick the user out of the agent loop.
+     */
+    private fun shouldRefuseLocalAgentLoop(config: AgentConfig): Boolean {
+        val path = config.baseUrl
+        if (path.contains("functiongemma", ignoreCase = true)) return false
+        if (path.contains("0.6B", ignoreCase = true) || path.contains("0.6b", ignoreCase = true)) return false
+        if (LocalModelManager.isRetiredHeavyLocalModel(path)) return true
+        val ramClass = localRamClass()
+        return !io.agents.arya.agent.llm.CatalogPolicy.canRunLocalTier3(ramClass)
+    }
+
+    private fun localRamClass(): String {
+        val ctx = ClawApplication.instance
+        val stored = io.agents.arya.engine.budget.DeviceProfileStore.read(ctx)?.ramClass
+        if (!stored.isNullOrBlank() && stored != "4GB") return stored
+        val total = try {
+            io.agents.arya.engine.budget.DeviceProfileStore.readDeviceRam(ctx).first
+        } catch (_: Exception) {
+            0L
+        }
+        if (total > 0L) return io.agents.arya.engine.budget.MemoryBudget.ramClassOf(total)
+        return stored ?: "4GB"
+    }
+
     private fun localAgentFallbackBlockReason(): String? {
         val config = agentConfigProvider()
         if (!config.provider.isLocal) return null

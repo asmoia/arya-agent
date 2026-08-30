@@ -124,7 +124,8 @@ class ChatRuntime(
 
                 _uiState.value = _uiState.value.copy(messages = msgsWithPlaceholder)
 
-                client.chatStream(chatMsgs, emptyList()).collect { event ->
+                val tools = io.agents.arya.tool.PhoneToolset.compactSpecs()
+                client.chatStream(chatMsgs, tools).collect { event ->
                     when (event) {
                         is LlmEvent.Text -> {
                             if (event.isReasoning) {
@@ -148,14 +149,28 @@ class ChatRuntime(
                             _uiState.value = _uiState.value.copy(activeToolName = event.name ?: "tool")
                         }
                         is LlmEvent.ToolCall -> {
+                            _uiState.value = _uiState.value.copy(activeToolName = event.name, statusLine = event.name)
+                            val params = io.agents.arya.tool.PhoneToolset.argsToMap(event.argsJson)
+                            val result = io.agents.arya.tool.ToolRegistry.getInstance().executeTool(event.name, params)
+                            val summary = if (result.isSuccess) {
+                                result.data?.take(800) ?: "انجام شد."
+                            } else {
+                                result.error ?: "ابزار شکست خورد"
+                            }
+                            currentAssistantText = listOf(currentAssistantText.trim(), summary)
+                                .filter { it.isNotBlank() }
+                                .joinToString("\n")
                             val lastIdx = msgsWithPlaceholder.lastIndex
                             val updated = msgsWithPlaceholder.toMutableList()
-                            val toolStep = ToolStep(event.name, event.argsJson, true)
                             updated[lastIdx] = placeholderMsg.copy(
-                                content = currentAssistantText,
-                                toolSteps = listOf(toolStep)
+                                content = ChatNoise.sanitizeAssistant(currentAssistantText),
+                                toolSteps = listOf(ToolStep(event.name, summary, result.isSuccess)),
                             )
-                            _uiState.value = _uiState.value.copy(messages = updated)
+                            _uiState.value = _uiState.value.copy(
+                                messages = updated,
+                                activeToolName = null,
+                                statusLine = null,
+                            )
                         }
                         is LlmEvent.Status -> {
                             _uiState.value = _uiState.value.copy(statusLine = event.message)

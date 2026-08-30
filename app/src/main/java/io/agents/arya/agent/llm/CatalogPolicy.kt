@@ -17,7 +17,7 @@ object CatalogPolicy {
     }
 
     fun refuseLocalTier3Message(): String =
-        "This task needs a cloud model or a phone with at least 8 GB of RAM."
+        "This task needs Qwen3 0.6B / FunctionGemma on this phone, or a cloud model. The 1.7B+ path is disabled on EMUI."
 
     fun recommended(models: List<CatalogModel>, ramClass: String): CatalogModel? {
         val allowed = models.filter { isAllowed(it, ramClass) }

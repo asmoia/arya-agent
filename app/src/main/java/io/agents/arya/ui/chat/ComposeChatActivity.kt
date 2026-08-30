@@ -157,6 +157,7 @@ class ComposeChatActivity : ComponentActivity() {
                         startActivity(Intent(this, SettingsActivity::class.java))
                     },
                     onOpenCapabilities = { showCaps = true },
+                    onNewChat = { chatRuntime.clearChat() },
                     modifier = Modifier.fillMaxSize(),
                 )
 
@@ -391,7 +392,12 @@ class ComposeChatActivity : ComponentActivity() {
                 else chatRuntime.setDraft(transcript)
             },
             onError = { msg -> voiceErrorMessage = msg.ifBlank { null } },
-        )
+        ).also { capture ->
+            capture.launchFallbackIntent = { intent ->
+                runCatching { sttFallbackLauncher.launch(intent) }
+                    .onFailure { voiceErrorMessage = getString(R.string.voice_input_unavailable) }
+            }
+        }
     }
 
     private fun startVoiceInput() {

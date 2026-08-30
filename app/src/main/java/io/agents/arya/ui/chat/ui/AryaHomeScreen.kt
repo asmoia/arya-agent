@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.Icon
@@ -62,6 +63,7 @@ fun AryaHomeScreen(
     onOpenModels: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenCapabilities: () -> Unit,
+    onNewChat: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalAryaPalette.current
@@ -93,6 +95,9 @@ fun AryaHomeScreen(
                 Column(Modifier.weight(1f)) {
                     Text("Arya", fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = palette.text)
                     Text("On-device assistant", fontSize = 14.sp, color = palette.textSecondary)
+                }
+                IconButton(onClick = onNewChat) {
+                    Icon(Icons.Outlined.Add, contentDescription = "گفتگوی جدید", tint = palette.text)
                 }
                 IconButton(onClick = onOpenCapabilities) {
                     Icon(Icons.Outlined.Shield, contentDescription = "Capabilities", tint = palette.text)
