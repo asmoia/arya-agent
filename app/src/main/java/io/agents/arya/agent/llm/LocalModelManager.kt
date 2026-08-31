@@ -86,7 +86,7 @@ object LocalModelManager {
     val AVAILABLE_MODELS: List<ModelInfo> = listOf(
         ModelInfo(
             id = "functiongemma-270m",
-            displayName = "FunctionGemma 270M (on-device tools)",
+            displayName = "Gemma 270M (instruct — limited tool use)",
             url = "https://huggingface.co/bartowski/google_functiongemma-270m-it-GGUF/resolve/main/google_functiongemma-270m-it-Q4_K_M.gguf",
             fileName = "google_functiongemma-270m-it-Q4_K_M.gguf",
             sizeBytes = 253_127_392L,
@@ -125,11 +125,15 @@ object LocalModelManager {
 
     fun recommendedModel(context: Context): ModelInfo? {
         val entries = catalog(context)
-        // ADY-LX9: 1.7B loads then EMUI SIGKILLs :engine. 0.6B (~484 MB) is the
-        // size that actually generates on this OEM.
+        // ADY-LX9: 1.7B loads then EMUI SIGKILLs :engine. 0.6B / 270M are the
+        // sizes that actually generate on this OEM. We do NOT default to the
+        // 270M instruct model as the tool-caller: it is only a tiny INSTRUCT
+        // model (google_functiongemma-270m-it) and was never trained on Arya's
+        // function-call grammar, so it refuses every request ("I can't help you").
+        // Qwen3 0.6B understands the chatml tool-call format, so prefer it.
         if (oemKillsHeavyLocalModels()) {
-            return entries.firstOrNull { it.isSupported && it.model.id == "functiongemma-270m" }?.model
-                ?: entries.firstOrNull { it.isSupported && it.model.id == "qwen3-0.6b" }?.model
+            return entries.firstOrNull { it.isSupported && it.model.id == "qwen3-0.6b" }?.model
+                ?: entries.firstOrNull { it.isSupported && it.model.id == "functiongemma-270m" }?.model
                 ?: entries.firstOrNull { it.isSupported }?.model
         }
         return entries.firstOrNull { it.isSupported && it.model.id == "qwen3-1.7b" }?.model

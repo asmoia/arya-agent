@@ -209,7 +209,11 @@ class LocalLlmClient(
         path.contains("functiongemma", ignoreCase = true)
 
     private suspend fun ensureSmallFallback(): String? {
-        val preferred = listOf("functiongemma-270m", "qwen3-0.6b")
+        // Prefer Qwen3 0.6B: the 270M is a tiny INSTRUCT model that does not
+        // understand Arya's function-call grammar and refuses every request.
+        // Qwen3 0.6B handles the chatml tool-call format, so it is the right
+        // small on-device fallback for tool-using tasks.
+        val preferred = listOf("qwen3-0.6b", "functiongemma-270m")
         for (id in preferred) {
             val model = LocalModelManager.AVAILABLE_MODELS.firstOrNull { it.id == id } ?: continue
             LocalModelManager.getModelPath(context, model)?.let { return it }

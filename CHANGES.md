@@ -2,6 +2,27 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v1.2.26 — Default to a tool-capable model (Qwen3 0.6B), not the 270M instruct
+
+**Why Arya "won't accept tasks" and answers "I can't help you / I'm not designed for this" from the
+first message:** the device was defaulting to the **270M Gemma instruct** model
+(`google_functiongemma-270m-it`). Despite the label "FunctionGemma 270M (on-device tools)", this is
+**not** the function-calling FunctionGemma model (those are 2B/9B). It is a tiny 270M *instruct* model
+that was **never trained on Arya's function-call grammar**, so it refuses every request instead of
+emitting a tool call. Prompt-tuning cannot fix that — the model simply lacks the capability.
+
+- On Huawei/Honor (the ADY-LX9), the on-device default is now **Qwen3 0.6B**, which understands the
+  chatml tool-call format and can actually emit tool calls. The 270M is only used if 0.6B is unavailable.
+- The 0.6B fallback path now also prefers Qwen3 0.6B over the 270M.
+- Relabelled the 270M as **"Gemma 270M (instruct — limited tool use)"** so it is not mistaken for a
+  tool-calling FunctionGemma.
+- Version bumped to **v1.2.26 (131)**.
+
+> Note: the 270M/0.6B on-device models are inherently limited at multi-step tool orchestration. For the
+> reliable "read my whole chat and summarise it" task, use a real (cloud) model — Arya supports OpenAI /
+> Anthropic / a custom endpoint with an API key in Settings → LLM config. The phone is currently in
+> LOCAL mode.
+
 ## v1.2.25 — Fix on-device hang + keep the chat-reader tool always available
 
 **Root cause of the "phone hangs a little" report (v1.2.24 device bundle):**
