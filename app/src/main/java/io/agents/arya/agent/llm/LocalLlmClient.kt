@@ -374,7 +374,7 @@ object LocalPromptBudget {
             if (tl.size > MIN_TOOLS_LOCAL) {
                 val removable = tl.filter { it.name !in MUST_KEEP_TOOLS }
                 if (removable.isNotEmpty()) {
-                    val drop = removable.takeLast(2).toSet()
+                    val drop = removable.takeLast(2).map { it.name }.toSet()
                     tl = tl.filter { it.name !in drop }
                     continue
                 }
