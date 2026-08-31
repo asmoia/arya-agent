@@ -351,3 +351,57 @@ Make the on‑device tool culling **task‑aware / priority‑ordered** instead 
 `telegram_read_chat`, `open_messaging_chat`, `send_message`, `tap`, `tap_node`, `swipe`,
 `scroll_to_find`, `find_and_tap`) are retained ahead of generic tools. Also add
 `telegram_read_chat`/`open_messaging_chat` to `PhoneToolset.CHAT_TOOLS` so the chat path offers them.
+
+---
+
+## 9. Update — v1.2.25: the "phone hangs" + model-won't-use-tools bundle (arya-debug-20260831_104656)
+
+This bundle is the **v1.2.24 (129)** release, reinstalled at 10:44 (two sessions: pid 26549 @10:32–10:41
+and pid 9950/10914 @10:44+, current). The headline: **the engine is genuinely fixed** — `n_ctx=2048`,
+no `prompt_exceeds_ctx`, model loads, and `generateStream` **reaches `finish_reason:"eos"`** (id=5 → 37
+tokens, id=6 → 52 tokens, `gen_tok_per_s ≈ 14`). No crashes, no `UninitializedPropertyAccessException`.
+So v1.2.24 runs correctly; the user's prompt *was* dispatched ("Open Telegram and find the chat with [HA]…").
+
+### The two real problems
+
+**1. The phone hangs (and the task silently fails).** The native engine still forces `n_batch=1
+n_ubatch=1` and a **1-token prefill `chunk`** (`const int chunk = 1`) — the old Kirin‑9000S SIGILL
+workaround. Prefill therefore runs **one token per `llama_decode` at ~50–77 ms/token**. The failing
+attempt (`id=1`) had a **1594-token prompt** (`promptChars=5282`), so prefill alone took **~104 s** of a
+pegged CPU core — and it **exceeds the 90 000 ms `deadline`**, so the generation was **cancelled**
+(`ms=90201`, `stats={"error":"cancelled"}`). The phone lags ~90 s and the task returns nothing. This is
+the "hanging a little."
+
+**2. The on-device model was denied the reader tool, then refused.** In the failing prompt the tool list
+had been trimmed to **`tools=4`**, which **dropped `telegram_read_chat`** (it was priority #5). Even when
+tools were present (`tools=8`), the 270M FunctionGemma answered *"I apologize, but I cannot fulfill your
+request…"* and *"I am sorry, but I cannot assist…"* — **0 tool calls** all session.
+
+### Fixes shipped in v1.2.25 (commit `0057f8c`, release `379591280`)
+
+- **Re-enabled batched prefill** (`n_batch`/`n_ubatch` 1 → 16, prefill `chunk` 1 → 16). The SIGILL was
+  actually fixed by forcing `-march=armv8-a` on *every* TU (CMakeLists); the bundle confirms
+  `compiled_arm_feature_dotprod=0`. Decode stays **single-threaded** (the 2‑thread batched decode was
+  the dying variant). Prefill now batches 16 tokens/decode → ~16× faster.
+- **Raised the on‑device deadline** `90 s → 240 s` and `tokenDeadline 12 s → 20 s` (and the matching
+  `withTimeout(120 s → 240 s)`), so slow-but-working prefill finishes instead of being silently cancelled.
+- **`LocalPromptBudget.MUST_KEEP_TOOLS`** — a set the shrink step (which previously trimmed to
+  `tools=4`) never removes. `telegram_read_chat`, `open_messaging_chat`, `send_message`, and the core
+  UI tools always stay in the prompt.
+- **`LOCAL_TASK_PROMPT` tuned** to list `telegram_read_chat`/`open_messaging_chat` and tell the model to
+  *use* them for chat-reading requests (it was refusing even with the tool present).
+
+### Verification
+- `Build Arya APK` run `33369427399` → **success** (`testDebugUnitTest` no failures;
+  `libarya-engine.so` recompiled; `assembleDebug` ok).
+- `Android Emulator Matrix QA` run `33369427178` → **success**.
+- **Signed release `v1.2.25`** published: `379591280`, asset `_v1.2.25_20260831_075206.apk`
+  (+`SHA256SUMS.txt`); Detect/Prepare/Build-signed/Create release all success → upgradeable installed build.
+
+### Note
+The 270M on-device FunctionGemma is inherently limited; batching + keeping the tool + prompt tuning give
+it the best possible chance, but for genuinely reliable "read my whole chat and summarise it" the phone
+must use a **real (cloud) model**. Arya supports this (OpenAI / Anthropic / custom endpoint + API key via
+Settings → LLM config); the device is currently in **LOCAL** mode (`Active model: LOCAL`,
+`Active cloud model: none`). Switch to a cloud provider in settings to get a model that reliably drives
+the tool chain.
