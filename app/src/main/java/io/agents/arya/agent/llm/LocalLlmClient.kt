@@ -137,12 +137,16 @@ class LocalLlmClient(
             } else {
                 listOf("<|im_end|>", "</tool_call>")
             },
-            deadlineMs = 90_000L,
-            tokenDeadlineMs = 12_000L,
+            // Generous on-device deadline. Prefill of a tool-heavy prompt can be
+            // slow on a Kirin 9000S; a 90 s cap silently cancelled it before any
+            // token was produced (task failed with "cancelled", no answer). Give
+            // it room to finish instead of failing the task.
+            deadlineMs = 240_000L,
+            tokenDeadlineMs = 20_000L,
         )
         suspend fun generateOnce(target: StreamAssembler): Throwable? {
             return try {
-                withTimeout(120_000L) {
+                withTimeout(240_000L) {
                     engineClient.generate(req).collect { engineEv ->
                         when (engineEv) {
                             is EngineEvent.Delta -> target.feed(engineEv.text).forEach { emit(it) }
@@ -301,6 +305,23 @@ object LocalPromptBudget {
         "wait", "wait_for_ui", "finish",
     )
 
+    /**
+     * Tools that are NEVER stripped to fit the budget. The budget loop (see
+     * [prepare]) shrinks the tool list by removing from the tail; without this
+     * guard a 1594-token prompt would be trimmed all the way to `tools=4`, which
+     * dropped the messaging tools the user actually asked for (a READER the model
+     * must be able to call). Keep these always present so the model is never
+     * denied the tool that fulfils the task.
+     */
+    private val MUST_KEEP_TOOLS = setOf(
+        "telegram_read_chat",          // long-task: read + summarise a whole chat
+        "open_messaging_chat",         // open a Telegram/WhatsApp chat
+        "send_message",
+        "get_screen_info", "open_app", "find_node_info", "input_text",
+        "tap", "tap_node", "swipe", "scroll_to_find", "find_and_tap",
+        "wait", "finish",
+    )
+
     data class PreparedPrompt(
         val messages: List<ChatMsg>,
         val tools: List<ToolSpec>,
@@ -347,10 +368,16 @@ object LocalPromptBudget {
                 continue
             }
 
-            // (2) Shrink the tool list down to the minimum safe set.
+            // (2) Shrink the tool list down to the minimum safe set, but NEVER
+            // strip a MUST_KEEP tool (the reader/messaging tools the task needs).
+            // Only drop tools from the non-essential tail so the budget can fit.
             if (tl.size > MIN_TOOLS_LOCAL) {
-                tl = tl.take(tl.size - 2)
-                continue
+                val removable = tl.filter { it.name !in MUST_KEEP_TOOLS }
+                if (removable.isNotEmpty()) {
+                    val drop = removable.takeLast(2).toSet()
+                    tl = tl.filter { it.name !in drop }
+                    continue
+                }
             }
 
             // (3) Nothing left to drop: a single oversized user/assistant message

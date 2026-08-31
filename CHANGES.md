@@ -2,6 +2,32 @@
 
 > دستیار هوشمند فارسی برای اندروید — آفلاین، متن‌باز، با کنترل کامل گوشی
 
+## v1.2.25 — Fix on-device hang + keep the chat-reader tool always available
+
+**Root cause of the "phone hangs a little" report (v1.2.24 device bundle):**
+the native engine still forced `n_batch=1 n_ubatch=1` and a 1-token prefill chunk
+(the old Kirin 9000S SIGILL workaround). That made prefill take ~65 ms/token, so a
+1594-token prompt needed ~104 s of a pegged CPU and blew the 90 s deadline →
+`generateStream ... {"error":"cancelled"}`. The task died with **no answer**, and the
+phone lagged for ~90 s.
+
+- **Enable batched prefill again.** The SIGILL was actually fixed by forcing
+  `-march=armv8-a` on *every* TU (CMakeLists) — the bundle confirms
+  `compiled_arm_feature_dotprod=0`. So `n_batch`/`n_ubatch` now go `1 → 16` and the
+  prefill loop batches 16 tokens per `llama_decode`, cutting prefill ~16× (the
+  2-thread batched decode that died is still avoided: decode stays 1-threaded).
+- **Raise the on-device deadline** `90 s → 240 s` (and `tokenDeadline 12 s → 20 s`)
+  so a slow-but-working prefill finishes instead of being silently cancelled.
+- **Guarantee the reader tool is never stripped.** The budget loop culled tools all
+  the way to `tools=4` on a big prompt, which dropped `telegram_read_chat` (priority
+  #5). `LocalPromptBudget` now has a `MUST_KEEP_TOOLS` set that the shrink step never
+  removes, so `telegram_read_chat` / `open_messaging_chat` / `send_message` and the
+  core UI tools always stay in the prompt.
+- **Tune the on-device prompt.** `LOCAL_TASK_PROMPT` now lists
+  `telegram_read_chat` / `open_messaging_chat` and tells the model to *use* them for
+  chat-reading requests (the 270M model was refusing even with the tool present).
+- Version bumped to **v1.2.25 (130)**.
+
 ## v1.2.24 — Fix: tool culling dropped the phone-control + messenger tools
 
 **The long-task tools existed but were unreachable by the model.** The on-device tool list was built by

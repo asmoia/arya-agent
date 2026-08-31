@@ -450,7 +450,7 @@ static void dump_cpuinfo_and_env(const char * model_path, int n_ctx, int n_threa
     fprintf(out, "arya_engine_diag=1.2.18\n");
     fprintf(out, "pid=%ld tid=%ld cpu=%d\n", static_cast<long>(getpid()), get_tid(), get_cpu());
     fprintf(out, "model_path=%s\n", model_path ? model_path : "");
-    fprintf(out, "n_ctx=%d n_threads_arg=%d forced_threads=1 n_batch=1 n_ubatch=1 load_mode=MMAP+prefetch\n", n_ctx, n_threads);
+    fprintf(out, "n_ctx=%d n_threads_arg=%d forced_threads=1 n_batch=16 n_ubatch=16 load_mode=MMAP+prefetch\n", n_ctx, n_threads);
 #ifdef __ARM_FEATURE_DOTPROD
     fprintf(out, "compiled_arm_feature_dotprod=1\n");
 #else
@@ -744,11 +744,17 @@ Java_io_agents_arya_engine_EngineNative_nativeLoadModel(
     append_load_stage("weights_loaded");
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx = n_ctx;
+    // The old 1-token/1-thread shape was a workaround for a Kirin 9000S SIGILL
+    // from +dotprod/SVE compiled into ggml/llama TUs. That is fixed now by
+    // forcing -march=armv8-a on EVERY TU (see CMakeLists); the bundle confirms
+    // compiled_arm_feature_dotprod=0. So we can safely batch prefill again —
+    // which is what was making large prompts take ~65 ms/token and blow the
+    // 90 s deadline. Keep decode single-threaded (2-thread batched decode was
+    // the variant that died) but batch N tokens per llama_decode.
     cp.n_threads = 1;
     cp.n_threads_batch = 1;
-    // Same shape as the surviving warmup decode (n_tokens=1).
-    cp.n_batch = 1;
-    cp.n_ubatch = 1;
+    cp.n_batch = 16;
+    cp.n_ubatch = 16;
     cp.n_seq_max = 1;
     cp.embeddings = false;
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
@@ -978,8 +984,9 @@ Java_io_agents_arya_engine_EngineNative_nativeGenerateStream(
 
     if (n_prompt > 0) {
         append_load_stage("prefill_begin");
-        // Always 1 token — matches warmup, which never died on ADY-LX9.
-        const int chunk = 1;
+        // Batch the prefill (matches the n_ubatch the context was created with).
+        // armv8-a is now forced on every TU so batched decode no longer SIGILLs.
+        const int chunk = 16;
         for (int i = 0; i < n_prompt; ) {
             if (mc->cancel_flag.load()) {
                 append_load_stage("prefill_cancelled");

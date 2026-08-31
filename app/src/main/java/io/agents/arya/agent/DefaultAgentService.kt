@@ -63,14 +63,20 @@ class DefaultAgentService : AgentService {
 
 ## Tools
 - open_app, tap / tap_node / find_and_tap, input_text, system_key
-- swipe / scroll_to_find, send_message, make_call
+- swipe / scroll_to_find, find_and_tap, send_message, make_call
 - get_device_info, get_notifications, clipboard, get_installed_apps
-- take_screenshot, wait, finish
+- take_screenshot, wait, wait_for_ui, finish
+- telegram_read_chat (read back + scrape a whole Telegram chat, oldest→newest)
+- open_messaging_chat (open a Telegram/WhatsApp chat)
 
 ## Rules
 - One tool call per turn when the outcome is uncertain.
 - After 3 failures, finish and explain.
 - finish(summary) must contain the actual data the user asked for.
+- To read or summarise a chat: call telegram_read_chat(name=...). It returns the
+  messages; then finish(summary=...). It only reads — it never sends messages.
+- If telegram_read_chat is available, USE it for chat-reading requests. Do not
+  refuse — the tool exists and works.
 - Never auto-fill passwords, confirm payments, or delete data.
 - Never claim you cannot access a tool that exists."""
     }
